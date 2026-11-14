@@ -1,0 +1,207 @@
+// keep.kos: a coder's change that passed develop.kos is kept, with your yes.
+//
+// develop.kos judges a day's run and leaves change.patch beside it. This
+// takes a run that passed and, one step at a time, each waiting for your yes
+// (from the terminal, or from your phone with --approve-in):
+//
+//   1. makes a branch daily/RUN from studio, in a worktree of its own, so
+//      the checkout you work in is never touched (WORK/branches/RUN)
+//   2. applies change.patch there
+//   3. commits it, saying which request it answers and that it passed
+//   4. shows the commit, and keeps the request and the change as a training example in
+//      approved/RUN.json, so the free coders learn from work you approved
+//   5. pushes the branch to GitHub, only when the run asked for it
+//
+// A run that did not pass, or a step after one that failed, does nothing:
+// its command becomes `git -c kosika.skip=WHY --version`, shown and
+// approved like the others, which only prints git's version.
+//
+//   kosika run keep.kos --input kept.json --allow-folder ~/Aryan_Private/kosika-daily \
+//     --allow-shell --approve-in ~/Aryan_Private/kosika-daily/asks
+//   kosika answer ~/Aryan_Private/kosika-daily/asks --serve     (yes or no from your phone)
+//
+// kept.json is {"k": {"repo": "C:/Users/Aryan/Aryan_Private/projects/kosika", "work": "C:/Users/Aryan/Aryan_Private/kosika-daily",
+//   "run": "2026-11-14-3", "request": "...", "passed": true, "date": "2026-11-14", "push": false}}
+
+import "std/json.kos"
+
+record Approved { repo: Text work: Text run: Text request: Text passed: Bool date: Text push: Bool }
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+record Example { path: Text text: Text }
+record Wrote { bytes: Number }
+record Kept { kept: Bool branch: Text pushed: Bool said: Text }
+
+tool git {
+  source system "shell"
+  operation: "git"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+tool learn {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: Example
+  output: Wrote
+}
+
+agent keeper {
+  can: [git, learn]
+  max_steps: 1
+}
+
+// A run's name is its date and number, like 2026-11-14-3: nothing else may
+// become a branch or a path.
+fn good_run(run: Text) -> Bool {
+  if run.length() < 12 or run.length() > 16 { return false }
+  for ch in run.chars() {
+    if not "0123456789-".contains(ch) { return false }
+  }
+  return run.slice(4, 5) == "-" and run.slice(7, 8) == "-"
+}
+
+// Why this run may not be kept, or "".
+fn not_keepable(k: Approved) -> Text {
+  if not good_run(k.run) { return f"'{k.run}' is not a run's name (DATE-N)" }
+  if not k.passed { return "the run did not pass develop.kos" }
+  if k.request.trim() == "" { return "the run does not say which request it answers" }
+  if k.repo.trim() == "" { return "say where the Kosika checkout is (repo)" }
+  if k.work.trim() == "" { return "say where the daily runs are (work)" }
+  return ""
+}
+
+fn branch(k: Approved) -> Text { return "daily/" + k.run }
+fn tree(k: Approved) -> Text { return k.work + "/branches/" + k.run }
+
+// A command that does nothing but say why.
+fn skip(why: Text) -> Text[] {
+  let said = why.replace("\n", " ").replace("=", "-")
+  return ["-c", "kosika.skip=" + said, "--version"]
+}
+
+// The command, or a skip when the run cannot be kept or the step before failed.
+fn after(earlier: Ran, step: Text, command: Text[]) -> Text[] {
+  if earlier.exit_code != 0 { return skip(f"not {step}: the step before failed") }
+  return command
+}
+
+fn first_step(k: Approved) -> Text[] {
+  let why = not_keepable(k)
+  if why != "" { return skip(why) }
+  return ["-C", k.repo, "worktree", "add", "-b", branch(k), tree(k), "origin/studio"]
+}
+
+fn apply_step(k: Approved) -> Text[] {
+  return ["-C", tree(k), "apply", "--index", "--whitespace=nowarn", k.work + "/" + k.run + "/change.patch"]
+}
+
+fn commit_message(k: Approved) -> Text {
+  let request = if k.request.length() > 60 { k.request.slice(0, 57) + "..." } else { k.request }
+  return "daily coder: " + request + "\n\n" + k.request + "\n\nRun " + k.run + " on " + k.date + ", passed develop.kos, kept with the owner's yes."
+}
+
+fn commit_step(k: Approved) -> Text[] {
+  return ["-C", tree(k), "commit", "-q", "-m", commit_message(k)]
+}
+
+// The change as it was committed, for the training example.
+fn show_step(k: Approved) -> Text[] {
+  return ["-C", tree(k), "show", "--format=", "HEAD"]
+}
+
+fn change_of(k: Approved, committed: Ran, shown: Ran) -> Text {
+  return if not_keepable(k) == "" and committed.exit_code == 0 and shown.exit_code == 0 { shown.stdout } else { "" }
+}
+
+fn push_step(k: Approved) -> Text[] {
+  if not k.push { return skip("this run was not asked to be pushed") }
+  return ["-C", tree(k), "push", "-u", "origin", branch(k)]
+}
+
+// The training example: the request as the person's words, the change that
+// passed as the answer, in the chat form free models are trained on.
+fn example_text(k: Approved, change: Text) -> Text {
+  return "{\"messages\": [{\"role\": \"user\", \"content\": " + json_quote(k.request) + "}, {\"role\": \"assistant\", \"content\": " + json_quote(change) + "}], "
+    + "\"run\": " + json_quote(k.run) + ", \"date\": " + json_quote(k.date) + ", \"approved\": " + (if change == "" { "false" } else { "true" }) + "}\n"
+}
+
+// Where it is kept: approved/ only for a change that was committed with
+// your yes; anything else goes to not-kept/, never into training.
+fn learn_path(k: Approved, committed: Ran) -> Text {
+  let name = if good_run(k.run) { k.run } else { "bad-run" }
+  return if committed.exit_code == 0 and not_keepable(k) == "" { "approved/" + name + ".json" } else { "not-kept/" + name + ".json" }
+}
+
+fn kept(k: Approved, made: Ran, committed: Ran, pushed: Ran) -> Kept {
+  let why = not_keepable(k)
+  if why != "" { return {kept: false, branch: "", pushed: false, said: "not kept: " + why} }
+  if made.exit_code != 0 { return {kept: false, branch: "", pushed: false, said: "the branch could not be made: " + made.stderr.trim()} }
+  if committed.exit_code != 0 { return {kept: false, branch: branch(k), pushed: false, said: "the change could not be applied or committed: " + committed.stderr.trim()} }
+  let up = k.push and pushed.exit_code == 0
+  let tail = if up { ", and pushed to GitHub" } else { if k.push { ", but the push failed: " + pushed.stderr.trim() } else { "; not pushed" } }
+  return {kept: true, branch: branch(k), pushed: up, said: "kept on " + branch(k) + tail}
+}
+
+workflow main(k: Approved) -> Kept {
+  made      = execute keeper.git(args: first_step(k))
+  applied   = execute keeper.git(args: after(made, "applied", if not_keepable(k) == "" { apply_step(k) } else { skip(not_keepable(k)) }))
+  committed = execute keeper.git(args: after(applied, "committed", if not_keepable(k) == "" { commit_step(k) } else { skip(not_keepable(k)) }))
+  shown     = execute keeper.git(args: after(committed, "shown", if not_keepable(k) == "" { show_step(k) } else { skip(not_keepable(k)) }))
+  learned   = execute keeper.learn(path: learn_path(k, committed), text: example_text(k, change_of(k, committed, shown)))
+  pushed    = execute keeper.git(args: after(committed, "pushed", push_step(k)))
+  result    = kept(k, made, committed, pushed)
+  require approval
+}
+
+test "a run's name is its date and number, nothing else" {
+  expect good_run("2026-11-14-3")
+  expect good_run("2026-11-14-12")
+  expect not good_run("../../etc")
+  expect not good_run("2026-11-14-3; rm")
+  expect not good_run("main")
+}
+
+test "only a run that passed, with a request and a checkout, is kept" {
+  k: Approved = {repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "add is_even()", passed: true, date: "2026-11-14", push: false}
+  expect not_keepable(k) == ""
+  expect first_step(k) == ["-C", "C:/k", "worktree", "add", "-b", "daily/2026-11-14-3", "C:/w/branches/2026-11-14-3", "origin/studio"]
+  failed: Approved = {repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "add is_even()", passed: false, date: "2026-11-14", push: false}
+  expect first_step(failed) == ["-c", "kosika.skip=the run did not pass develop.kos", "--version"]
+  expect not_keepable({repo: "C:/k", work: "C:/w", run: "x", request: "a", passed: true, date: "", push: false}).contains("not a run's name")
+}
+
+test "each step waits on the one before, and a skipped step does nothing" {
+  k: Approved = {repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "add is_even()", passed: true, date: "2026-11-14", push: true}
+  ok: Ran = {exit_code: 0, stdout: "", stderr: ""}
+  bad: Ran = {exit_code: 128, stdout: "", stderr: "fatal: a branch named 'daily/2026-11-14-3' already exists"}
+  expect after(ok, "applied", apply_step(k)) == ["-C", "C:/w/branches/2026-11-14-3", "apply", "--index", "--whitespace=nowarn", "C:/w/2026-11-14-3/change.patch"]
+  expect after(bad, "applied", apply_step(k))[2] == "--version"
+  expect commit_step(k)[5].starts_with("daily coder: add is_even()")
+  expect commit_step(k)[5].contains("passed develop.kos, kept with the owner's yes")
+  expect push_step(k) == ["-C", "C:/w/branches/2026-11-14-3", "push", "-u", "origin", "daily/2026-11-14-3"]
+  expect push_step({repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "a", passed: true, date: "", push: false})[2] == "--version"
+}
+
+test "only a committed change becomes a training example, and the end is told truly" {
+  k: Approved = {repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "add is_even()", passed: true, date: "2026-11-14", push: false}
+  ok: Ran = {exit_code: 0, stdout: "", stderr: ""}
+  bad: Ran = {exit_code: 1, stdout: "", stderr: "error: patch failed"}
+  expect learn_path(k, ok) == "approved/2026-11-14-3.json"
+  expect change_of(k, bad, ok) == ""
+  expect change_of({repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "a", passed: false, date: "", push: false}, ok, ok) == ""
+  expect example_text(k, "").contains("\"approved\": false")
+  expect show_step(k) == ["-C", "C:/w/branches/2026-11-14-3", "show", "--format=", "HEAD"]
+  expect learn_path(k, bad) == "not-kept/2026-11-14-3.json"
+  expect kept(k, ok, ok, ok).said == "kept on daily/2026-11-14-3; not pushed"
+  expect not kept(k, ok, bad, ok).kept
+  expect kept(k, ok, bad, ok).said.contains("patch failed")
+  expect json_text(example_text(k, "+ say \"hi\"\n"), "messages.1.content") == "+ say \"hi\"\n"
+  expect json_bool(example_text(k, "x"), "approved")
+  pushed = kept({repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "a", passed: true, date: "", push: true}, ok, ok, bad)
+  expect pushed.kept and not pushed.pushed
+  expect pushed.said.contains("but the push failed")
+  expect example_text(k, change_of(k, ok, {exit_code: 0, stdout: "+ say \"hi\"\n", stderr: ""})) == "{\"messages\": [{\"role\": \"user\", \"content\": \"add is_even()\"}, {\"role\": \"assistant\", \"content\": \"+ say \\\"hi\\\"\\n\"}], \"run\": \"2026-11-14-3\", \"date\": \"2026-11-14\", \"approved\": true}\n"
+}

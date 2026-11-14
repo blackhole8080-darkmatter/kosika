@@ -1,0 +1,99 @@
+// What an agent can reach beyond its hands, written in Kosika: the MCP
+// servers it may be given and the models that may think for it. A kit names
+// them (kits.kos); kit.kos refuses any name not here. Naming a server here
+// grants nothing: a run is given a server only by `--mcp NAME=COMMAND` or
+// its environment (kosika.env, `mcp NAME: "command" pinned "manifest"`), and every action
+// that changes something still waits for the person's yes.
+//
+//   servers  NAME|what it lets the agent do|observe or execute|command that starts it
+//   models   NAME|where it answers|what it is good at
+
+export [known_servers, server_line, known_models, model_line, server_effect, mcp_environment, mcp_flags]
+
+fn server_list() -> Text[] {
+  return [
+    "files|read and list the files of one granted folder|observe|npx -y @modelcontextprotocol/server-filesystem ./granted",
+    "fetch|read a web page as text|observe|uvx mcp-server-fetch",
+    "github|read issues, pull requests and code of granted repositories|observe|npx -y @modelcontextprotocol/server-github",
+    "memory|remember and recall facts in a local knowledge graph|execute|npx -y @modelcontextprotocol/server-memory",
+    "kosika|check and test Kosika programs, with answers it is given|observe|python -m kosika.mcp_server"
+  ]
+}
+
+fn model_list() -> Text[] {
+  return [
+    "kosika-router|the Kosika model router on this computer (port 8791), which picks a free model for each ask|routing between the virtual models",
+    "kosika-coder|kosika-coder 1.5B in Ollama on this computer|Kosika code and small plans",
+    "qwen3-small|qwen3 1.7B in Ollama on this computer|quick plans that Kosika checks",
+    "groq-free|a free Groq model, with the key set on this computer|longer plans, when online"
+  ]
+}
+
+fn known_servers() -> Text[] {
+  return (for line in server_list() { line.split("|")[0] })
+}
+
+fn known_models() -> Text[] {
+  return (for line in model_list() { line.split("|")[0] })
+}
+
+fn server_line(name: Text) -> Text[] {
+  for line in server_list() {
+    let parts = line.split("|")
+    if parts[0] == name { return parts }
+  }
+  return [name, "", "", ""]
+}
+
+fn model_line(name: Text) -> Text[] {
+  for line in model_list() {
+    let parts = line.split("|")
+    if parts[0] == name { return parts }
+  }
+  return [name, "", ""]
+}
+
+fn server_effect(name: Text) -> Text {
+  return server_line(name)[2]
+}
+
+// The flags that give a run an agent's servers:
+//   kosika run FILE.kos --mcp fetch="uvx mcp-server-fetch" ...
+// `kosika connect NAME="COMMAND" --out NAME_tools.kos` writes the Kosika
+// declarations of a server's tools once, to import.
+fn mcp_flags(servers: Text[]) -> Text[] {
+  var flags: Text[] = []
+  for name in servers {
+    flags = flags.concat(["--mcp", name + "=" + server_line(name)[3]])
+  }
+  return flags
+}
+
+// The lines a kosika.env environment needs to give an agent its servers,
+// each pinned to a manifest kept beside it (servers/NAME.manifest.json, made
+// once with `kosika manifest generate`), so a server that changed what it offers
+// is refused.
+fn mcp_environment(servers: Text[]) -> Text {
+  return (for name in servers {
+    let command = server_line(name)[3]
+    f"  mcp {name}: \"{command}\" pinned \"servers/{name}.manifest.json\""
+  }).join("\n")
+}
+
+test "servers and models are known by name, with what they do" {
+  expect known_servers().contains("files")
+  expect server_effect("files") == "observe"
+  expect server_effect("memory") == "execute"
+  expect server_line("nope")[1] == ""
+  expect known_models().contains("kosika-router")
+  expect model_line("kosika-coder")[2] == "Kosika code and small plans"
+}
+
+test "a kit's servers become the run's --mcp grants" {
+  expect mcp_flags(["fetch"]) == ["--mcp", "fetch=uvx mcp-server-fetch"]
+  expect mcp_flags([]) == []
+}
+
+test "an environment line pins each server to its manifest" {
+  expect mcp_environment(["fetch"]) == "  mcp fetch: \"uvx mcp-server-fetch\" pinned \"servers/fetch.manifest.json\""
+}

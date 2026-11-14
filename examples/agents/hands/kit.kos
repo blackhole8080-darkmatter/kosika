@@ -1,0 +1,334 @@
+// An agent's kit: what one Kosika agent carries. The kits themselves are
+// written in kits.kos; this file checks them, decides what a kit allows, and
+// draws a kit as a card (cards.kos puts them on one page).
+//
+//   colour  its pointer's colour: #rrggbb or one of Kosika's named colours
+//   skills  skill notes it reads before it works (advice only: a skill never
+//           gives an agent a power it does not have)
+//   tools   the Kosika tools it may call
+//   hands   the actions its hands may do on this computer (open:NAME for each
+//           program in apps.kos); main.kos refuses
+//           any action whose hand is not in the kit, before anything is done
+//   typing  how fast it types: "steady", "fast" or "instant"
+//   patience  seconds the person must have left keyboard and mouse alone
+//           before an action that needs them; 0 does not wait
+//   servers the MCP servers it may be given (reach.kos); naming one grants
+//           nothing until a run's environment gives it
+//   model   the model that plans for it (reach.kos), or "" to only do the
+//           jobs it is given
+//
+// A kit only narrows: the person still says yes to every action, and holding
+// Escape still stops any action at once.
+
+import "pointer_look.kos"
+import "std/designs_palette.kos"
+import "apps.kos"
+import "reach.kos"
+import "mascots.kos"
+import "std/designs_motion.kos"
+
+export [Kit, KitCheck, known_hands, typing_speeds, kit_problems, kit_card, page_css, hand_for, refusal, typed_check, Typed, quiet_needed, wait_at_most]
+
+record Kit { name: Text colour: Text skills: Text[] tools: Text[] hands: Text[] typing: Text patience: Number servers: Text[] model: Text }
+record KitCheck { ok: Bool problems: Text[] colour: Text }
+record Typed { ok: Bool checked: Bool said: Text }
+
+// Every hand there is, with what it lets the agent do, as "hand=what".
+fn hand_list() -> Text[] {
+  return [
+    "look=read a window's buttons, menus and fields by their names",
+    "press=press a thing with its own pointer; your mouse stays where it is",
+    "write=type into a window, its own pointer showing where",
+    "read=read back the words in a window's text field",
+    "move=glide your mouse",
+    "click=move your mouse and click",
+    "type=type where the keyboard is",
+    "keys=press Enter, Tab, Escape or Backspace",
+    "browse=use a Chrome of its own, none of your sign-ins"
+  ].concat(app_hands())
+}
+
+fn known_hands() -> Text[] {
+  return (for pair in hand_list() { pair.split("=")[0] })
+}
+
+fn hand_meaning(hand: Text) -> Text {
+  for pair in hand_list() {
+    let parts = pair.split("=")
+    if parts[0] == hand { return parts.drop(1).join("=") }
+  }
+  return "not a hand Kosika knows"
+}
+
+// "speed=letters a second=what it means"
+fn typing_list() -> Text[] {
+  return [
+    "steady=15=a letter at a time, easy to watch",
+    "fast=60=four times quicker, still letter by letter",
+    "instant=all=the whole text at once, through the clipboard, which is put back after"
+  ]
+}
+
+fn typing_speeds() -> Text[] {
+  return (for row in typing_list() { row.split("=")[0] })
+}
+
+fn typing_row(speed: Text) -> Text[] {
+  for row in typing_list() {
+    let parts = row.split("=")
+    if parts[0] == speed { return parts }
+  }
+  return [speed, "?", "not a speed Kosika knows"]
+}
+
+fn safe_name(name: Text) -> Bool {
+  if name.length() == 0 or name.length() > 32 { return false }
+  for ch in name.lower().chars() {
+    if "abcdefghijklmnopqrstuvwxyz0123456789-_".index_of(ch).or(-1) < 0 { return false }
+  }
+  return true
+}
+
+fn repeated(items: Text[]) -> Text[] {
+  var seen: Text[] = []
+  var twice: Text[] = []
+  for item in items {
+    if seen.contains(item) and not twice.contains(item) { twice = twice.append(item) }
+    seen = seen.append(item)
+  }
+  return twice
+}
+
+fn kit_problems(k: Kit) -> Text[] {
+  var out: Text[] = []
+  let all_hands = known_hands().join(", ")
+  let all_speeds = typing_speeds().join(", ")
+  if not safe_name(k.name) {
+    out = out.append(f"the name '{k.name}' should be 1 to 32 letters, digits, - or _")
+  }
+  for hand in k.hands {
+    if not known_hands().contains(hand) {
+      out = out.append(f"'{hand}' is not a hand; the hands are {all_hands}")
+    }
+  }
+  for server in k.servers {
+    if not known_servers().contains(server) {
+      out = out.append(f"'{server}' is not a server; the servers are {known_servers().join(\", \")}")
+    }
+  }
+  if k.model != "" and not known_models().contains(k.model) {
+    out = out.append(f"'{k.model}' is not a model; the models are {known_models().join(\", \")}")
+  }
+  for twice in repeated(k.hands).concat(repeated(k.skills)).concat(repeated(k.tools)).concat(repeated(k.servers)) {
+    out = out.append(f"'{twice}' is listed twice")
+  }
+  if not typing_speeds().contains(k.typing) {
+    out = out.append(f"typing '{k.typing}' is not a speed; use {all_speeds}")
+  }
+  if k.patience < 0 or k.patience > 30 or k.patience != k.patience.floor() {
+    out = out.append(f"patience {k.patience.to_text()} should be a whole number of seconds from 0 to 30")
+  }
+  let asked = k.colour.trim().lower()
+  if asked != "" and asked != "auto" and colour_for(k.name, asked) == hue_for(k.name) and asked != hue_for(k.name) {
+    out = out.append(f"the colour '{k.colour}' is not #rrggbb or a Kosika colour, or is too dark to see; the agent's own hue is used")
+  }
+  return out
+}
+
+workflow check(k: Kit) -> KitCheck {
+  problems = kit_problems(k)
+  result = {ok: problems.length() == 0, problems: problems, colour: colour_for(k.name, k.colour)}
+}
+
+// ---- What a kit allows ----------------------------------------------------
+
+// The hand a hands.py action needs: "open notepad" needs "open:notepad",
+// "click-on" needs "click", "key" needs "keys". "where", and reading or
+// keeping the hands' own memory of past writes, need none ("").
+fn hand_for(action: Text[]) -> Text {
+  if action.length() == 0 { return "?" }
+  let what = action[0]
+  if ["where", "memory", "remember", "skip"].contains(what) { return "" }
+  if what == "open" { return "open:" + action.drop(1).take(1).join("") }
+  if what == "move-to" { return "move" }
+  if what == "click-on" { return "click" }
+  if what == "type-into" { return "type" }
+  if what == "key" { return "keys" }
+  return what
+}
+
+// ---- Waiting while the person works --------------------------------------
+
+// The longest the hands wait for the person to stop, in seconds, before they
+// give up and do nothing.
+fn wait_at_most() -> Number { return 60 }
+
+// Whether an action needs the person to have left keyboard and mouse alone
+// first: one that types, clicks, moves the mouse or brings a window to the
+// front would take them from under the person's hands. Looking, reading and
+// pressing through Windows' accessibility (the agent's own pointer, the
+// mouse not moved) do not, so they never wait.
+fn quiet_needed(action: Text[]) -> Bool {
+  if action.length() == 0 { return false }
+  return ["write", "type-into", "type", "key", "click", "click-on", "move", "move-to", "open", "clear"].contains(action[0])
+}
+
+// Why the agent may not do the action, or "" when its kit allows it.
+fn refusal(k: Kit, action: Text[]) -> Text {
+  let hand = hand_for(action)
+  if hand == "" { return "" }
+  if k.hands.length() == 0 { return f"{k.name} has no kit in kits.kos, so no hands" }
+  if not k.hands.contains(hand) { return f"{k.name}'s kit does not give it the '{hand}' hand" }
+  return ""
+}
+
+// Whether words typed are really in the field, as read back afterwards.
+// Line ends are made alike first (Windows writes them as \r\n). A field that
+// could not be read is said so: nothing is claimed that was not seen.
+fn typed_check(typed: Text, field: Text, read_ok: Bool) -> Typed {
+  if not read_ok {
+    return {ok: true, checked: false, said: "typed, but the field could not be read back, so it is not checked"}
+  }
+  let flat_typed = typed.replace("\r\n", "\n").replace("\r", "\n")
+  let flat_field = field.replace("\r\n", "\n").replace("\r", "\n")
+  if flat_field.contains(flat_typed) {
+    return {ok: true, checked: true, said: f"checked: all {typed.length()} letters are in the field"}
+  }
+  return {ok: false, checked: true, said: "checked: the words are NOT all in the field; look before going on"}
+}
+
+// ---- The kit drawn as a card, in Kosika Designs' Dark Matter look --------
+
+fn chips(items: Text[], kind: Text, empty: Text) -> Text {
+  if items.length() == 0 { return f"<span class=\"chip none\">{empty}</span>" }
+  return (for item in items {
+    let tip = if kind == "hand" { hand_meaning(item) } else { item }
+    f"<span class=\"chip {kind}\" title=\"{escaped_text(tip)}\">{escaped_text(item)}</span>"
+  }).join("")
+}
+
+fn kit_card(k: Kit) -> Text {
+  let colour = colour_for(k.name, k.colour)
+  let pointer = pointer_drawn({name: tag_for(k.name), scale: 1}, colour, "idle").svg
+  let typing = pointer_drawn({name: tag_for(k.name), scale: 1}, colour, "typing").svg
+  let row = typing_row(k.typing)
+  let rate = if row[1] == "all" { "all at once" } else { row[1] + " letters a second" }
+  let level = if k.typing == "instant" { 100 } else { if k.typing == "fast" { 72 } else { 18 } }
+  let pet = mascot_svg(k.name, colour, "idle", 112)
+  let m = mascot_for(k.name)
+  let kind = if m.creature == "spark" { "" } else { "the " + m.creature + " · " }
+  let waits = if k.patience == 0 { "does not wait for you" } else { f"waits until you have stopped for {k.patience.to_text()} s" }
+  return f"<section class=\"card\" style=\"--c:{colour}\">"
+    + "<div class=\"glow\"></div>"
+    + f"<div class=\"stage\"><div class=\"pet\">{pet}</div><div class=\"fly\">{pointer}</div><div class=\"fly typing\">{typing}</div></div>"
+    + f"<h2>{escaped_text(tag_for(k.name))}<small>{escaped_text(kind)}{escaped_text(k.name)}</small></h2>"
+    + f"<p class=\"motto\">{escaped_text(mascot_for(k.name).line)}</p>"
+    + f"<p class=\"swatch\"><i></i>{colour}</p>"
+    + "<h3>Hands</h3><div class=\"chips\">" + chips(k.hands, "hand", "no hands: it only thinks") + "</div>"
+    + "<h3>Skills</h3><div class=\"chips\">" + chips(k.skills, "skill", "no skills yet") + "</div>"
+    + "<h3>Tools</h3><div class=\"chips\">" + chips(k.tools, "tool", "no tools") + "</div>"
+    + "<h3>Servers</h3><div class=\"chips\">" + chips(k.servers, "server", "no MCP servers") + "</div>"
+    + "<h3>Model</h3><div class=\"chips\">" + chips(if k.model == "" { [] } else { [k.model] }, "model", "no model: only does jobs it is given") + "</div>"
+    + f"<h3>Typing</h3><div class=\"speed\"><b style=\"--to:{level}%\"></b></div>"
+    + f"<p class=\"rate\"><strong>{escaped_text(k.typing)}</strong> · {rate} · {escaped_text(row[2])}</p>"
+    + f"<p class=\"rate\">{waits}</p>"
+    + "</section>"
+}
+
+fn page_css() -> Text {
+  return look_vars()
+    + "*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(1200px 600px at 10% -10%,color-mix(in srgb,var(--think) 22%,var(--bg)) 0,transparent 60%),radial-gradient(900px 500px at 110% 10%,color-mix(in srgb,var(--amber) 22%,var(--bg)) 0,transparent 55%),var(--bg);color:var(--ink);font:15px/1.5 'Segoe UI',Inter,system-ui,sans-serif;padding:32px 16px}"
+    + "header{max-width:1180px;margin:0 auto 26px}h1{margin:0;font-size:clamp(26px,4vw,40px);letter-spacing:-.02em;background:linear-gradient(90deg,var(--amber),var(--gold) 40%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}"
+    + "header p{margin:6px 0 0;color:var(--soft);max-width:720px}"
+    + ".grid{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}"
+    + ".card{position:relative;overflow:hidden;border-radius:22px;padding:22px;background:linear-gradient(160deg,color-mix(in srgb,var(--c) 16%,var(--panel)),var(--panel) 55%);border:1px solid color-mix(in srgb,var(--c) 45%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--white) 3%,transparent) inset,0 18px 50px -20px color-mix(in srgb,var(--c) 60%,transparent);animation:rise .7s both}"
+    + ".card:nth-child(2){animation-delay:.12s}.card:nth-child(3){animation-delay:.24s}.card:nth-child(4){animation-delay:.36s}"
+    + ".glow{position:absolute;inset:-40%;background:conic-gradient(from 0deg,transparent,color-mix(in srgb,var(--c) 30%,transparent),transparent 30%);animation:spin 9s linear infinite;pointer-events:none}"
+    + ".stage{position:relative;height:150px;border-radius:14px;background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--white) 2%,transparent) 0 1px,transparent 1px 22px),repeating-linear-gradient(0deg,color-mix(in srgb,var(--white) 2%,transparent) 0 1px,transparent 1px 22px),color-mix(in srgb,var(--panel) 40%,var(--bg));margin-bottom:14px;overflow:hidden}"
+    + ".fly{position:absolute;left:4%;top:0;animation:fly 6s ease-in-out infinite}.fly.typing{opacity:0;animation:fly 6s ease-in-out infinite,swap 6s steps(1) infinite}.fly:not(.typing){animation:fly 6s ease-in-out infinite,swap 6s steps(1) infinite reverse}"
+    + "h2{position:relative;margin:0;font-size:22px}h3{position:relative;margin:14px 0 6px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}"
+    + ".swatch{position:relative;margin:2px 0 0;color:var(--soft);font-family:ui-monospace,Consolas,monospace;font-size:12px;display:flex;gap:8px;align-items:center}.swatch i{width:14px;height:14px;border-radius:50%;background:var(--c);box-shadow:0 0 12px var(--c)}"
+    + ".chips{position:relative;display:flex;flex-wrap:wrap;gap:6px}.chip{padding:3px 10px;border-radius:999px;font-size:12.5px;font-weight:600;border:1px solid;cursor:default}"
+    + ".chip.hand{color:var(--c);border-color:color-mix(in srgb,var(--c) 60%,transparent);background:color-mix(in srgb,var(--c) 14%,transparent)}"
+    + ".chip.skill{color:var(--violet);border-color:color-mix(in srgb,var(--violet) 40%,transparent);background:color-mix(in srgb,var(--violet) 9%,transparent)}.chip.tool{color:var(--sky);border-color:color-mix(in srgb,var(--sky) 40%,transparent);background:color-mix(in srgb,var(--sky) 9%,transparent)}.chip.server{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 40%,transparent);background:color-mix(in srgb,var(--gold) 9%,transparent)}.chip.model{color:var(--rose);border-color:color-mix(in srgb,var(--rose) 40%,transparent);background:color-mix(in srgb,var(--rose) 9%,transparent)}.chip.none{color:var(--soft);border-style:dashed;border-color:color-mix(in srgb,var(--white) 19%,transparent)}"
+    + ".speed{position:relative;height:8px;border-radius:9px;background:color-mix(in srgb,var(--white) 7%,transparent);overflow:hidden}.speed b{display:block;height:100%;width:var(--to);border-radius:9px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 40%,transparent),var(--c));box-shadow:0 0 14px var(--c);transform-origin:left;animation:fill 1.6s cubic-bezier(.2,.8,.2,1) both .4s}"
+    + ".rate{position:relative;margin:8px 0 0;color:var(--soft);font-size:13px}.rate strong{color:var(--ink)}"
+    + "@keyframes fly{0%,100%{transform:translate(0,0)}30%{transform:translate(110px,30px)}60%{transform:translate(30px,52px)}80%{transform:translate(130px,10px)}}"
+    + "@keyframes swap{0%{opacity:1}50%{opacity:0}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fill{from{transform:scaleX(0)}}@keyframes rise{from{opacity:0;transform:translateY(16px)}}"
+    + "h2 small{margin-left:10px;font-size:13px;font-weight:600;color:var(--c);letter-spacing:.02em}.motto{position:relative;margin:2px 0 0;color:var(--soft);font-size:13px;font-style:italic}"
+    + ".pet{position:absolute;right:8px;bottom:2px}"
+    + mascot_css()
+    + "@media (prefers-reduced-motion:reduce){*{animation:none!important}}"
+}
+
+test "a good kit has no problems, and its colour is the one it asked for" {
+  k: Kit = {name: "coder-1", colour: "pink", skills: ["notes"], tools: ["hand"], hands: ["look", "press"], typing: "fast", patience: 3, servers: [], model: ""}
+  expect kit_problems(k) == []
+  expect colour_for(k.name, k.colour) == "#ff3ea5"
+}
+
+test "an unknown hand, a bad speed, a repeat and a dark colour are all told" {
+  k: Kit = {name: "x y", colour: "#050505", skills: [], tools: [], hands: ["look", "fly", "look"], typing: "warp", patience: 2.5, servers: [], model: ""}
+  said = kit_problems(k).join("\n")
+  expect said.contains("'fly' is not a hand")
+  expect said.contains("'look' is listed twice")
+  expect said.contains("typing 'warp'")
+  expect said.contains("too dark")
+  expect said.contains("the name 'x y'")
+  expect said.contains("patience 2.5")
+}
+
+test "a card shows the agent's colour, its hands and how fast it types" {
+  k: Kit = {name: "scout", colour: "mint", skills: [], tools: ["web"], hands: ["browse"], typing: "instant", patience: 0, servers: [], model: ""}
+  html = kit_card(k)
+  expect html.contains("--c:#4fe0a6")
+  expect html.contains("browse") and html.contains("all at once")
+  expect html.contains("no skills yet")
+  expect html.contains("does not wait for you")
+}
+
+test "only an action that takes the keyboard, the mouse or the front window waits for the person" {
+  expect quiet_needed(["write", "notepad", "hi"])
+  expect quiet_needed(["open", "notepad"])
+  expect quiet_needed(["click"])
+  expect not quiet_needed(["press", "notepad", "View"])
+  expect not quiet_needed(["read", "notepad"])
+  expect not quiet_needed(["look", "notepad"])
+  expect not quiet_needed([])
+}
+
+test "each action needs its hand, and a kit without it is refused" {
+  k: Kit = {name: "coder-2", colour: "sky", skills: [], tools: [], hands: ["look", "press"], typing: "steady", patience: 3, servers: [], model: ""}
+  expect hand_for(["open", "notepad"]) == "open:notepad"
+  expect hand_for(["click-on", "notepad", "Edit"]) == "click"
+  expect refusal(k, ["press", "notepad", "View"]) == ""
+  expect refusal(k, ["where"]) == ""
+  expect refusal(k, ["memory"]) == "" and refusal(k, ["remember", "notepad keys 60 exact"]) == ""
+  expect refusal(k, ["write", "notepad", "hi"]).contains("'write' hand")
+  expect refusal(k, ["open", "calculator"]).contains("'open:calculator'")
+  nobody: Kit = {name: "x", colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: [], model: ""}
+  expect refusal(nobody, ["look", "notepad"]).contains("no hands")
+}
+
+test "typing is checked against what the field really holds" {
+  expect typed_check("hi\nthere", "old words hi\r\nthere", true).ok
+  bad = typed_check("hello", "helo", true)
+  expect not bad.ok and bad.checked
+  unread = typed_check("hello", "", false)
+  expect unread.ok and not unread.checked
+  expect unread.said.contains("not checked")
+}
+
+test "a kit names only servers and a model Kosika knows" {
+  k: Kit = {name: "helper", colour: "lime", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: ["files", "mailbox", "files"], model: "gpt-paid"}
+  said = kit_problems(k).join("\n")
+  expect said.contains("'mailbox' is not a server")
+  expect said.contains("'files' is listed twice")
+  expect said.contains("'gpt-paid' is not a model")
+  html = kit_card({name: "helper", colour: "lime", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: ["fetch"], model: "kosika-coder"})
+  expect html.contains("chip server") and html.contains("kosika-coder")
+}
+
+test "the cards' motion passes Kosika Designs' motion check" {
+  expect motion_check(page_css()) == []
+}

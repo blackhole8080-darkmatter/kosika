@@ -1,0 +1,156 @@
+// The live board of all the agents, drawn by Kosika: one card for every
+// agent with a kit, in its own colour, with its pointer, what it did last
+// and how that ended, how many of its actions were done, and whether it is
+// waiting for your yes right now. Under the cards, the latest actions.
+//
+//   python diary.py traces --board --asks FOLDER --watch     keeps board.html fresh
+//
+// diary.py hands over the actions from the traces and the asks waiting in
+// the --approve-in folder; everything on the board is decided here.
+
+import "diary.kos"
+import "kit.kos"
+import "kits.kos"
+import "pointer_look.kos"
+import "mascots.kos"
+import "std/designs_motion.kos"
+
+record Team { title: Text entries: Entry[] waiting: Text[] }
+
+// Is this agent's action among the asks waiting for an answer?
+fn is_waiting(name: Text, waiting: Text[]) -> Bool {
+  let mark = "\"--agent\", \"" + name + "\""
+  for says in waiting {
+    if says.contains(mark) { return true }
+  }
+  return false
+}
+
+fn mine(entries: Entry[], name: Text) -> Entry[] {
+  let agents = agents_of(entries)
+  var found: Entry[] = []
+  var at = 0
+  for e in entries {
+    if agents[at] == name { found = found.append(e) }
+    at += 1
+  }
+  return found
+}
+
+fn status(done: Entry[], waiting: Bool) -> Text {
+  if waiting { return "<b class=\"pill wait\">waiting for your yes</b>" }
+  if done.length() == 0 { return "<b class=\"pill idle\">has not acted yet</b>" }
+  let last = done[done.length() - 1]
+  let end = ending(last)
+  let kind = if end == "done" { "ok" } else { "no" }
+  return f"<b class=\"pill {kind}\">last: {end}</b>"
+}
+
+fn team_card(k: Kit, entries: Entry[], waiting: Text[]) -> Text {
+  let colour = colour_for(k.name, k.colour)
+  let acted = mine(entries, k.name)
+  let asks = is_waiting(k.name, waiting)
+  let state = if asks { "press" } else { "idle" }
+  let pointer = pointer_drawn({name: tag_for(k.name), scale: 1}, colour, state).svg
+  var done = 0
+  for e in acted {
+    if ending(e) == "done" { done += 1 }
+  }
+  let last = if acted.length() == 0 { "nothing yet" } else {
+    let e = acted[acted.length() - 1]
+    f"<code>{escaped_text(shown_action(e))}</code> at {escaped_text(e.at)}"
+  }
+  let waits = if asks { " asking" } else { "" }
+  let mood = if asks { "waiting" } else { if acted.length() == 0 { "idle" } else { if ending(acted[acted.length() - 1]) == "done" { "done" } else { "failed" } } }
+  let pet = mascot_svg(k.name, colour, mood, 96)
+  let m = mascot_for(k.name)
+  let kind = if m.creature == "spark" { "" } else { "the " + m.creature + " · " }
+  return f"<section class=\"card{waits}\" style=\"--c:{colour}\"><div class=\"glow\"></div>"
+    + f"<div class=\"stage\"><div class=\"pet\">{pet}</div><div class=\"walk\">{pointer}</div></div>"
+    + f"<h2>{escaped_text(tag_for(k.name))}<small>{escaped_text(kind)}{escaped_text(k.name)}</small></h2>{status(acted, asks)}"
+    + f"<p class=\"last\">{last}</p>"
+    + f"<p class=\"rate\"><strong>{done.to_text()}</strong> done · <strong>{(acted.length() - done).to_text()}</strong> not done · {k.hands.length().to_text()} hands · {k.servers.length().to_text()} servers · types {escaped_text(k.typing)}</p>"
+    + "</section>"
+}
+
+fn latest(entries: Entry[], count: Number) -> Text {
+  let agents = agents_of(entries)
+  let from = if entries.length() > count { entries.length() - count } else { 0 }
+  var rows: Text[] = []
+  var at = 0
+  for e in entries {
+    if at >= from {
+      let name = if agents[at] == "" { "someone" } else { agents[at] }
+      let mini = mascot_svg(name, colour_for(name, kit_named(name).colour), if ending(e) == "done" { "idle" } else { "failed" }, 26)
+      rows = [f"<li style=\"--c:{colour_for(name, kit_named(name).colour)}\"><time>{escaped_text(e.at)}</time>{mini}<b>{escaped_text(tag_for(name))}</b><code>{escaped_text(shown_action(e))}</code><em>{ending(e)}</em></li>"].concat(rows)
+    }
+    at += 1
+  }
+  if rows.length() == 0 { return "<p class=\"quiet\">No actions yet.</p>" }
+  return "<ol class=\"ticker\">" + rows.join("") + "</ol>"
+}
+
+fn team_page(t: Team) -> Text {
+  let cards = (for k in kits() { team_card(k, t.entries, t.waiting) }).join("")
+  let asking = if t.waiting.length() == 0 { "Nothing is waiting for you." } else { f"{t.waiting.length().to_text()} action(s) waiting for your yes." }
+  return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    + "<meta http-equiv=\"refresh\" content=\"3\">"
+    + f"<title>{escaped_text(t.title)}</title><style>{page_css()}{team_css()}</style></head><body>"
+    + f"<header><h1>{escaped_text(t.title)}</h1><p>{asking}</p></header>"
+    + f"<div class=\"grid\">{cards}</div>"
+    + f"<h3 class=\"head\">Latest actions</h3>{latest(t.entries, 8)}</body></html>"
+}
+
+fn team_css() -> Text {
+  return ".stage{height:110px}.walk{position:absolute;left:4%;top:0;animation:fly 6s ease-in-out infinite}"
+    + ".pill{position:relative;display:inline-block;margin:6px 0 0;padding:3px 11px;border-radius:999px;font-size:12.5px}"
+    + ".pill.ok{color:var(--mint);background:color-mix(in srgb,var(--mint) 11%,transparent)}.pill.no{color:var(--rose);background:color-mix(in srgb,var(--rose) 11%,transparent)}.pill.idle{color:var(--soft);background:color-mix(in srgb,var(--white) 6%,transparent)}"
+    + ".pill.wait{color:var(--bg);background:linear-gradient(90deg,var(--amber),var(--gold));animation:beat 1.2s ease-in-out infinite}"
+    + ".card.asking{border-color:var(--amber);box-shadow:0 0 0 2px color-mix(in srgb,var(--amber) 40%,transparent),0 18px 60px -16px color-mix(in srgb,var(--amber) 80%,transparent)}"
+    + ".last{position:relative;margin:10px 0 0;color:var(--soft);font-size:13.5px}.last code,.ticker code{font-family:ui-monospace,Consolas,monospace;color:var(--ink);background:color-mix(in srgb,var(--white) 6%,transparent);padding:1px 7px;border-radius:7px}"
+    + "h3.head{max-width:1180px;margin:30px auto 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}"
+    + ".ticker{max-width:1180px;margin:0 auto;padding:0;list-style:none}.ticker li{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:9px 14px;margin:0 0 8px;border-radius:12px;background:var(--panel);border-left:3px solid var(--c);animation:rise .5s both}"
+    + ".ticker time{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--soft)}.ticker b{color:var(--c)}.ticker .mz{flex:none}.ticker em{font-style:normal;font-size:12px;color:var(--soft)}"
+    + ".quiet{max-width:1180px;margin:0 auto;color:var(--soft)}"
+    + "@keyframes beat{50%{transform:scale(1.06)}}"
+}
+
+workflow board(t: Team) -> Page {
+  html = team_page(t)
+  result: Page = {html: html}
+}
+
+test "every agent with a kit gets a card, acted or not" {
+  html = team_page({title: "Agents", entries: [], waiting: []})
+  expect (for k in kits() { if html.contains(k.name + "</small></h2>") { "" } else { k.name } }).join("") == ""
+  expect html.contains("has not acted yet")
+  expect html.contains("Nothing is waiting for you.")
+}
+
+test "an agent waiting for a yes is shown as asking" {
+  waiting = ["note / typed: hand {\"args\": [\"hands.py\", \"--agent\", \"coder-1\", \"write\", \"notepad\", \"hi\"]}"]
+  expect is_waiting("coder-1", waiting)
+  expect not is_waiting("coder-2", waiting)
+  html = team_page({title: "Agents", entries: [], waiting: waiting})
+  expect html.contains("waiting for your yes")
+  expect html.contains("1 action(s) waiting")
+  expect html.contains("Nova the fox, waiting")
+  expect html.contains("Quark the owl, idle")
+}
+
+test "a card says what the agent did last and how it ended" {
+  e: Entry = {run: 1, at: "07:10:00", job: "press", step: "press", args: ["hands.py", "--agent", "coder-2", "press", "notepad", "Edit"], exit_code: 0, said: "", approved_by: "aryan"}
+  html = team_page({title: "Agents", entries: [e], waiting: []})
+  expect html.contains("last: done")
+  expect html.contains("Quark the owl, done")
+  expect html.contains("press notepad Edit</code> at 07:10:00")
+}
+
+test "the board's and the diary's motion pass Kosika Designs' motion check" {
+  expect motion_check(team_page({title: "Agents", entries: [], waiting: []})) == []
+  expect motion_check(diary_page({title: "Diary", entries: []})) == []
+}
+
+test "every colour on the cards and the board is named from Kosika Designs' palette" {
+  expect raw_colours(page_css() + team_css() + mascot_css()) == []
+}

@@ -1,0 +1,358 @@
+// Motion for Kosika Designs and agents: easing curves, real springs, ready
+// moves, staggering, scroll reveals, kinetic type, lines that draw
+// themselves, particle fields, and a check that says when motion will feel
+// janky, too fast, or forgets people who asked for less.
+//
+//   import "std/designs_motion.kos"
+//   motion_spring(170, 14, 1).css        // a CSS linear() easing that really springs
+//   motion_moves(["rise", "glow"])        // the @keyframes for named moves
+//   motion_check(css)                     // what is wrong with some motion, or []
+//
+// Everything here is plain CSS and SVG, so it runs in any browser with no
+// script, and stops for anyone whose computer asks for reduced motion.
+
+export [Spring, motion_eases, motion_ease, motion_spring, motion_move_names, motion_moves, motion_use, motion_stagger, motion_reveal, motion_kinetic, motion_draw, motion_particles, motion_check, motion_quiet, motion_page]
+
+record Spring { css: Text ms: Number overshoot: Number }
+
+// ---- Easing --------------------------------------------------------------
+
+// "name=css=when to use it"
+fn motion_ease_list() -> Text[] {
+  return [
+    "out=cubic-bezier(.16,1,.3,1)=things arriving: fast, then a long soft landing",
+    "in=cubic-bezier(.7,0,.84,0)=things leaving: slow start, gone quickly",
+    "in-out=cubic-bezier(.65,0,.35,1)=moving from one place to another on screen",
+    "back=cubic-bezier(.34,1.56,.64,1)=a small playful overshoot, for buttons and badges",
+    "snap=cubic-bezier(.2,.9,.1,1)=tight and quick, for menus and toggles",
+    "linear=linear=only for things that never stop: spinning, scrolling ticker, gradients"
+  ]
+}
+
+fn motion_eases() -> Text[] {
+  return (for row in motion_ease_list() { row.split("=")[0] })
+}
+
+fn motion_ease(name: Text) -> Text {
+  for row in motion_ease_list() {
+    let parts = row.split("=")
+    if parts[0] == name { return parts[1] }
+  }
+  return "cubic-bezier(.16,1,.3,1)"
+}
+
+fn motion_num(v: Number) -> Text {
+  return ((v * 1000).round() / 1000).to_text()
+}
+
+// Where a spring is at time t (seconds), released from 0 towards 1.
+fn motion_spring_at(stiffness: Number, damping: Number, mass: Number, t: Number) -> Number {
+  let w = (stiffness / mass).sqrt()
+  let zeta = damping / (2 * (stiffness * mass).sqrt())
+  if zeta < 1 {
+    let wd = w * (1 - zeta * zeta).sqrt()
+    // .cos() and .sin() take degrees.
+    let angle = wd * t * 180 / 3.141592653589793
+    return 1 - (0 - zeta * w * t).exp() * (angle.cos() + zeta * w / wd * angle.sin())
+  }
+  return 1 - (0 - w * t).exp() * (1 + w * t)
+}
+
+// A real damped spring, worked out here and written as a CSS linear()
+// easing, with how long it takes to settle. Stiff springs are quick; little
+// damping bounces more. (170, 26, 1) barely overshoots; (170, 10, 1) bounces.
+fn motion_spring(stiffness: Number, damping: Number, mass: Number) -> Spring {
+  let k = stiffness.clamp(1, 2000)
+  let d = damping.clamp(0.5, 200)
+  let m = mass.clamp(0.1, 20)
+  // Find when it settles: the last moment it is more than 0.2% away.
+  var settled = 0
+  var peak = 0
+  var step = 0
+  for i in (0).until(240) {
+    let t = i / 60
+    let at = motion_spring_at(k, d, m, t)
+    if at > peak { peak = at }
+    if (at - 1).abs() > 0.002 { settled = t }
+    step += 1
+  }
+  let span = if settled < 0.1 { 0.1 } else { settled + 1 / 60 }
+  var points: Text[] = []
+  for i in (0).until(33) {
+    let t = span * i / 32
+    let at = if i == 32 { 1 } else { motion_spring_at(k, d, m, t) }
+    points = points.append(motion_num(at))
+  }
+  return {css: "linear(" + points.join(", ") + ")", ms: (span * 1000).round(), overshoot: ((peak - 1).clamp(0, 10) * 1000).round() / 10}
+}
+
+// ---- Moves ---------------------------------------------------------------
+
+// "name=what it does=@keyframes body"
+fn motion_move_list() -> Text[] {
+  return [
+    "rise=comes up into place, fading in=from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}",
+    "pop=grows from small with a little bounce=0%{opacity:0;transform:scale(.6)}60%{opacity:1;transform:scale(1.06)}to{opacity:1;transform:scale(1)}",
+    "blur-in=comes into focus=from{opacity:0;filter:blur(12px);transform:scale(1.04)}to{opacity:1;filter:blur(0);transform:none}",
+    "float=drifts gently up and down=0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}",
+    "glow=breathes a soft glow in its colour=0%,100%{filter:drop-shadow(0 0 4px var(--c,#ff8a4c))}50%{filter:drop-shadow(0 0 18px var(--c,#ff8a4c))}",
+    "spin=turns around once=to{transform:rotate(360deg)}",
+    "wiggle=a quick shake, for attention=0%,100%{transform:rotate(0)}20%{transform:rotate(-7deg)}40%{transform:rotate(6deg)}60%{transform:rotate(-4deg)}80%{transform:rotate(2deg)}",
+    "shimmer=a sheen sliding across=from{background-position:-200% 0}to{background-position:200% 0}",
+    "wipe=revealed from left to right=from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}",
+    "draw=a line drawing itself=from{stroke-dashoffset:1}to{stroke-dashoffset:0}",
+    "orbit=goes round a centre=from{transform:rotate(0) translateX(var(--r,40px)) rotate(0)}to{transform:rotate(360deg) translateX(var(--r,40px)) rotate(-360deg)}",
+    "drift=floats up and fades, like a spark=0%{opacity:0;transform:translate(0,0) scale(.6)}20%{opacity:1}100%{opacity:0;transform:translate(var(--dx,10px),-60px) scale(1)}"
+  ]
+}
+
+fn motion_move_names() -> Text[] {
+  return (for row in motion_move_list() { row.split("=")[0] })
+}
+
+fn motion_move_row(name: Text) -> Text[] {
+  for row in motion_move_list() {
+    let parts = row.split("=")
+    if parts[0] == name { return [parts[0], parts[1], parts.drop(2).join("=")] }
+  }
+  return []
+}
+
+// The @keyframes for named moves (unknown names are left out), with the
+// reduced-motion guard once at the end.
+fn motion_moves(names: Text[]) -> Text {
+  var css: Text[] = []
+  for name in names {
+    let row = motion_move_row(name)
+    if row.length() == 3 { css = css.append("@keyframes mo-" + name + "{" + row[2] + "}") }
+  }
+  return css.join("") + motion_quiet()
+}
+
+// A CSS rule that plays a move on a selector: motion_use(".card", "rise", "out", 700)
+fn motion_use(selector: Text, move: Text, ease: Text, ms: Number) -> Text {
+  let forever = ["float", "glow", "spin", "shimmer", "orbit", "drift"].contains(move)
+  let times = if forever { " infinite" } else { " both" }
+  return selector + "{animation:mo-" + move + " " + ms.round().to_text() + "ms " + motion_ease(ease) + times + "}"
+}
+
+// Each of the first `count` children starts `gap` ms after the one before.
+fn motion_stagger(selector: Text, count: Number, gap: Number) -> Text {
+  return (for i in (1).until(count + 1) {
+    selector + ":nth-child(" + i.to_text() + "){animation-delay:" + ((i - 1) * gap).round().to_text() + "ms}"
+  }).join("")
+}
+
+// Plays a move as the thing scrolls into view, in browsers that can tie
+// animation to scrolling; elsewhere it simply plays once.
+fn motion_reveal(selector: Text, move: Text) -> Text {
+  return motion_use(selector, move, "out", 800)
+    + "@supports (animation-timeline:view()){" + selector + "{animation-timeline:view();animation-range:entry 0% cover 35%;animation-duration:auto}}"
+}
+
+fn motion_escaped(text: Text) -> Text {
+  return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+// Words that move letter by letter: "rise", "pop", "blur-in" or "wave".
+// Each letter is a span with --i, its place; the CSS comes with it.
+fn motion_kinetic(text: Text, kind: Text) -> Text {
+  var spans: Text[] = []
+  var i = 0
+  for ch in text.chars() {
+    let shown = if ch == " " { "&nbsp;" } else { motion_escaped(ch) }
+    spans = spans.append("<span style=\"--i:" + i.to_text() + "\">" + shown + "</span>")
+    i += 1
+  }
+  let move = if kind == "wave" { "float" } else { if motion_move_names().contains(kind) { kind } else { "rise" } }
+  let timing = if kind == "wave" { "1.6s ease-in-out infinite" } else { "700ms " + motion_ease("out") + " both" }
+  let style = "<style>.mo-kin{display:inline-block;white-space:nowrap}.mo-kin span{display:inline-block;animation:mo-" + move + " " + timing + ";animation-delay:calc(var(--i) * 45ms)}"
+    + motion_moves([move]) + "</style>"
+  return style + "<span class=\"mo-kin\" aria-label=\"" + motion_escaped(text) + "\">" + spans.join("") + "</span>"
+}
+
+// An SVG path that draws itself, then stays drawn.
+fn motion_draw(d: Text, colour: Text, width: Number, ms: Number) -> Text {
+  return "<path d=\"" + motion_escaped(d) + "\" pathLength=\"1\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"" + width.to_text()
+    + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-dasharray=\"1\" style=\"animation:mo-draw " + ms.round().to_text() + "ms " + motion_ease("in-out") + " both\"/>"
+}
+
+// A field of drifting sparks inside a w by h box, the same for the same seed.
+fn motion_particles(count: Number, colours: Text[], w: Number, h: Number, seed: Number) -> Text {
+  var out: Text[] = []
+  var s = seed.abs().floor() % 2147483647 + 1
+  for i in (0).until(count.clamp(0, 200)) {
+    s = (s * 48271) % 2147483647
+    let x = (s % 1000) / 1000 * w
+    s = (s * 48271) % 2147483647
+    let y = (s % 1000) / 1000 * h
+    s = (s * 48271) % 2147483647
+    let r = 1 + (s % 100) / 40
+    let dx = (s % 41) - 20
+    let delay = (s % 4000)
+    let lasts = 2600 + (s % 2600)
+    let colour = if colours.length() == 0 { "#ff8a4c" } else { colours[i % colours.length()] }
+    out = out.append("<circle cx=\"" + motion_num(x) + "\" cy=\"" + motion_num(y) + "\" r=\"" + motion_num(r) + "\" fill=\"" + colour
+      + "\" style=\"--dx:" + dx.to_text() + "px;transform-box:fill-box;animation:mo-drift " + lasts.to_text() + "ms ease-out " + delay.to_text() + "ms infinite\"/>")
+  }
+  return out.join("")
+}
+
+// For anyone who asked their computer for less motion: everything stops.
+fn motion_quiet() -> Text {
+  return "@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}"
+}
+
+// ---- The check -----------------------------------------------------------
+
+fn motion_ms_in(text: Text) -> Number[] {
+  var found: Number[] = []
+  var digits = ""
+  var at = 0
+  let letters = text.chars()
+  for ch in letters {
+    if "0123456789.".contains(ch) {
+      digits = digits + ch
+    } else {
+      if digits != "" and digits != "." {
+        let value = digits.to_number().or(0)
+        let next = letters.drop(at).take(2).join("")
+        if next == "ms" { found = found.append(value) }
+        if ch == "s" and next != "s{" and not next.starts_with("s-") { found = found.append(value * 1000) }
+      }
+      digits = ""
+    }
+    at += 1
+  }
+  return found
+}
+
+// What is wrong with some motion CSS, in words, or [] when it is good:
+//   * it must stop for people who ask for reduced motion
+//   * animating size or place (width, height, top, left, margin) is janky;
+//     move with transform and fade with opacity instead
+//   * anything quicker than 80 ms is not seen; longer than 30 s is not felt
+//   * nothing may flash more than three times a second
+fn motion_check(css: Text) -> Text[] {
+  var problems: Text[] = []
+  let flat = css.lower().replace(" ", "")
+  if flat.contains("@keyframes") or flat.contains("animation:") or flat.contains("transition:") {
+    if not flat.contains("prefers-reduced-motion") {
+      problems = problems.append("it does not stop for people who asked for reduced motion; add motion_quiet()")
+    }
+  }
+  for frames in flat.split("@keyframes").drop(1) {
+    let name = frames.split("{")[0]
+    for prop in ["width:", "height:", "top:", "left:", "margin", "padding"] {
+      let inside = frames.split("}}")[0]
+      if inside.contains("{" + prop) or inside.contains(";" + prop) {
+        problems = problems.append(f"'{name}' animates {prop.replace(\":\", \"\")}, which makes the page lay out again every frame; use transform")
+      }
+    }
+  }
+  for part in flat.split("animation:").drop(1) {
+    let first = part.split(";")[0].split("}")[0]
+    for ms in motion_ms_in(first).take(1) {
+      if ms > 0 and ms < 80 { problems = problems.append(f"an animation of {ms.to_text()} ms is too quick to see") }
+      if ms > 30000 { problems = problems.append(f"an animation of {(ms / 1000).to_text()} s is too slow to feel") }
+      if ms > 0 and ms < 333 and first.contains("infinite") and (first.contains("opacity") or first.contains("flash") or first.contains("blink")) {
+        problems = problems.append("something flashes more than three times a second, which can hurt people with photosensitive epilepsy")
+      }
+    }
+  }
+  return problems
+}
+
+// ---- A page of every move, to look at them ---------------------------------
+
+fn motion_page(title: Text) -> Text {
+  let soft = motion_spring(170, 26, 1)
+  let bouncy = motion_spring(220, 9, 1)
+  let tiles = (for name in motion_move_names() {
+    let row = motion_move_row(name)
+    let shape = if name == "draw" {
+      "<svg viewBox=\"0 0 100 60\" width=\"100\" height=\"60\">" + motion_draw("M6 50 C 30 -10, 60 70, 94 10", "var(--c)", 4, 1800) + "</svg>"
+    } else { if name == "shimmer" { "<b class=\"sheen\"></b>" } else { "<i></i>" } }
+    "<figure class=\"mv-" + name + "\">" + "<div class=\"box\">" + shape + "</div><figcaption><b>" + name + "</b>" + motion_escaped(row[1]) + "</figcaption></figure>"
+  }).join("")
+  let plays = (for name in motion_move_names() {
+    let ms = if ["float", "glow", "orbit"].contains(name) { 2400 } else { if name == "spin" { 3000 } else { if name == "shimmer" { 2200 } else { if name == "drift" { 3000 } else { 1400 } } } }
+    let ease = if ["float", "glow"].contains(name) { "in-out" } else { if ["spin", "shimmer", "orbit"].contains(name) { "linear" } else { "out" } }
+    motion_use(".mv-" + name + " i,.mv-" + name + " .sheen", name, ease, ms)
+  }).join("")
+  let again = (for name in ["rise", "pop", "blur-in", "wiggle", "wipe"] {
+    ".mv-" + name + " i{animation-iteration-count:infinite;animation-direction:alternate}"
+  }).join("")
+  let springs = "<div class=\"springs\"><div><i style=\"animation:sp 1.2s infinite alternate " + soft.css + "\"></i><span>spring 170/26 · " + soft.ms.to_text() + " ms · " + soft.overshoot.to_text() + "% over</span></div>"
+    + "<div><i style=\"animation:sp 1.6s infinite alternate " + bouncy.css + "\"></i><span>spring 220/9 · " + bouncy.ms.to_text() + " ms · " + bouncy.overshoot.to_text() + "% over</span></div></div>"
+  let css = ":root{--c:#ff8a4c}body{margin:0;min-height:100vh;padding:28px 16px;background:radial-gradient(1000px 500px at 0 -10%,#1b1f4a,transparent 60%),radial-gradient(800px 500px at 110% 0,#3a1d10,transparent 55%),#07080d;color:#eef0f7;font:15px/1.5 'Segoe UI',Inter,system-ui,sans-serif}"
+    + "h1{max-width:1100px;margin:0 auto 6px;font-size:clamp(28px,5vw,46px);color:#ffb37a}main{max-width:1100px;margin:0 auto}"
+    + ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-top:18px}"
+    + "figure{margin:0;padding:12px;border-radius:16px;background:#111428;border:1px solid #ffffff14}figcaption{font-size:12px;color:#a3a8bd}figcaption b{display:block;color:#eef0f7;font-size:14px}"
+    + ".box{position:relative;height:90px;display:grid;place-items:center;overflow:hidden;border-radius:12px;background:#0a0c18}"
+    + ".box i{display:block;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--c),#a993ff);--r:26px}"
+    + ".sheen{display:block;width:120px;height:34px;border-radius:10px;background:linear-gradient(100deg,#a993ff 30%,#fff 50%,#a993ff 70%);background-size:200% 100%}"
+    + ".springs{display:grid;gap:12px;margin-top:22px}.springs div{position:relative;height:40px;border-radius:12px;background:#111428;overflow:hidden}.springs i{position:absolute;left:8px;top:8px;width:24px;height:24px;border-radius:50%;background:var(--c);box-shadow:0 0 16px var(--c)}.springs span{position:absolute;right:12px;top:10px;font-size:12px;color:#a3a8bd}"
+    + "@keyframes sp{to{transform:translateX(min(70vw,700px))}}"
+    + plays + again + motion_stagger("figure", 12, 60) + motion_moves(motion_move_names())
+  return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + motion_escaped(title) + "</title><style>" + css + "</style></head><body><main>"
+    + "<h1>" + motion_kinetic(title, "rise") + "</h1>" + springs + "<div class=\"grid\">" + tiles + "</div>"
+    + "<svg width=\"100%\" height=\"120\" viewBox=\"0 0 1100 120\" preserveAspectRatio=\"none\">" + motion_particles(40, ["#ff8a4c", "#a993ff", "#55d6ff"], 1100, 120, 7) + "</svg>"
+    + "</main></body></html>"
+}
+
+test "eases are named, and an unknown one is the soft landing" {
+  expect motion_ease("back") == "cubic-bezier(.34,1.56,.64,1)"
+  expect motion_ease("nope") == motion_ease("out")
+  expect motion_eases().contains("snap")
+}
+
+test "a spring is worked out: it starts at 0, ends at 1, and a loose one overshoots" {
+  soft = motion_spring(170, 26, 1)
+  bouncy = motion_spring(220, 9, 1)
+  expect soft.css.starts_with("linear(0, ")
+  expect soft.css.ends_with(", 1)")
+  expect bouncy.overshoot > soft.overshoot
+  expect bouncy.overshoot > 20
+  expect soft.ms > 100 and soft.ms < 4100
+  expect motion_spring(170, 26, 1).css == soft.css
+}
+
+test "moves come as keyframes, always with the reduced-motion guard" {
+  css = motion_moves(["rise", "pop", "nope"])
+  expect css.contains("@keyframes mo-rise{from{opacity:0")
+  expect css.contains("@keyframes mo-pop")
+  expect not css.contains("mo-nope")
+  expect css.contains("prefers-reduced-motion")
+  expect motion_use(".card", "rise", "out", 700) == ".card{animation:mo-rise 700ms cubic-bezier(.16,1,.3,1) both}"
+  expect motion_use(".dot", "float", "in-out", 2400).contains("infinite")
+  expect motion_stagger("li", 3, 80) == "li:nth-child(1){animation-delay:0ms}li:nth-child(2){animation-delay:80ms}li:nth-child(3){animation-delay:160ms}"
+  expect motion_reveal(".card", "rise").contains("animation-timeline:view()")
+}
+
+test "kinetic type moves letter by letter, and is read as the words" {
+  html = motion_kinetic("Hi <you>", "pop")
+  expect html.contains("aria-label=\"Hi &lt;you&gt;\"")
+  expect html.contains("<span style=\"--i:2\">&nbsp;</span>")
+  expect html.contains("<span style=\"--i:3\">&lt;</span>")
+  expect html.contains("@keyframes mo-pop")
+}
+
+test "lines draw themselves and sparks are the same for the same seed" {
+  expect motion_draw("M0 0 L10 10", "#fff", 2, 900).contains("pathLength=\"1\"")
+  a = motion_particles(5, ["#fff"], 100, 50, 3)
+  expect a == motion_particles(5, ["#fff"], 100, 50, 3)
+  expect a != motion_particles(5, ["#fff"], 100, 50, 4)
+  expect a.split("<circle").length() == 6
+}
+
+test "the check finds janky, unseen, flashing or unguarded motion" {
+  good = motion_use(".a", "rise", "out", 700) + motion_moves(["rise"])
+  expect motion_check(good) == []
+  expect motion_check(".a{animation:x 1s}@keyframes x{to{opacity:1}}").join(" ").contains("reduced motion")
+  expect motion_check("@keyframes grow{from{width:0}to{width:100px}}" + motion_quiet()).join(" ").contains("'grow' animates width")
+  expect motion_check(".a{animation:x 40ms both}" + motion_quiet()).join(" ").contains("40 ms is too quick")
+  expect motion_check(".a{animation:blink 200ms infinite}" + motion_quiet()).join(" ").contains("flashes")
+  expect motion_check(".a{animation:x 45s linear}" + motion_quiet()).join(" ").contains("too slow")
+  expect motion_check(motion_page("Motion")) == []
+}

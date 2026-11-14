@@ -1,0 +1,148 @@
+// An agent that is told in words what to do, and plans it with its own
+// model: the model in its kit (reach.kos), such as Kosika's virtual models
+// through the router. The model only picks one job from a short menu of the
+// jobs its kit allows, with the job's few fields; Kosika checks the pick
+// against the kit, turns it into the exact commands, and every command waits
+// for the person's yes like any other. A small model is good at picking from
+// a menu; it is not trusted with anything more.
+//
+//   kosika run plan.kos --workflow go --input ask.json --allow-shell --allow-folder . \
+//     --model kosika-virtual --model-url http://127.0.0.1:8791/v1 --model-protocol openai --approve
+//
+// ask.json is {"a": {"agent": "coder-1", "words": "write hello in a new note"}}.
+// Each run that worked is a training example for the planner (diary.py
+// --training), so the free models learn Kosika's jobs from approved runs.
+
+import "main.kos"
+import "kit.kos"
+import "kits.kos"
+
+choice Job {
+  write_note(text: Text)
+  press_in(app: Text, name: Text)
+  read_page(url: Text)
+  nothing(why: Text)
+}
+
+record Request { agent: Text words: Text menu: Text }
+record Ask { agent: Text words: Text }
+
+model planner {
+  input: Request
+  output: Job
+  deployment: "kosika-router"
+  parameters: { temperature: 0 }
+}
+
+// The jobs this kit can do, as the model is shown them.
+fn menu(k: Kit) -> Text {
+  var lines: Text[] = []
+  if refusal(k, ["open", "notepad"]) == "" and refusal(k, ["write", "notepad"]) == "" {
+    lines = lines.append("write_note(text): open a fresh Notepad page and write text in it")
+  }
+  if refusal(k, ["look", "notepad"]) == "" and refusal(k, ["press", "notepad"]) == "" {
+    lines = lines.append("press_in(app, name): press the thing called name in the program app (notepad)")
+  }
+  if refusal(k, ["browse"]) == "" {
+    lines = lines.append("read_page(url): open a web page in the hands' own browser and read it")
+  }
+  return lines.append("nothing(why): when none of these is what was asked").join("\n")
+}
+
+fn request_for(k: Kit, words: Text) -> Request {
+  return {agent: k.name, words: words, menu: menu(k)}
+}
+
+fn job_text(job: Job) -> Text {
+  return match job {
+    case write_note(text) { f"write_note({text.length().to_text()} letters)" }
+    case press_in(app, name) { f"press_in({app}, {name})" }
+    case read_page(url) { f"read_page({url})" }
+    case nothing(why) { "nothing: " + why }
+  }
+}
+
+// The actions a job needs, so the kit can refuse it before anything is done.
+fn job_actions(job: Job) -> Text[][] {
+  return match job {
+    case write_note(text) { [["open", "notepad"], ["write", "notepad"], ["read", "notepad"]] }
+    case press_in(app, name) { [["look", app], ["press", app]] }
+    case read_page(url) { [["browse"]] }
+    case nothing(why) { [] }
+  }
+}
+
+fn is_web_address(url: Text) -> Bool {
+  return (url.starts_with("https://") or url.starts_with("http://")) and not url.contains(" ")
+}
+
+// Why this pick cannot be done for this kit, or "".
+fn pick_refusal(k: Kit, job: Job) -> Text {
+  let bad = match job {
+    case write_note(text) { if text.trim() == "" { "the model gave no words to write" } else { "" } }
+    case press_in(app, name) { if app != "notepad" { f"'{app}' is not a program the hands know" } else { if name.trim() == "" { "the model named nothing to press" } else { "" } } }
+    case read_page(url) { if is_web_address(url) { "" } else { f"'{url}' is not a web address" } }
+    case nothing(why) { "the model found no job for this: " + why }
+  }
+  if bad != "" { return bad }
+  for action in job_actions(job) {
+    let why = refusal(k, action)
+    if why != "" { return why }
+  }
+  return ""
+}
+
+// The three commands of a job, every job made three long: a step it does
+// not need is a skip, shown and approved like the others, and nothing is
+// done. A refused pick makes every command a refusal.
+fn commands(k: Kit, job: Job) -> Text[][] {
+  let refused = pick_refusal(k, job)
+  if refused != "" {
+    let no = ["hands.py", "--agent", k.name, "refuse", refused]
+    return [no, no, no]
+  }
+  return match job {
+    case write_note(text) { [act(k, "", ["open", "notepad"]), act(k, "", ["write", "notepad", text]), act(k, "", ["read", "notepad"])] }
+    case press_in(app, name) { [act(k, "", ["look", app]), act(k, "", ["press", app, name]), skip("", "nothing more to do")] }
+    case read_page(url) { [web(k, ["start"]), web(k, ["open", url]), web(k, ["read"])] }
+    case nothing(why) { [skip("", why), skip("", why), skip("", why)] }
+  }
+}
+
+workflow go(a: Ask) -> Done {
+  k = kit_named(a.agent)
+  request = request_for(k, a.words)
+  job = use_model planner(agent: request.agent, words: request.words, menu: request.menu)
+  cmds = commands(k, job)
+  first = execute hands.hand(args: cmds[0])
+  second = execute hands.hand(args: after(first, cmds[1]))
+  third = execute hands.hand(args: after(second, cmds[2]))
+  result = done([first, second, third])
+  require approval
+}
+
+test "the menu holds only the jobs the kit allows" {
+  expect menu(kit_named("coder-1")).contains("write_note(text)")
+  expect not menu(kit_named("coder-2")).contains("write_note")
+  expect menu(kit_named("coder-2")).contains("press_in(app, name)")
+  expect menu(kit_named("scout")).contains("read_page(url)")
+  expect menu(kit_named("stranger")) == "nothing(why): when none of these is what was asked"
+}
+
+test "a good pick becomes the job's commands, in the agent's colour" {
+  k = kit_named("coder-1")
+  c = commands(k, write_note("hello"))
+  expect c[0][c[0].length() - 2] == "open"
+  expect c[1][c[1].length() - 1] == "hello"
+  expect c[1].contains("--agent") and c[1].contains("coder-1")
+  expect commands(k, press_in("notepad", "Edit"))[2][1] == "skip"
+}
+
+test "a pick the kit does not allow, or a bad one, does nothing at all" {
+  expect pick_refusal(kit_named("coder-2"), write_note("hi")).contains("open:notepad")
+  expect commands(kit_named("coder-2"), write_note("hi"))[0][3] == "refuse"
+  expect pick_refusal(kit_named("scout"), read_page("file:///etc/passwd")).contains("not a web address")
+  expect pick_refusal(kit_named("coder-1"), press_in("regedit", "Delete")).contains("not a program")
+  expect pick_refusal(kit_named("coder-1"), nothing("asked to sing")).contains("no job")
+  expect job_text(write_note("secret words")) == "write_note(12 letters)"
+}
