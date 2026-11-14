@@ -154,7 +154,9 @@ class CommandLineTests(unittest.TestCase):
             [sys.executable, "-m", "kosika.cli", *arguments],
             capture_output=True,
             cwd=str(REPO_ROOT),
-            timeout=300,
+            # The corpus grows with every example program; on the slowest
+            # runner a full benchmark now takes over five minutes.
+            timeout=900,
         )
         return process.returncode, process.stdout.decode("utf-8")
 

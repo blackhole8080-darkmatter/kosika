@@ -1,0 +1,164 @@
+// std/layers.kos: say what a network is made of, and Kosika works out how it
+// learns. No backward pass to write: each kind of layer knows its own.
+//
+//   import "std/layers.kos"
+//
+//   net = network([dense(300, 64, 1), tanh_layer(), dense(64, 64, 2), relu_layer(), dense(64, 4, 3)])
+//   net = fit(net, x, classes, 0.5, 100)
+//   guess(net, x)
+//
+// dense(inputs, outputs, seed)  a layer of weights and biases
+// tanh_layer(), relu_layer(), sigmoid_layer()   a layer that bends what it is given
+// network(layers)               the layers, first to last; the last gives one
+//                               score per class, made probabilities by softmax
+// scores(n, x), probabilities(n, x), guess(n, x)
+// loss(n, x, classes)           the cross-entropy, 0 when every answer is sure and right
+// learn(n, x, classes, rate)    the network after one step down the slope
+// fit(n, x, classes, rate, rounds)
+// accuracy(n, x, classes)
+//
+// How it learns: forward, every layer's output is kept; backward, the slope
+// of the loss is passed from the last layer to the first, each layer turning
+// the slope of its output into the slope of its input and, for a dense
+// layer, of its weights (the chain rule, once per kind of layer, below).
+// Each step is a few whole-batch built-in calls, so depth and width cost
+// little Kosika work.
+
+export [Layer, Network, dense, tanh_layer, relu_layer, sigmoid_layer, network,
+        scores, probabilities, guess, loss, learn, fit, accuracy]
+
+record Layer { kind: Text w: Number[][] b: Number[] }
+record Network { layers: Layer[] }
+
+fn zeros_of(size: Number) -> Number[] {
+  var row: Number[] = []
+  for i in 0 until size {
+    row = row.append(0)
+  }
+  return row
+}
+
+fn dense(inputs: Number, outputs: Number, seed: Number) -> Layer {
+  return {kind: "dense", w: inputs.noise(outputs, seed).scaled(1 / inputs.sqrt()), b: zeros_of(outputs)}
+}
+
+fn bend(kind: Text) -> Layer {
+  return {kind: kind, w: [[0]], b: [0]}
+}
+
+fn tanh_layer() -> Layer { return bend("tanh") }
+fn relu_layer() -> Layer { return bend("relu") }
+fn sigmoid_layer() -> Layer { return bend("sigmoid") }
+
+fn network(layers: Layer[]) -> Network {
+  if layers.length() == 0 { fail "a network needs at least one layer" }
+  return {layers: layers}
+}
+
+// One layer, forward.
+fn through(layer: Layer, x: Number[][]) -> Number[][] {
+  if layer.kind == "dense" { return x.times(layer.w).plus_row(layer.b) }
+  if layer.kind == "tanh" { return x.tanh() }
+  if layer.kind == "relu" { return x.relu() }
+  if layer.kind != "sigmoid" { fail "no layer of kind " + layer.kind }
+  return x.sigmoid()
+}
+
+// Every layer's output, the input first: what the backward pass needs.
+fn outputs(n: Network, x: Number[][]) -> Number[][][] {
+  var kept: Number[][][] = [x]
+  var now = x
+  for layer in n.layers {
+    now = through(layer, now)
+    kept = kept.append(now)
+  }
+  return kept
+}
+
+fn scores(n: Network, x: Number[][]) -> Number[][] {
+  var now = x
+  for layer in n.layers {
+    now = through(layer, now)
+  }
+  return now
+}
+
+fn probabilities(n: Network, x: Number[][]) -> Number[][] {
+  return scores(n, x).softmax()
+}
+
+fn guess(n: Network, x: Number[][]) -> Number[] {
+  return scores(n, x).row_argmax()
+}
+
+fn loss(n: Network, x: Number[][], classes: Number[]) -> Number {
+  return probabilities(n, x).cross_entropy(classes)
+}
+
+fn learn(n: Network, x: Number[][], classes: Number[], rate: Number) -> Network {
+  let kept = outputs(n, x)
+  let last = kept[kept.length() - 1]
+  let count = last[0].length()
+  // The slope of the mean cross-entropy at the scores, through softmax.
+  var slope = last.softmax().minus(classes.one_hot(count)).scaled(1 / x.rows())
+  var changed: Layer[] = []
+  var at = n.layers.length() - 1
+  while at >= 0 {
+    let layer = n.layers[at]
+    let given = kept[at]
+    let made = kept[at + 1]
+    if layer.kind == "dense" {
+      let dw = given.transpose().times(slope)
+      let db = slope.column_sums()
+      // The slope for the layer before, with this layer's weights as they were.
+      slope = slope.times(layer.w.transpose())
+      let stepped: Layer = {kind: "dense", w: layer.w.minus(dw.scaled(rate)), b: layer.b.minus(db.scaled(rate))}
+      changed = [stepped].concat(changed)
+    } else {
+      if layer.kind == "tanh" { slope = slope.each_times(made.tanh_slope()) }
+      if layer.kind == "relu" { slope = slope.each_times(given.relu_slope()) }
+      if layer.kind == "sigmoid" { slope = slope.each_times(made.minus(made.each_times(made))) }
+      changed = [layer].concat(changed)
+    }
+    at -= 1
+  }
+  return {layers: changed}
+}
+
+fn fit(n: Network, x: Number[][], classes: Number[], rate: Number, rounds: Number) -> Network {
+  var now = n
+  for r in 0 until rounds {
+    now = learn(now, x, classes, rate)
+  }
+  return now
+}
+
+fn accuracy(n: Network, x: Number[][], classes: Number[]) -> Number {
+  let guessed = guess(n, x)
+  var right = 0
+  for i in 0 until classes.length() {
+    if guessed[i] == classes[i] {
+      right += 1
+    }
+  }
+  return right / classes.length()
+}
+
+test "a network of any depth learns, with no backward pass written for it" {
+  // Class 1 when exactly one of the two inputs is on: no straight line
+  // separates it, so it needs the hidden layers.
+  x = [[0, 0], [0, 1], [1, 0], [1, 1]]
+  y = [0, 1, 1, 0]
+  n = network([dense(2, 8, 1), tanh_layer(), dense(8, 8, 2), relu_layer(), dense(8, 2, 3)])
+  trained = fit(n, x, y, 0.5, 400)
+  expect accuracy(trained, x, y) == 1
+  expect loss(trained, x, y) < loss(n, x, y)
+}
+
+test "each layer keeps its kind and shape through learning" {
+  n = network([dense(3, 4, 5), sigmoid_layer(), dense(4, 2, 6)])
+  m = learn(n, [[1, 0, 1]], [1], 0.1)
+  expect m.layers.length() == 3
+  expect m.layers[1].kind == "sigmoid"
+  expect m.layers[0].w.rows() == 3 and m.layers[0].w.columns() == 4
+}

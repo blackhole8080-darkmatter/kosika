@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"runtime"
+	"sync"
 )
 
 const (
@@ -308,6 +310,9 @@ func timesOf(a, b []Value) Value {
 			rows, inner, otherRows, columns, inner, otherRows))
 	}
 	whole := allWholeMatrix(a) && allWholeMatrix(b)
+	if !whole {
+		return timesFloat(a, b, rows, inner, columns)
+	}
 	turned := cellsOf(transposeOf(b), "the second matrix")
 	out := make([]Value, rows)
 	for row := 0; row < rows; row++ {
@@ -330,6 +335,77 @@ func timesOf(a, b []Value) Value {
 			cells[column] = tidyValue(floatSum(parts))
 		}
 		out[row] = cells
+	}
+	return out
+}
+
+// timesFloat is the product of matrices holding decimals: each number read
+// once into a float, every row worked out on its own processor core, and
+// each sum compensated (Neumaier), which gives the correctly rounded sum
+// fsum gives in all but rare cases, at the speed of plain adding. Rounded
+// to nine places as before, so the answers are the reference's.
+func timesFloat(a, b []Value, rows, inner, columns int) Value {
+	left := make([][]float64, rows)
+	for i := range a {
+		cells := cellsOf(a[i], "the first matrix")
+		left[i] = make([]float64, inner)
+		for k, cell := range cells {
+			left[i][k] = toFloat(cell)
+		}
+	}
+	right := make([][]float64, columns)
+	for j := range right {
+		right[j] = make([]float64, inner)
+	}
+	for k := range b {
+		cells := cellsOf(b[k], "the second matrix")
+		for j, cell := range cells {
+			right[j][k] = toFloat(cell)
+		}
+	}
+	sums := make([][]float64, rows)
+	var wait sync.WaitGroup
+	next := make(chan int, rows)
+	for i := 0; i < rows; i++ {
+		next <- i
+	}
+	close(next)
+	workers := runtime.NumCPU()
+	if workers > rows {
+		workers = rows
+	}
+	for w := 0; w < workers; w++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for i := range next {
+				row := make([]float64, columns)
+				for j := 0; j < columns; j++ {
+					total, fix := 0.0, 0.0
+					for k := 0; k < inner; k++ {
+						term := left[i][k] * right[j][k]
+						t := total + term
+						if math.Abs(total) >= math.Abs(term) {
+							fix += (total - t) + term
+						} else {
+							fix += (term - t) + total
+						}
+						total = t
+					}
+					row[j] = total + fix
+				}
+				sums[i] = row
+			}
+		}()
+	}
+	wait.Wait()
+	out := make([]Value, rows)
+	for i, row := range sums {
+		cells := make([]Value, columns)
+		for j, f := range row {
+			cells[j] = tidyValue(f)
+		}
+		out[i] = cells
 	}
 	return out
 }

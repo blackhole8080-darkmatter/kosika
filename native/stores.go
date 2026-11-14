@@ -524,6 +524,9 @@ func (r *run) hostTool(tool *ToolDecl, arguments *Record) (Value, bool) {
 		if systemKind(tool) == "meaning" {
 			return r.nearTool(arguments), true
 		}
+		if systemKind(tool) == "log" {
+			return r.logTool(tool, arguments), true
+		}
 		if systemKind(tool) == "kosika" {
 			if tool.Operation == "check_files" {
 				return checkFiles(arguments), true

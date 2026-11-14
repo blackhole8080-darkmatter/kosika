@@ -1,0 +1,390 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 6,
+      "tasks": 8,
+      "seconds": 191.5,
+      "attempts": 8
+    }
+  },
+  "languages": {
+    "html": {
+      "passed": 1,
+      "tasks": 2
+    },
+    "kosika": {
+      "passed": 1,
+      "tasks": 2
+    },
+    "python": {
+      "passed": 3,
+      "tasks": 3
+    },
+    "typescript": {
+      "passed": 1,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "py-add-function",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 8.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for test_calc.py pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-add-function",
+          "attempt": 1,
+          "asked": "add a function is_even to calc.py that says whether a number is even, with a test",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 8.5,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for test_calc.py pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 8.5
+        }
+      }
+    },
+    {
+      "id": "py-fix-bug",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 10.0,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for test_calc.py pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-fix-bug",
+          "attempt": 1,
+          "asked": "average in calc.py fails on an empty list; make it return 0 for an empty list, with a test",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 10.0,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for test_calc.py pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 10.0
+        }
+      }
+    },
+    {
+      "id": "py-new-module",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 17.5,
+      "approvals": 4,
+      "failures": [],
+      "error": "",
+      "said": "My first try failed its tests, so I read what they printed and put it right.\nWrote words.py, test_words.py, one whole file at a time.\nWrote: words.py, test_words.py\nThe tests for test_words.py pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py",
+        "test_words.py",
+        "words.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-new-module",
+          "attempt": 1,
+          "asked": "create words.py with a function count_words(text) that returns how many words a text has, and test_words.py with tests for it",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 17.5,
+          "approvals": 4,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "My first try failed its tests, so I read what they printed and put it right.\nWrote words.py, test_words.py, one whole file at a time.\nWrote: words.py, test_words.py\nThe tests for test_words.py pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py",
+            "test_words.py",
+            "words.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 17.5
+        }
+      }
+    },
+    {
+      "id": "ts-add-function",
+      "language": "typescript",
+      "passed": true,
+      "state": "done",
+      "seconds": 4.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote text.ts, text.test.ts, one whole file at a time.\nWrote: text.ts, text.test.ts\nThe tests for text.test.ts pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "text.test.ts",
+        "text.ts"
+      ],
+      "attempts": [
+        {
+          "id": "ts-add-function",
+          "attempt": 1,
+          "asked": "add a function whisper to text.ts that makes a text lower case and adds three dots, with a test in text.test.ts",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 4.5,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote text.ts, text.test.ts, one whole file at a time.\nWrote: text.ts, text.test.ts\nThe tests for text.test.ts pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "text.test.ts",
+            "text.ts"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 4.5
+        }
+      }
+    },
+    {
+      "id": "kosika-route",
+      "language": "kosika",
+      "passed": true,
+      "state": "done",
+      "seconds": 5.0,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests for route/main.kos pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "route\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-route",
+          "attempt": 1,
+          "asked": "create a Kosika program in route/main.kos that sorts a support ticket's text into billing, bug or account with classify, falls back to account when the model's answer is not one of those, and has at least two tests that script the model with answers",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 5.0,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests for route/main.kos pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "route\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 5.0
+        }
+      }
+    },
+    {
+      "id": "kosika-notes",
+      "language": "kosika",
+      "passed": false,
+      "state": "done",
+      "seconds": 17.5,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-qeangf8m\\kosika\\notes\\main.kos: Unexpected workflow item 'result' at 30:3"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-qeangf8m\\kosika\\notes\\main.kos: Unexpected workflow item 'result' at 30:3\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "notes\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-notes",
+          "attempt": 1,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 17.5,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-qeangf8m\\kosika\\notes\\main.kos: Unexpected workflow item 'result' at 30:3"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      raise error_type(f\"{resolved}: {exc}\") from None\n  kosika.parser.ParseError: notes\\main.kos: Unexpected workflow item 'result' at 30:3"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-qeangf8m\\kosika\\notes\\main.kos: Unexpected workflow item 'result' at 30:3\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "notes\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 17.5
+        }
+      }
+    },
+    {
+      "id": "website",
+      "language": "html",
+      "passed": true,
+      "state": "done",
+      "seconds": 61.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "attempts": [
+        {
+          "id": "website",
+          "attempt": 1,
+          "asked": "create a modern one-page website for a bakery called Crumb, with a hero, a menu of six items with prices, opening hours, and scroll animations",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 61.5,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+          "files": [
+            "index.html",
+            "script.js",
+            "styles.css"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 61.5
+        }
+      }
+    },
+    {
+      "id": "website-rendered",
+      "language": "html",
+      "passed": false,
+      "state": "done",
+      "seconds": 67.0,
+      "approvals": 2,
+      "failures": [
+        "node C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika/benchmarks/coder/render_check.mjs: 7 of 17 checks failed: the page logs errors: Failed to load resource: the server responded with a status of 404 (Not Found) at http://127.0.0.1:26535/hero.jpg"
+      ],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "_check\\phone.png",
+        "_check\\wide.png",
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "attempts": [
+        {
+          "id": "website-rendered",
+          "attempt": 1,
+          "asked": "create a modern one-page website for a bakery called Crumb in index.html, with whatever stylesheets and scripts you want beside it: a hero with the bakery's name as a heading of 40px or more, a menu of six items each with a price, opening hours with times in them, and an animation that runs as the reader scrolls. it has to hold together on a phone: no sideways scrolling at 390px, and every link and button at least 44px tall. all the text has to be readable against whatever is behind it",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 67.0,
+          "approvals": 2,
+          "failures": [
+            "node C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika/benchmarks/coder/render_check.mjs: 7 of 17 checks failed: the page logs errors: Failed to load resource: the server responded with a status of 404 (Not Found) at http://127.0.0.1:26535/hero.jpg"
+          ],
+          "excerpts": [
+            "node C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika/benchmarks/coder/render_check.mjs said:\n  FAIL  only 1 element changed while scrolling: the animation asked for is not running\n  FAIL  7 of 33 pieces of text are too dim, worst 3.05:1\n  FAIL  1 controls are under 44px on a phone: \"+1 (555) 123\u20114567\" 20px\n  FAIL  the page is nearly blank: 2 colours, variation 8\n  FAIL  100% of the screen is one colour\n  7 of 17 checks failed: the page logs errors: Failed to load resource: the server responded with a status of 404 (Not Found) at http://127.0.0.1:26535/hero.jpg"
+          ],
+          "error": "",
+          "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+          "files": [
+            "_check\\phone.png",
+            "_check\\wide.png",
+            "index.html",
+            "script.js",
+            "styles.css"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 67.0
+        }
+      }
+    }
+  ]
+}

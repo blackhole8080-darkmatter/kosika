@@ -1,0 +1,137 @@
+// Browse: the hands given a goal in words ("search for Kosika and tell me
+// what the first result says") and left to plan their own steps in their
+// own Chrome.
+//
+//   kosika run browse.kos --input goal.json --allow-shell --allow-folder .
+//       --approve --model kosika-virtual --model-url http://127.0.0.1:8791/v1
+//
+// where goal.json holds {"g": {"text": "..."}}.
+//
+// It works in rounds. In each round the model proposes a short plan of
+// browser steps that ends with reading the page; Kosika shows the person the
+// whole plan and runs it only on a yes; the model then sees what the page
+// said and either answers or says what is still to do. The next round is
+// planned from that. Four rounds at most. A round with nothing left to do
+// plans nothing, so it asks the person nothing.
+//
+// The Chrome is the hands' own (its own profile, none of the person's
+// sign-ins), and browser.py never types into a password field.
+
+record Goal { text: Text }
+record Question { text: Text }
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+// A round's outcome: done, what it found or saw, and the steps that ran
+// (filled in by the runtime).
+record Round { done: Bool answer: Text did: Text[] }
+record Said { text: Text steps: Number rounds: Number }
+// What the hands keep of each round in hands.kl, a Kosika log: typed,
+// add-only, each line chained to the one before (`python -m kosika.klog
+// show hands.kl` prints it as a table). Routines are learned from it.
+record Kept { goal: Text round: Number done: Bool did: Text[] answer: Text }
+record Keep { path: Text by: Text entry: Kept }
+record KeptAt { n: Number hash: Text }
+
+model planner {
+  input: Question
+  output: Round
+  parameters: {
+    max_output_tokens: 1500
+  }
+}
+
+tool web {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+tool keep {
+  source system "log"
+  operation: "append"
+  access: observe
+  input: Keep
+  output: KeptAt
+}
+
+agent logbook {
+  can: [keep]
+  max_steps: 1
+}
+
+agent browser_hands {
+  model: planner
+  can: [web]
+  plan: first
+  max_steps: 6
+  max_tool_calls: 8
+  instructions: "You use a web browser for the person with the tool web. Its args are always one of: [\"browser.py\", \"open\", URL] to go to a full https address (it opens the browser if need be); [\"browser.py\", \"click\", N] to click thing number N; [\"browser.py\", \"fill\", N, WORDS] to type WORDS into field number N; [\"browser.py\", \"read\"] to see the page again. open and click give back the page as text, ending with a numbered list of its links, buttons and fields. After open, click or fill you may add \"--expect\" and a few words the page must show afterwards, e.g. [\"browser.py\", \"click\", \"7\", \"--expect\", \"README\"]: always do, so a wrong step is caught at once; a step whose check fails prints CHECK FAILED and stops the round there. Never use any other args. Think before each round: say to yourself what the goal needs, the steps, what each step should show, and a backup if a step fails. You work in rounds: in your FIRST reply, request every web call of this round together, in order; the person approves that list once, and calls you ask for later will not run. Use only thing numbers from page text you were given. To search the web, open https://html.duckduckgo.com/html/?q=WORDS (words joined by +). Answer ONLY from page text you were actually given in this conversation, never from what you already know: if you have not seen the page yet, answer done false. When you have it, answer done true and the answer in two to four short sentences naming the page. Otherwise answer done false and, in answer, the useful lines you saw, the numbered things you may want next, and what is still to do. If a step failed (CHECK FAILED, or an exit code that is not 0), say in answer which step failed and why, and your backup: another link, a search, or a direct address; the next round must try the backup, not the same step again. When two ways to the same thing have failed, answer done true and say plainly what you could not do and what you tried. Never type passwords, card numbers or personal details, never buy, post, send or sign up for anything: if the goal needs that, answer done true and say the person must do it."
+}
+
+// What the next round is asked: the goal, and what the last round saw.
+fn next_question(goal: Text, last: Round) -> Text {
+  if last.done {
+    return "This round has no browser work. Do NOT call web. Reply with done true and answer exactly (request no calls):\n" + last.answer
+  }
+  return "Goal: " + goal + "\n\nWhat the last round saw and what is still to do:\n" + last.answer
+}
+
+fn kept(goal: Text, round: Number, r: Round) -> Kept {
+  return {goal: goal.trim(), round: round, done: r.done, did: r.did, answer: r.answer.trim()}
+}
+
+fn first_question(goal: Text) -> Text {
+  return "Goal: " + goal + "\n\nNothing has been done yet; the browser may not be open."
+}
+
+fn tell(rounds: Round[]) -> Said {
+  var steps: Text[] = []
+  var answer = ""
+  var used = 0
+  for round in rounds {
+    if round.did.length() > 0 {
+      used += 1
+    }
+    steps = steps.concat(round.did)
+    answer = round.answer
+  }
+  let tail = if steps.length() > 0 { "\n\nSteps that ran:\n- " + steps.join("\n- ") } else { "" }
+  return {text: answer.trim() + tail, steps: steps.length(), rounds: used}
+}
+
+workflow main(g: Goal) -> Said {
+  budget 16 model calls, 1200 seconds
+  one   = ask browser_hands(first_question(g.text.trim())) otherwise {done: false, answer: "The first round did not finish. Start again: open the page the goal names.", did: []}
+  two   = ask browser_hands(next_question(g.text.trim(), one)) otherwise {done: one.done, answer: one.answer, did: []}
+  three = ask browser_hands(next_question(g.text.trim(), two)) otherwise {done: two.done, answer: two.answer, did: []}
+  four  = ask browser_hands(next_question(g.text.trim(), three)) otherwise {done: three.done, answer: three.answer, did: []}
+  kept1 = execute logbook.keep(path: "hands.kl", by: "browser_hands", entry: kept(g.text, 1, one))
+  kept2 = execute logbook.keep(path: "hands.kl", by: "browser_hands", entry: kept(g.text, 2, two))
+  kept3 = execute logbook.keep(path: "hands.kl", by: "browser_hands", entry: kept(g.text, 3, three))
+  kept4 = execute logbook.keep(path: "hands.kl", by: "browser_hands", entry: kept(g.text, 4, four))
+  said  = tell([one, two, three, four])
+}
+
+test "the last answer is told, with every step that ran and the rounds used" {
+  rounds: Round[] = [
+    {done: false, answer: "Results page: 1. link: Kosika", did: ["web start", "web open", "web read"]},
+    {done: true, answer: " Kosika is a language for agents. ", did: ["web click", "web read"]},
+    {done: true, answer: "Kosika is a language for agents.", did: []},
+    {done: true, answer: "Kosika is a language for agents.", did: []}
+  ]
+  s = tell(rounds)
+  expect s.steps == 5
+  expect s.rounds == 2
+  expect s.text.starts_with("Kosika is a language for agents.")
+  expect s.text.contains("- web click")
+}
+
+test "a finished round tells the next to change nothing" {
+  q = next_question("find X", {done: true, answer: "X is here.", did: []})
+  expect q.contains("request no calls")
+  expect q.contains("X is here.")
+  r = next_question("find X", {done: false, answer: "1. link: X", did: []})
+  expect r.contains("still to do")
+}

@@ -1,0 +1,31 @@
+// The same specialist as main.kos, as a deeper network that says only what
+// it is made of: std/layers.kos works out how each layer learns.
+//
+//   kosika run deep.kos --input data.json
+
+import "std/layers.kos"
+
+record Data {
+  train_texts: Text[] train_classes: Number[]
+  test_texts: Text[] test_classes: Number[]
+  kinds: Text[]
+}
+record Report { layers: Number before: Number after: Number train_accuracy: Number loss_before: Number loss_after: Number }
+
+fn learn_kinds(d: Data) -> Report {
+  let vocabulary = d.train_texts.top_words(300)
+  let x = d.train_texts.bag_of_words(vocabulary)
+  let held = d.test_texts.bag_of_words(vocabulary)
+  let start = network([dense(300, 64, 21), tanh_layer(), dense(64, 64, 22), relu_layer(), dense(64, d.kinds.length(), 23)])
+  let trained = fit(start, x, d.train_classes, 0.3, 120)
+  return {
+    layers: trained.layers.length(),
+    before: accuracy(start, held, d.test_classes), after: accuracy(trained, held, d.test_classes),
+    train_accuracy: accuracy(trained, x, d.train_classes),
+    loss_before: loss(start, held, d.test_classes), loss_after: loss(trained, held, d.test_classes)
+  }
+}
+
+workflow main(d: Data) -> Report {
+  report = learn_kinds(d)
+}
