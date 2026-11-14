@@ -392,6 +392,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `chars()` | `Text[]` of its characters, one each; over 100,000 fails the run |
 | `Text` | `lines()` | `Text[]` of its lines, without their line ends, however each ends; an empty text has none. A whole file may be read this way |
 | `Text` | `pad_left(width: Number, fill: Text)`, `pad_right(width: Number, fill: Text)` | `Text` made at least `width` long by adding `fill`, which MUST be one character, before or after; a text already that long is unchanged |
+| `Text` | `pad_start(width: Number, fill: Text)` | `Text` with `fill` put before it until it is `width` characters long; `fill` MUST be exactly one character, and a text already that long is given back unchanged |
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
