@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -51,6 +52,28 @@ def load(path: Path) -> dict:
         if model.get("key") and not os.environ.get(model["key"]):
             raise SystemExit(f"{model['key']} is not set; the router reads keys from the environment only.")
     return config
+
+
+AGAIN_IN = re.compile(r"try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", re.IGNORECASE)
+
+
+def used_up_for(error: urllib.error.HTTPError) -> float:
+    """Seconds until a daily allowance comes back, or 0 for a short limit.
+
+    Groq says it in words, "tokens per day ... Please try again in 28m11s",
+    and gives no Retry-After for it.
+    """
+    try:
+        said = error.read().decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return 0.0
+    if "per day" not in said.lower():
+        return 0.0
+    found = AGAIN_IN.search(said)
+    if not found or not any(found.groups()):
+        return 3600.0
+    hours, minutes, seconds = (float(part or 0) for part in found.groups())
+    return hours * 3600 + minutes * 60 + seconds
 
 
 class Router:
@@ -123,7 +146,7 @@ class Router:
             model["url"], data=json.dumps(sent).encode(), method="POST",
             headers={**({"Authorization": "Bearer " + os.environ[model["key"]]} if model.get("key") else {}),
                      "Content-Type": "application/json", "User-Agent": AGENT})
-        with urllib.request.urlopen(request, timeout=self.config["timeout_seconds"]) as answer:
+        with urllib.request.urlopen(request, timeout=model.get("timeout_seconds", self.config["timeout_seconds"])) as answer:
             return json.load(answer)
 
     def answer(self, body: dict) -> tuple[int, dict]:
@@ -156,8 +179,12 @@ class Router:
             except urllib.error.HTTPError as error:
                 wait = float(error.headers.get("retry-after") or self.config["cool_seconds"])
                 if error.code == 429:
+                    # A day's allowance used up is not a burst: the service
+                    # says when it comes back, and asking sooner only wastes
+                    # every later request a round trip.
+                    daily = used_up_for(error)
                     with self.lock:
-                        self.cool[name] = time.time() + min(wait, 120)
+                        self.cool[name] = time.time() + (daily if daily else min(wait, 120))
                 tried.append({"model": name, "status": error.code, "ms": int((time.time() - t0) * 1000)})
                 continue
             except (urllib.error.URLError, TimeoutError, ValueError) as error:

@@ -1,0 +1,52 @@
+// A Kosika log: the hands' steps, kept typed, add-only and chained.
+//
+//   kosika run steps.kos --input step.json --allow-folder .
+//
+// Each run adds one Step to steps.kl and reads the whole log back, checked.
+// `kosika log show steps.kl` prints it as a table.
+
+record Step { agent: Text tool: Text args: Text[] ok: Bool saw: Text }
+record Add { path: Text by: Text entry: Step }
+record Added { n: Number hash: Text }
+record Path { path: Text }
+record Steps { rows: Step[] ok: Bool problem: Text }
+record Kept { entries: Number last: Text intact: Bool problem: Text }
+
+tool keep {
+  source system "log"
+  operation: "append"
+  access: observe
+  input: Add
+  output: Added
+}
+
+tool steps {
+  source system "log"
+  operation: "read"
+  access: observe
+  input: Path
+  output: Steps
+}
+
+agent logger {
+  can: [keep, steps]
+  max_steps: 1
+}
+
+fn kept(all: Steps) -> Kept {
+  let last = if all.rows.length() > 0 { all.rows.last().or({agent: "", tool: "", args: [], ok: false, saw: ""}).saw } else { "" }
+  return {entries: all.rows.length(), last: last, intact: all.ok, problem: all.problem}
+}
+
+workflow main(s: Step) -> Kept {
+  added = execute logger.keep(path: "steps.kl", by: s.agent, entry: s)
+  all   = execute logger.steps(path: "steps.kl")
+  result = kept(all)
+}
+
+test "a log read back says how many entries it has and whether it is intact" {
+  k = kept({rows: [{agent: "browser_hands", tool: "web", args: ["open"], ok: true, saw: "Kosika"}], ok: true, problem: ""})
+  expect k.entries == 1
+  expect k.last == "Kosika"
+  expect k.intact
+}

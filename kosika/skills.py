@@ -436,10 +436,10 @@ def load_skill_note(path: Path) -> SkillDefinition:
     """
 
     skill_id = path.stem.lower().replace(" ", "-").replace("_", "-")
-    if not _valid_skill_id(skill_id):
-        raise SkillCatalogError(
-            f"Skill file {path.name!r} needs a name of letters, digits and dashes"
-        )
+    return _parse_note(skill_id, _read_skill_text(path), path)
+
+
+def _read_skill_text(path: Path) -> str:
     try:
         raw = path.read_bytes()
     except OSError as exc:
@@ -449,9 +449,20 @@ def load_skill_note(path: Path) -> SkillDefinition:
             f"Skill {path.name} is larger than {MAX_SKILL_BYTES} bytes"
         )
     try:
-        lines = raw.decode("utf-8").replace("\r\n", "\n").split("\n")
+        return raw.decode("utf-8").replace("\r\n", "\n")
     except UnicodeDecodeError as exc:
         raise SkillCatalogError(f"Skill {path.name} is not UTF-8 text") from exc
+
+
+def _parse_note(
+    skill_id: str, text: str, path: Path, fallback_summary: str = "", fallback_keywords: tuple[str, ...] = ()
+) -> SkillDefinition:
+    if not _valid_skill_id(skill_id):
+        raise SkillCatalogError(
+            f"Skill file {path.name!r} needs a name of letters, digits and dashes"
+        )
+    lines = text.split("\n")
+    first_line = ""
     summary = ""
     keywords: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
@@ -463,7 +474,8 @@ def load_skill_note(path: Path) -> SkillDefinition:
         # the know-how begins, so know-how may itself use those words.
         heading = None if body else _HEAD_RE.match(line)
         if not summary and line.strip():
-            summary = line.strip().lstrip("#").strip()
+            first_line = line.strip()
+            summary = first_line.lstrip("#").strip()
         elif when and not keywords:
             keywords = tuple(
                 dict.fromkeys(
@@ -495,6 +507,17 @@ def load_skill_note(path: Path) -> SkillDefinition:
             "`Files: *.py` saying which files they are for"
         )
     instructions = "\n".join(body).strip()
+    if fallback_summary:
+        # An open SKILL.md: its description says what it is; a first heading
+        # that is not a When: line is part of the know-how.
+        if summary and fallback_summary.startswith(summary.rstrip(".") + "."):
+            pass  # written by Kosika: the heading is the summary
+        else:
+            if first_line:
+                instructions = (first_line + "\n\n" + instructions).strip()
+            summary = fallback_summary
+    if not keywords:
+        keywords = fallback_keywords
     if not summary:
         raise SkillCatalogError(f"Skill {path.name} is empty")
     if not keywords:
@@ -623,13 +646,97 @@ def plan_problems(
 
 
 def load_skill_notes(folder: Path) -> SkillCatalog:
-    """Every skill note in a folder, or an empty catalog if there is none."""
+    """Every skill in a folder, or an empty catalog if there is none: Kosika's
+    own notes (NAME.md) and skills in the open format (NAME/SKILL.md)."""
 
     if not folder.is_dir():
         return SkillCatalog()
-    return SkillCatalog(
-        load_skill_note(path) for path in sorted(folder.glob("*.md")) if path.is_file()
-    )
+    notes = [load_skill_note(path) for path in sorted(folder.glob("*.md")) if path.is_file()]
+    opened = [load_open_skill(path) for path in sorted(folder.glob("*/SKILL.md")) if path.is_file()]
+    return SkillCatalog(notes + opened)
+
+
+# ---- The open skill format: NAME/SKILL.md with a name and a description ----
+
+_FRONT_RE = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
+_PLAIN_WORDS = frozenset(
+    "about after again also always another because before being between both could does doing "
+    "during each every first from have having here into itself just like make many more most much "
+    "must never only other over same should some such than that their them then there these they "
+    "this those through under until using very want when where which while with without would your "
+    "skill skills claude kosika agent agents".split()
+)
+
+
+def _front_matter(text: str, path: Path) -> tuple[dict[str, str], str]:
+    match = _FRONT_RE.match(text)
+    if match is None:
+        raise SkillCatalogError(
+            f"Skill {path.as_posix()} must begin with --- and its name and description"
+        )
+    fields: dict[str, str] = {}
+    key = ""
+    for line in match.group(1).split("\n"):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[:1] in (" ", "\t") and key:
+            fields[key] = (fields[key] + " " + line.strip()).strip()
+            continue
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if value in (">", "|", ">-", "|-"):
+            value = ""
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        fields[key] = value
+    return fields, text[match.end():]
+
+
+def _description_words(description: str) -> tuple[str, ...]:
+    """The words of a description that can say a request fits it."""
+
+    words = re.findall(r"[a-z][a-z0-9-]{3,}", description.lower())
+    picked = [w for w in dict.fromkeys(words) if w not in _PLAIN_WORDS]
+    return tuple(picked[:16])
+
+
+def load_open_skill(path: Path) -> SkillDefinition:
+    """Read a skill in the open format: a folder holding SKILL.md, which
+    begins with front matter naming it and saying what it does and when it
+    fits. A `When:` line in it is used as it is in Kosika's own notes;
+    without one, the description's own words say when it fits."""
+
+    text = _read_skill_text(path)
+    fields, rest = _front_matter(text, path)
+    name = fields.get("name", "").strip() or path.parent.name
+    skill_id = name.lower().replace(" ", "-").replace("_", "-")
+    description = fields.get("description", "").strip()
+    if not description:
+        raise SkillCatalogError(f"Skill {path.as_posix()} needs a description in its front matter")
+    return _parse_note(skill_id, rest, path, description[:300], _description_words(description))
+
+
+def open_skill_text(skill: SkillDefinition) -> str:
+    """A skill written in the open format, so other AI apps can use it too.
+    Kosika's own lines (When, Files, Check) are kept, so it reads back the same."""
+
+    description = skill.summary.rstrip(".") + ". Use when: " + ", ".join(skill.keywords) + "."
+    head = [
+        "---",
+        f"name: {skill.skill_id}",
+        "description: " + json.dumps(description, ensure_ascii=False),
+        "---",
+        "",
+        f"# {skill.summary}",
+        "When: " + ", ".join(skill.keywords),
+    ]
+    if skill.files:
+        head.append("Files: " + ", ".join(skill.files))
+    head.extend(f"Check: {rule}" for rule in skill.checks)
+    return "\n".join(head) + "\n\n" + skill.instructions.strip() + "\n"
 
 
 def pick_skills(

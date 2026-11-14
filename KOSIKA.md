@@ -91,6 +91,8 @@ The standard library:
 | `std/db.kos` | `column(columns, name)`, `cell(row, columns, name)`, `as_number(text)`, `grid_rows(columns, rows)`: reading a database answer's grid of text by column name, since a grid cannot say which cell is a number and which is absent |
 | `std/evidence.kos` | `plain_quote(quote)`, `plain_word(word)`, `found_in(lines, quote)`, `hit_source(hit)`, `hit_text(hit)`, `search_words(text, skip_first)`, `says_in(answer, question, line)`: a quote is proved only by a line that holds it, and a question is reduced to the words worth searching for |
 | `std/nn.kos` | `Layer {weights, biases}`, `Net {layers}`, `net(sizes, seed)`, `predict(n, x)`, `train(n, xs, ys, rate, rounds)`, `loss(n, xs, ys)`: a small neural network, tanh hidden layers and a sigmoid output, learned by gradient descent on the processor |
+| `std/learn.kos` | `Classifier {w1, b1, w2, b2, classes}`, `classifier(inputs, hidden, classes, seed)`, `probabilities(m, x)`, `guess(m, x)`, `step(m, x, classes, rate)`, `train(m, x, classes, rate, rounds)`, `accuracy(m, x, classes)`, `texts_to_rows(texts, vocabulary)`: a classifier learned a whole batch at a time with the built-in batch maths, its backward pass written out in Kosika |
+| `std/layers.kos` | `Layer {kind, w, b}`, `Network {layers}`, `dense(inputs, outputs, seed)`, `tanh_layer()`, `relu_layer()`, `sigmoid_layer()`, `network(layers)`, `scores`, `probabilities`, `guess`, `loss`, `learn(n, x, classes, rate)`, `fit(n, x, classes, rate, rounds)`, `accuracy`: a network of any depth said by its layers; each kind of layer carries its own backward rule, so no learning step is written by hand |
 
 Each module's first lines say what each export does.
 
@@ -395,6 +397,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
+| `Text` | `trim_start()`, `trim_end()` | `Text` without white space at its start, or at its end; the other end is untouched |
 | `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
 | `Number[]` | `dot(other)`, `norm()`, `mean()` | `Number` |
 | `Number` | `identity()`, `zeros(columns: Number)` | `Number[][]`: the identity matrix of that size, or a matrix of zeros with that many rows |
@@ -406,6 +409,13 @@ the receiver's type, and every method is pure and deterministic.
 | `Number[][]` of pairs | `adjacency(nodes: Number)`, `directed_adjacency(nodes: Number)` | `Number[][]`: the adjacency matrix of the graph with those edges; nodes are numbered from 0 |
 | `Number[][]` | `degrees()`, `neighbours(node: Number)`, `shortest_path(start: Number, end: Number)` | `Number[]`; an empty path when there is none |
 | `Number[][]` | `components()` | `Number[][]`: the connected parts, each a sorted list of nodes |
+| `Number[][]` | `each_times(other)`, `plus_row(row: Number[])` | `Number[][]`: number by number with a matrix of the same shape; the row added to every row |
+| `Number[][]` | `tanh()`, `tanh_slope()`, `sigmoid()`, `relu()`, `relu_slope()`, `exp()`, `softmax()` | `Number[][]`: each number changed; `tanh_slope` is `1 - t²` of a tanh result, `relu_slope` 1 where above 0 else 0, `softmax` makes each row probabilities adding to 1; `exp` of a number above 700 fails the run |
+| `Number[][]` | `column_sums()`, `row_argmax()` | `Number[]`: each column added up; where each row's largest number is, from 0, the first on a tie |
+| `Number[][]` | `cross_entropy(classes: Number[])` | `Number`: the mean of `-log p[class]` over rows of probabilities, a class being a whole number from 0 |
+| `Number[]` | `one_hot(classes: Number)` | `Number[][]`: each class as a row of 0s with a 1 at the class |
+| `Number` | `noise(columns: Number, seed: Number)` | `Number[][]`: that many rows of numbers between -1 and 1 from the seed alone, the same on every engine |
+| `Text[]` | `top_words(count: Number)`, `bag_of_words(vocabulary: Text[])` | `Text[]`: the words found in the most texts, ties in alphabetical order; `Number[][]`: a row per text, 1 where it has the vocabulary's word |
 
 Matrix and vector methods MUST give exact integers when every number given is
 an integer and the operation stays within the integers (`inverse`, `solve`,
@@ -1123,6 +1133,8 @@ tool run_tests {
 | `system "db"` | `run` | `{sql: Text, values: Text[]}` | `{changed: Number}` |
 | `system "web"` | `fetch` | `{url: Text}` | `{url: Text, title: Text, text: Text}` |
 | `system "web"` | `fetch_from` | `{url: Text, start: Number}` | `{url: Text, title: Text, text: Text, next: Number}` |
+| `system "log"` | `append` | `{path: Text, by: Text, entry: R}` | `{n: Number, hash: Text}` |
+| `system "log"` | `read` | `{path: Text}` | `{rows: R[], ok: Bool, problem: Text}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -1135,7 +1147,7 @@ tool run_tests {
   the same session and ledger as any other `execute` tool.
 - A shell tool starts only the program named in `operation`, with `args`
   passed as a list and never interpreted by a shell, inside the granted
-  folder, for at most 60 seconds, with output cut at 64 KiB per stream.
+  folder, for at most 180 seconds, with output cut at 64 KiB per stream.
 - `search` gives the lines holding the query's words (a word is matched
   where a word begins, and a word of three letters or fewer must be the
   whole word) and `find` the lines
@@ -1269,6 +1281,21 @@ tool run_tests {
   change only the paused list, which the runner reads before each run, so
   they MUST be `access: execute` and each needs the owner's yes. Naming a
   service the file does not declare fails the step.
+- A `system "log"` tool keeps a Kosika log: typed, add-only JSON Lines in
+  the granted folder, where R is any record of the program. Line 1 is a
+  header, `{"kosika":"log","type":R,"fields":[...],"shape":S}`, S being the
+  first 16 hex digits of the SHA-256 of `R{field:Type,...}` as declared.
+  Each later line is a list: the entry's number from 1, when it was added
+  (UTC, `YYYY-MM-DDTHH:MM:SSZ`), `by`, the SHA-256 of the line before, then
+  R's fields in order. Records inside are written with sorted keys, whole
+  numbers without a decimal point, text as itself (U+2028 and U+2029
+  escaped). `append` checks the entry against R and refuses a log of another
+  record or shape, or one whose chain is broken; it only adds, so it MAY be
+  `access: observe`. `read` gives the entries checked and in order, and in
+  `problem` the first line that was changed, removed or is not an R, with
+  only the entries before it. Both engines write the same bytes.
+  `python -m kosika.klog show FILE` prints a log as a table, or with
+  `--named` as one named record per line.
 - A `system "web"` tool reads one page from a site the host allows
   (`--allow-site HOST`) and MAY be `access: observe`. `fetch` gives the
   first 20,000 characters of the page's text. `fetch_from` gives the

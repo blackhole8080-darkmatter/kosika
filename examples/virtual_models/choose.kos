@@ -1,0 +1,102 @@
+// The brain of Kosika's virtual model: given a request and what each free
+// model has done before, which model to ask first, then next, and so on.
+//
+//   kosika-native run choose.kos --input job.json
+//
+// The router that serves http://127.0.0.1:8791/v1 (learning_router.py) is
+// only the doorway: it receives a request, hands this program the request's
+// shape and the ledger of past answers, and asks the models in the order
+// this program gives. Every decision is made here, in Kosika, and none of
+// it needs a model.
+//
+// A request is sorted into a kind of job by its own words: an edit to a long
+// file, a Kosika file, a whole file, a call with tools, or a plain question.
+// Each model's record for that kind gives its cost: the time it takes to
+// give an answer that passes, over how often it gives one. A model with few
+// answers is blended with a middling prior, so one lucky or unlucky answer
+// does not decide its place. Models never tried for the kind keep their
+// place in the route the owner wrote, so a new model still gets its chance.
+
+record Seen { kind: Text name: Text asked: Number ok: Number ms_ok: Number }
+record Job { text: Text tools: Bool route: Text[] seen: Seen[] }
+record Ranked { name: Text cost: Number }
+record Order { kind: Text models: Text[] }
+
+// A model's first answers count for less than its later ones.
+fn prior_answers() -> Number { return 3 }
+// What an untried model is assumed to take for a good answer, in ms.
+fn prior_ms() -> Number { return 20000 }
+
+fn kind_of(job: Job) -> Text {
+  if job.tools { return "tools" }
+  if job.text.contains("<<<<<<< FIND") or job.text.contains("with edits; do not write it again") { return "edit" }
+  if job.text.contains(".kos") or job.text.contains("Kosika is its own language") { return "kosika" }
+  if job.text.contains("Write the complete new") { return "file" }
+  return "plain"
+}
+
+// Expected milliseconds until a passing answer.
+fn cost(row: Seen) -> Number {
+  let rate = (row.ok + 0.5 * prior_answers()) / (row.asked + prior_answers())
+  let mean = (row.ms_ok + prior_ms() * prior_answers()) / (row.ok + prior_answers())
+  return mean / rate.max(0.01)
+}
+
+fn order(job: Job, kind: Text) -> Order {
+  var ranked: Ranked[] = []
+  var tried: Text[] = []
+  for row in job.seen {
+    if row.kind == kind and job.route.contains(row.name) and not tried.contains(row.name) {
+      ranked = ranked.append({name: row.name, cost: cost(row)})
+      tried = tried.append(row.name)
+    }
+  }
+  let best = for r in ranked.sort_by(field: "cost") { r.name }
+  // The tried models, cheapest first, take the places tried models held.
+  var next = 0
+  var models: Text[] = []
+  for name in job.route {
+    if tried.contains(name) {
+      models = models.append(best[next])
+      next += 1
+    } else {
+      models = models.append(name)
+    }
+  }
+  return {kind: kind, models: models}
+}
+
+workflow main(job: Job) -> Order {
+  kind   = kind_of(job)
+  result = order(job, kind)
+}
+
+test "a request is sorted into its kind of job by its own words" {
+  route = ["strong", "other"]
+  expect kind_of({text: "x <<<<<<< FIND y", tools: false, route: route, seen: []}) == "edit"
+  expect kind_of({text: "Write the complete new calc.py", tools: false, route: route, seen: []}) == "file"
+  expect kind_of({text: "fix notes/main.kos", tools: false, route: route, seen: []}) == "kosika"
+  expect kind_of({text: "hello", tools: true, route: route, seen: []}) == "tools"
+  expect kind_of({text: "hello", tools: false, route: route, seen: []}) == "plain"
+}
+
+test "the model quickest to pass a kind is asked first for that kind only" {
+  seen: Seen[] = [
+    {kind: "edit", name: "strong", asked: 4, ok: 0, ms_ok: 0},
+    {kind: "edit", name: "other", asked: 4, ok: 4, ms_ok: 3600},
+    {kind: "plain", name: "strong", asked: 2, ok: 2, ms_ok: 800}
+  ]
+  edit = main({text: "<<<<<<< FIND", tools: false, route: ["strong", "other", "spare", "local"], seen: seen})
+  expect edit.kind == "edit"
+  expect edit.models == ["other", "strong", "spare", "local"]
+  plain = main({text: "hi", tools: false, route: ["strong", "other", "spare", "local"], seen: seen})
+  expect plain.models == ["strong", "other", "spare", "local"]
+}
+
+test "untried models keep their place, and nothing tried keeps the route" {
+  seen: Seen[] = [{kind: "edit", name: "local", asked: 3, ok: 3, ms_ok: 3000}, {kind: "edit", name: "strong", asked: 3, ok: 0, ms_ok: 0}]
+  r = main({text: "<<<<<<< FIND", tools: false, route: ["strong", "other", "local"], seen: seen})
+  expect r.models == ["local", "other", "strong"]
+  none = main({text: "<<<<<<< FIND", tools: false, route: ["strong", "other"], seen: []})
+  expect none.models == ["strong", "other"]
+}

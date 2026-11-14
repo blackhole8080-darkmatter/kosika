@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -264,3 +266,54 @@ class StudioTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunWithMCPServersTests(unittest.TestCase):
+    """`kosika connect` declares a server's tools; `kosika run --mcp` grants it."""
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.folder = Path(self._dir.name)
+        (self.folder / "notes.json").write_text(
+            json.dumps([{"text": "Dentist on Friday", "tag": "health"}]), "utf-8"
+        )
+        self.grant = f'notes={sys.executable} {SERVER} notes.json'
+
+    def cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        root = Path(__file__).resolve().parents[1]
+        return subprocess.run(
+            [sys.executable, "-m", "kosika.cli", *args],
+            cwd=self.folder, capture_output=True, text=True, timeout=120,
+            env={**os.environ, "PYTHONPATH": str(root)},
+        )
+
+    def test_connect_declares_the_tools_and_run_uses_them(self) -> None:
+        made = self.cli("connect", self.grant, "--out", "notes_tools.kos")
+        self.assertEqual(made.returncode, 0, made.stderr)
+        (self.folder / "use.kos").write_text(
+            'import "notes_tools.kos"\n'
+            "record Q { query: Text }\n"
+            "agent librarian { can: [search_notes] max_steps: 1 }\n"
+            "workflow main(q: Q) -> SearchNotesOut {\n"
+            "  found = execute librarian.search_notes(query: q.query)\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        (self.folder / "q.json").write_text('{"q": {"query": "dentist"}}', "utf-8")
+        ran = self.cli("run", "use.kos", "--input", "q.json", "--mcp", self.grant)
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("Dentist on Friday", ran.stdout)
+
+    def test_without_the_grant_the_tool_is_not_bound(self) -> None:
+        self.cli("connect", self.grant, "--out", "notes_tools.kos")
+        (self.folder / "use.kos").write_text(
+            'import "notes_tools.kos"\nrecord Q { query: Text }\n'
+            "agent librarian { can: [search_notes] max_steps: 1 }\n"
+            "workflow main(q: Q) -> SearchNotesOut {\n"
+            "  found = execute librarian.search_notes(query: q.query)\n}\n",
+            encoding="utf-8",
+        )
+        (self.folder / "q.json").write_text('{"q": {"query": "x"}}', "utf-8")
+        ran = self.cli("run", "use.kos", "--input", "q.json")
+        self.assertNotEqual(ran.returncode, 0)

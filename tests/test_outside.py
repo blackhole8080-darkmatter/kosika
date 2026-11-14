@@ -287,7 +287,7 @@ class CoderTests(unittest.TestCase):
             )
         )
         self.assertIn("Wrote: calc.py, test_calc.py", done["text"])
-        self.assertIn("The tests for calc pass. Only those were run", done["text"])
+        self.assertIn("The tests for test_calc.py pass. Only those were run", done["text"])
 
     def test_a_no_leaves_the_folder_as_it_was(self) -> None:
         app = self.make(self.work)

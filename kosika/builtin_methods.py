@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
-from . import matrices
+from . import learning_ops, matrices
 
 #: The element type of the receiving array, in a signature.
 ELEMENT = "$element"
@@ -399,6 +399,8 @@ METHODS: tuple[Method, ...] = (
     Method("Text", "upper", (), "Text", lambda text: text.upper()),
     Method("Text", "lower", (), "Text", lambda text: text.lower()),
     Method("Text", "trim", (), "Text", lambda text: text.strip()),
+    Method("Text", "trim_start", (), "Text", lambda text: text.lstrip()),
+    Method("Text", "trim_end", (), "Text", lambda text: text.rstrip()),
     Method(
         "Text", "contains", (("part", "Text"),), "Bool", lambda text, part: part in text
     ),
@@ -658,6 +660,23 @@ METHODS: tuple[Method, ...] = (
         matrices.bool_times,
     ),
     Method("Number[][]", "closure", (), "Number[][]", matrices.closure),
+    # What a model learns with, a whole batch in one call (learning_ops.py).
+    Method("Number[][]", "each_times", (("other", "Number[][]"),), "Number[][]", learning_ops.each_times),
+    Method("Number[][]", "tanh", (), "Number[][]", learning_ops.tanh),
+    Method("Number[][]", "tanh_slope", (), "Number[][]", learning_ops.tanh_slope),
+    Method("Number[][]", "sigmoid", (), "Number[][]", learning_ops.sigmoid),
+    Method("Number[][]", "relu", (), "Number[][]", learning_ops.relu),
+    Method("Number[][]", "relu_slope", (), "Number[][]", learning_ops.relu_slope),
+    Method("Number[][]", "exp", (), "Number[][]", learning_ops.exp),
+    Method("Number[][]", "softmax", (), "Number[][]", learning_ops.softmax),
+    Method("Number[][]", "plus_row", (("row", "Number[]"),), "Number[][]", learning_ops.plus_row),
+    Method("Number[][]", "column_sums", (), "Number[]", learning_ops.column_sums),
+    Method("Number[][]", "row_argmax", (), "Number[]", learning_ops.row_argmax),
+    Method("Number[][]", "cross_entropy", (("classes", "Number[]"),), "Number", learning_ops.cross_entropy),
+    Method("Number[]", "one_hot", (("classes", "Number"),), "Number[][]", learning_ops.one_hot),
+    Method("Number", "noise", (("columns", "Number"), ("seed", "Number")), "Number[][]", learning_ops.noise),
+    Method("Text[]", "top_words", (("count", "Number"),), "Text[]", learning_ops.top_words),
+    Method("Text[]", "bag_of_words", (("vocabulary", "Text[]"),), "Number[][]", learning_ops.bag_of_words),
     Method(
         "Number[][]",
         "adjacency",

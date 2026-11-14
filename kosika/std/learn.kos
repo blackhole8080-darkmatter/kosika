@@ -1,0 +1,114 @@
+// std/learn.kos: a model that learns to sort things into classes, written in
+// Kosika, trained a whole batch at a time on the laptop's processor.
+//
+//   import "std/learn.kos"
+//
+// classifier(inputs, hidden, classes, seed)   a new model
+// probabilities(m, x)    for each row of x, how likely each class is
+// guess(m, x)            for each row of x, the likeliest class
+// step(m, x, classes, rate)
+//                        the model after one step of learning from a batch
+// train(m, x, classes, rate, rounds)
+//                        the model after `rounds` steps on the same batch
+// accuracy(m, x, classes) the share of rows it puts in the right class
+// texts_to_rows(texts, vocabulary)  texts as rows a model reads
+//
+// The model is one hidden layer of tanh units and a softmax over the classes,
+// learned by gradient descent on the cross-entropy. Everything that touches
+// every number of a matrix is one built-in call for the whole batch
+// (times, plus_row, tanh, softmax, ...), so a round over thousands of rows
+// is a handful of calls, not thousands of loop steps. The backward pass is
+// written out below, line for line the chain rule, so it can be read, and
+// changed, like any other Kosika.
+//
+// A model is an ordinary record: it can be kept in a log or a memory, and
+// the same seed and data always give the same model, on either engine.
+
+export [Classifier, classifier, probabilities, guess, step, train, accuracy, texts_to_rows]
+
+record Classifier { w1: Number[][] b1: Number[] w2: Number[][] b2: Number[] classes: Number }
+
+fn zeros_row(size: Number) -> Number[] {
+  var row: Number[] = []
+  for i in 0 until size {
+    row = row.append(0)
+  }
+  return row
+}
+
+fn classifier(inputs: Number, hidden: Number, classes: Number, seed: Number) -> Classifier {
+  // Small starting weights, scaled to the number of inputs, so tanh starts
+  // near its middle, where it learns fastest.
+  let w1 = inputs.noise(hidden, seed).scaled(1 / inputs.sqrt())
+  let w2 = hidden.noise(classes, seed + 1).scaled(1 / hidden.sqrt())
+  return {w1: w1, b1: zeros_row(hidden), w2: w2, b2: zeros_row(classes), classes: classes}
+}
+
+fn probabilities(m: Classifier, x: Number[][]) -> Number[][] {
+  return x.times(m.w1).plus_row(m.b1).tanh().times(m.w2).plus_row(m.b2).softmax()
+}
+
+fn guess(m: Classifier, x: Number[][]) -> Number[] {
+  return probabilities(m, x).row_argmax()
+}
+
+fn step(m: Classifier, x: Number[][], classes: Number[], rate: Number) -> Classifier {
+  // Forward, keeping what the backward pass needs.
+  let h = x.times(m.w1).plus_row(m.b1).tanh()
+  let p = h.times(m.w2).plus_row(m.b2).softmax()
+  // Backward. For softmax with cross-entropy, how the loss changes with the
+  // scores is simply the probabilities less the right answers, per row.
+  let n = x.rows()
+  let dz2 = p.minus(classes.one_hot(m.classes)).scaled(1 / n)
+  let dw2 = h.transpose().times(dz2)
+  let db2 = dz2.column_sums()
+  let dz1 = dz2.times(m.w2.transpose()).each_times(h.tanh_slope())
+  let dw1 = x.transpose().times(dz1)
+  let db1 = dz1.column_sums()
+  // A step down the slope.
+  return {
+    w1: m.w1.minus(dw1.scaled(rate)), b1: m.b1.minus(db1.scaled(rate)),
+    w2: m.w2.minus(dw2.scaled(rate)), b2: m.b2.minus(db2.scaled(rate)),
+    classes: m.classes
+  }
+}
+
+fn train(m: Classifier, x: Number[][], classes: Number[], rate: Number, rounds: Number) -> Classifier {
+  var now = m
+  for r in 0 until rounds {
+    now = step(now, x, classes, rate)
+  }
+  return now
+}
+
+fn accuracy(m: Classifier, x: Number[][], classes: Number[]) -> Number {
+  let guessed = guess(m, x)
+  var right = 0
+  for i in 0 until classes.length() {
+    if guessed[i] == classes[i] {
+      right += 1
+    }
+  }
+  return right / classes.length()
+}
+
+fn texts_to_rows(texts: Text[], vocabulary: Text[]) -> Number[][] {
+  return texts.bag_of_words(vocabulary)
+}
+
+test "a classifier learns a pattern it could not know at the start" {
+  // Class 1 when the first input is larger than the second.
+  x = [[1, 0], [0, 1], [0.9, 0.2], [0.1, 0.8], [0.7, 0.1], [0.3, 0.9]]
+  y = [1, 0, 1, 0, 1, 0]
+  m = classifier(2, 4, 2, 7)
+  trained = train(m, x, y, 0.5, 200)
+  expect accuracy(trained, x, y) == 1
+  expect probabilities(trained, x)[0][1] > probabilities(m, x)[0][1]
+}
+
+test "texts become rows over a vocabulary" {
+  texts = ["func main ( ) {", "def main ( ) :", "func go"]
+  vocab = texts.top_words(3)
+  expect vocab == ["(", ")", "func"]
+  expect texts_to_rows(texts, ["func", "def"]) == [[1, 0], [0, 1], [1, 0]]
+}

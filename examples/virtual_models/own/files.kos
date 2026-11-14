@@ -1,0 +1,154 @@
+// Kosika's first own model: given a request in words, which of Kosika's
+// files the change will touch. Made, trained and judged here, in Kosika,
+// on the processor, from nothing but Kosika's own history.
+//
+//   kosika-native run files.kos --input files.json
+//
+// files.json holds Kosika's commits (files_data.py reads them from git):
+// each commit's words and the files it changed, the newest tenth held out.
+//
+// The model is the smallest neural network there is: one layer, a weight
+// from every word it knows to every file it can name, and a sigmoid, so each
+// file gets a probability. It learns by gradient descent over all examples
+// at once, with Kosika's matrix operations doing the sums. It is judged on
+// the held-out changes, which it never saw, against the plain guess a person
+// would make without it: the files changed most often.
+
+record Change { text: Text files: Text[] }
+record Data { train: Change[] test: Change[] }
+record Counted { name: Text count: Number }
+record Model { words: Text[] files: Text[] weights: Number[][] }
+record Judged { model: Number guess: Number top: Number changes: Number }
+record Result { words: Number files: Number rounds: Number found_by_model: Text found_by_guess: Text model_hits: Number guess_hits: Number possible: Number example: Text }
+
+// How many words it knows, how many files it can name, and how it learns.
+fn known_words() -> Number { return 160 }
+fn known_files() -> Number { return 20 }
+fn rounds() -> Number { return 60 }
+fn rate() -> Number { return 2 }
+// Files it names for each change, when judged.
+fn top() -> Number { return 3 }
+
+fn tokens(text: Text) -> Text[] {
+  return for word in text.lower().words() where word.trim_marks(".,;:!?\"'()[]{}<>`*-_").length() > 2 {
+    word.trim_marks(".,;:!?\"'()[]{}<>`*-_")
+  }
+}
+
+// The names that occur in the most changes, most first.
+fn commonest(lists: Text[][], most: Number) -> Text[] {
+  var counts: Number{} = {}
+  for items in lists {
+    for name in items.unique() {
+      counts[name] = counts.get(key: name).or(default: 0) + 1
+    }
+  }
+  let ranked: Counted[] = for name in counts.keys() { {name: name, count: counts.get(key: name).or(default: 0)} }
+  let sorted = ranked.sort_by(field: "count").reverse()
+  return for c in sorted.take(most) { c.name }
+}
+
+// A change as numbers: 1 for each known word it holds, and a last 1 that
+// lets every file have a weight of its own.
+fn row(text: Text, words: Text[]) -> Number[] {
+  var present: Bool{} = {}
+  for word in tokens(text) { present[word] = true }
+  let marks = for word in words { if present.has(key: word) { 1 } else { 0 } }
+  return marks.append(1)
+}
+
+fn wanted(change: Change, files: Text[]) -> Number[] {
+  return for file in files { if change.files.contains(file) { 1 } else { 0 } }
+}
+
+fn sigmoid_all(z: Number[][]) -> Number[][] {
+  return for r in z { for v in r { 1 / (1 + (0 - v.max(-15).min(15)).exp()) } }
+}
+
+// Gradient descent on all examples at once: the mean of each word's part in
+// each file's error, taken off the weights a step at a time.
+fn learn(changes: Change[]) -> Model {
+  let words = commonest(for c in changes { tokens(c.text) }, known_words())
+  let files = commonest(for c in changes { c.files }, known_files())
+  let x = for c in changes { row(c.text, words) }
+  let y = for c in changes { wanted(c, files) }
+  let xt = x.transpose()
+  let step = rate() / changes.length()
+  var weights: Number[][] = for i in 0 until words.length() + 1 { for j in 0 until files.length() { 0 } }
+  for r in 0 until rounds() {
+    let p = sigmoid_all(x.times(weights))
+    weights = weights.minus(xt.times(p.minus(y)).scaled(by: step))
+  }
+  return {words: words, files: files, weights: weights}
+}
+
+// The files the model names for a request, likeliest first.
+fn named(m: Model, text: Text) -> Text[] {
+  let scores = sigmoid_all([row(text, m.words)].times(m.weights))[0]
+  let ranked: Counted[] = for j in 0 until m.files.length() { {name: m.files[j], count: scores[j]} }
+  return for c in ranked.sort_by(field: "count").reverse().take(top()) { c.name }
+}
+
+// How many of the files each change really touched were named, by the model
+// and by the plain guess, out of how many could have been.
+fn judge(m: Model, changes: Change[]) -> Judged {
+  let guess = m.files.take(top())
+  var model = 0
+  var plain = 0
+  var possible = 0
+  for c in changes {
+    let mine = named(m, c.text)
+    for file in c.files {
+      if m.files.contains(file) {
+        possible += 1
+        if mine.contains(file) { model += 1 }
+        if guess.contains(file) { plain += 1 }
+      }
+    }
+  }
+  return {model: model, guess: plain, top: top(), changes: possible}
+}
+
+fn percent(part: Number, whole: Number) -> Text {
+  return if whole == 0 { "0%" } else { (100 * part / whole).round().to_text() + "%" }
+}
+
+fn report(m: Model, judged: Judged, data: Data) -> Result {
+  let first = data.test[0]
+  return {
+    words: m.words.length(), files: m.files.length(), rounds: rounds(),
+    found_by_model: percent(judged.model, judged.changes),
+    found_by_guess: percent(judged.guess, judged.changes),
+    model_hits: judged.model, guess_hits: judged.guess, possible: judged.changes,
+    example: first.text.take(80) + " => " + named(m, first.text).join(", ")
+  }
+}
+
+workflow main(data: Data) -> Result {
+  model  = learn(data.train)
+  judged = judge(model, data.test)
+  result = report(model, judged, data)
+}
+
+test "a request's words point the model at the files they belong to" {
+  train: Change[] = [
+    {text: "the parser reads a new keyword", files: ["kosika/parser.py"]},
+    {text: "parser handles a keyword in blocks", files: ["kosika/parser.py"]},
+    {text: "Go engine gains the method", files: ["native/methods.go"]},
+    {text: "a method in the Go engine", files: ["native/methods.go"]}
+  ]
+  m = learn(train)
+  expect named(m, "a new keyword for the parser")[0] == "kosika/parser.py"
+  expect named(m, "the Go engine method")[0] == "native/methods.go"
+}
+
+test "the model is judged against the plain guess on unseen changes" {
+  train: Change[] = [
+    {text: "parser keyword", files: ["a.py"]}, {text: "parser block", files: ["a.py"]},
+    {text: "engine method", files: ["b.go"]}, {text: "engine thing", files: ["b.go"]}
+  ]
+  m = learn(train)
+  j = judge(m, [{text: "engine", files: ["b.go"]}])
+  expect j.changes == 1
+  expect j.model == 1
+}
