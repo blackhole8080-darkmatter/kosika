@@ -2078,6 +2078,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nothing to list the asks; yes or no; or an ask's id and yes or no.",
     )
     answer_parser.add_argument("--by", help="Name recorded with the answer.")
+    answer_parser.add_argument(
+        "--serve",
+        action="store_true",
+        help=(
+            "Serve a page with a yes and a no button for each ask, to open on "
+            "a phone on the same network. Its address carries a key."
+        ),
+    )
+    answer_parser.add_argument("--port", type=int, default=8795)
 
     story_parser = subparsers.add_parser(
         "story", help="Tell what happened in a run, in plain words, from its trace."
@@ -3578,8 +3587,14 @@ def main() -> int:
         return 0
 
     if args.command == "answer":
-        from .ask_folder import AskFolderError, answer, waiting
+        from .ask_folder import AskFolderError, answer, serve, waiting
 
+        if args.serve:
+            if args.words:
+                print("--serve answers from the page; give only the folder.", file=sys.stderr)
+                return 2
+            serve(args.folder, args.by or getpass.getuser(), args.port)
+            return 0
         if not args.words:
             asks = waiting(args.folder)
             if not asks:

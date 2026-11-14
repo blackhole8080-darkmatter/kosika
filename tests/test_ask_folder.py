@@ -13,6 +13,7 @@ from pathlib import Path
 from kosika.ask_folder import (
     AskFolderError,
     answer,
+    page,
     put_ask,
     wait_for_answer,
     waiting,
@@ -92,6 +93,15 @@ class AskFolderTests(unittest.TestCase):
         with self.assertRaises(AskFolderError):
             answer(self.folder, first, "maybe", "aryan")
         self.assertIn("refused", answer(self.folder, second, "no", "aryan"))
+
+    def test_the_phone_page_shows_each_ask_with_a_yes_and_a_no(self) -> None:
+        self.assertIn("Nothing is waiting", page(self.folder, "k"))
+        ask_id = put_ask(self.folder, REQUEST)
+        html = page(self.folder, "k<")
+        self.assertIn(ask_id, html)
+        self.assertIn("value='yes'", html)
+        self.assertIn("/answer?key=k&lt;", html)
+        self.assertIn("hands.py", html)
 
     def test_a_run_waits_in_the_folder_and_runs_once_answered(self) -> None:
         work = self.folder.parent

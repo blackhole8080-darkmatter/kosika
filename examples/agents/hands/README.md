@@ -59,3 +59,11 @@ and waits for the answer there, so it can come from a phone or another window:
 
     kosika answer FOLDER          # what is waiting
     kosika answer FOLDER yes      # approve the one action waiting
+
+From your phone, on the same Wi-Fi as the laptop:
+
+    kosika answer FOLDER --serve  # prints an address with a key; open it on the phone
+
+The page shows each waiting action with a Yes and a No button. Without the
+key in the address nothing is shown or answered. Windows may ask once whether
+Python may accept connections on your private network.
