@@ -1,0 +1,82 @@
+// results.kos: what a round of work made, as one page, drawn by Kosika.
+//
+// Each piece of work is a card with its agent's mascot, what it does, and
+// its proof: real output from the run, and its tests on both engines.
+//
+//   kosika run results.kos --workflow page --input results.json
+//
+// results.json is {"r": {"title": "...", "items": [{"agent": "coder-1",
+//   "colour": "pink", "title": "...", "what": "...", "proof": "...",
+//   "tests": "16 passed on both engines"}], "phone": {"title": "...", "line": "..."}}}
+
+import "pointer_look.kos"
+import "mascots.kos"
+import "std/designs_motion.kos"
+
+record Item { agent: Text colour: Text title: Text what: Text proof: Text tests: Text }
+record Push { title: Text line: Text }
+record Results { title: Text items: Item[] phone: Push }
+record Page { html: Text }
+
+fn hero(title: Text) -> Text {
+  let pets = (for m in mascots() { f"<span class=\"pet\">{mascot_svg(m.agent, look(\"amber\"), \"done\", 64)}</span>" }).join("")
+  let sparks = motion_particles(40, [look("amber"), look("gold"), look("violet"), look("sky")], 1100, 180, 11)
+  return "<header><svg class=\"sky\" viewBox=\"0 0 1100 180\" preserveAspectRatio=\"none\" aria-hidden=\"true\">" + sparks + "</svg>"
+    + "<h1>" + motion_kinetic(title, "rise") + "</h1><div class=\"pets\">" + pets + "</div></header>"
+}
+
+fn card(i: Item) -> Text {
+  let c = look(i.colour)
+  return f"<article style=\"--c:{c}\"><div class=\"who\">{mascot_svg(i.agent, c, \"done\", 56)}<span>{escaped_text(title_for(i.agent))}</span></div>"
+    + f"<h2>{escaped_text(i.title)}</h2><p>{escaped_text(i.what)}</p>"
+    + f"<pre>{escaped_text(i.proof)}</pre><b class=\"ok\">✓ {escaped_text(i.tests)}</b></article>"
+}
+
+fn phone(p: Push) -> Text {
+  return "<aside class=\"phone\"><div class=\"notch\"></div><small>ntfy · now</small>"
+    + f"<div class=\"push\"><strong>{escaped_text(p.title)}</strong><span>{escaped_text(p.line)}</span>"
+    + "<div class=\"btns\"><i class=\"yes\">Yes, do it</i><i class=\"no\">No</i></div></div>"
+    + "<p>Answered from anywhere: the laptop only calls out.</p></aside>"
+}
+
+fn results_css() -> Text {
+  return "body{margin:0;background:radial-gradient(900px 500px at 0 -10%,color-mix(in srgb,var(--think) 24%,var(--bg)),transparent 60%),radial-gradient(800px 500px at 110% 0,color-mix(in srgb,var(--amber) 16%,var(--bg)),transparent 55%),var(--bg);color:var(--ink);font:15px/1.5 'Segoe UI',Inter,system-ui,sans-serif}"
+    + "header{position:relative;max-width:1180px;margin:0 auto;padding:36px 16px 8px;overflow:hidden}.sky{position:absolute;inset:0;width:100%;height:100%;opacity:.7}"
+    + "h1{position:relative;margin:0;font-size:clamp(28px,5vw,48px);color:var(--gold)}.pets{position:relative;display:flex;gap:10px;margin-top:10px}"
+    + "main{max-width:1180px;margin:0 auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:16px}"
+    + "article{padding:18px;border-radius:22px;background:linear-gradient(155deg,color-mix(in srgb,var(--c) 18%,var(--panel)),var(--panel) 62%);border:1px solid color-mix(in srgb,var(--c) 45%,transparent);box-shadow:0 18px 46px -24px var(--c)}"
+    + ".who{display:flex;align-items:center;gap:8px;color:var(--c);font-weight:700}h2{margin:8px 0 4px;font-size:20px}p{margin:0 0 10px;color:var(--soft)}"
+    + "pre{margin:0 0 10px;padding:10px;border-radius:12px;background:color-mix(in srgb,var(--ink) 6%,transparent);font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow:hidden}"
+    + ".ok{color:var(--mint)}"
+    + ".phone{grid-column:1/-1;justify-self:center;width:min(100%,360px);padding:14px 16px 18px;border-radius:38px;background:var(--panel);border:2px solid color-mix(in srgb,var(--violet) 50%,transparent)}"
+    + ".notch{width:110px;height:22px;margin:0 auto 10px;border-radius:12px;background:var(--bg)}.phone small{color:var(--soft)}"
+    + ".push{margin:8px 0;padding:12px;border-radius:18px;background:color-mix(in srgb,var(--ink) 9%,var(--panel))}.push strong{display:block}.push span{display:block;font:12px ui-monospace,monospace;color:var(--soft);word-break:break-word}"
+    + ".btns{display:flex;gap:8px;margin-top:10px}.btns i{flex:1;text-align:center;font-style:normal;font-weight:700;padding:9px;border-radius:12px;color:var(--bg)}.yes{background:var(--mint)}.no{background:var(--rose)}"
+    + motion_moves(["rise", "pop", "float", "drift"])
+    + motion_use("article", "rise", "back", 700) + motion_stagger("article", 12, 90)
+    + motion_use(".pets .pet", "float", "in-out", 3200) + motion_use(".phone", "pop", "back", 800)
+}
+
+fn results_page(r: Results) -> Text {
+  let cards = (for i in r.items { card(i) }).join("")
+  return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    + f"<title>{escaped_text(r.title)}</title><style>" + look_vars() + results_css() + mascot_css() + "</style></head><body>"
+    + hero(r.title) + "<main>" + cards + phone(r.phone) + "</main></body></html>"
+}
+
+workflow page(r: Results) -> Page {
+  result = {html: results_page(r)}
+}
+
+test "a results page moves gently and uses only the palette" {
+  expect motion_check(results_css()) == []
+  expect raw_colours(results_css()) == []
+}
+
+test "each card names its agent's mascot and shows its proof" {
+  r: Results = {title: "Round 3", items: [{agent: "coder-1", colour: "pink", title: "Skills", what: "Open format", proof: "name: motion", tests: "7 passed"}], phone: {title: "Kosika asks", line: "git status"}}
+  html = results_page(r)
+  expect html.contains("Nova the fox")
+  expect html.contains("<pre>name: motion</pre>")
+  expect html.contains("Yes, do it")
+}
