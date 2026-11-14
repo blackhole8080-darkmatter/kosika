@@ -104,10 +104,10 @@ fn team_page(t: Team) -> Text {
 fn team_css() -> Text {
   return ".stage{height:110px}.walk{position:absolute;left:4%;top:0;animation:fly 6s ease-in-out infinite}"
     + ".pill{position:relative;display:inline-block;margin:6px 0 0;padding:3px 11px;border-radius:999px;font-size:12.5px}"
-    + ".pill.ok{color:#4fe0a6;background:#4fe0a61c}.pill.no{color:#ff6b81;background:#ff6b811c}.pill.idle{color:var(--soft);background:#ffffff10}"
-    + ".pill.wait{color:#07080d;background:linear-gradient(90deg,var(--amber),#f5b45c);animation:beat 1.2s ease-in-out infinite}"
-    + ".card.asking{border-color:var(--amber);box-shadow:0 0 0 2px #ff8a4c66,0 18px 60px -16px #ff8a4ccc}"
-    + ".last{position:relative;margin:10px 0 0;color:var(--soft);font-size:13.5px}.last code,.ticker code{font-family:ui-monospace,Consolas,monospace;color:var(--ink);background:#ffffff10;padding:1px 7px;border-radius:7px}"
+    + ".pill.ok{color:var(--mint);background:color-mix(in srgb,var(--mint) 11%,transparent)}.pill.no{color:var(--rose);background:color-mix(in srgb,var(--rose) 11%,transparent)}.pill.idle{color:var(--soft);background:color-mix(in srgb,var(--white) 6%,transparent)}"
+    + ".pill.wait{color:var(--bg);background:linear-gradient(90deg,var(--amber),var(--gold));animation:beat 1.2s ease-in-out infinite}"
+    + ".card.asking{border-color:var(--amber);box-shadow:0 0 0 2px color-mix(in srgb,var(--amber) 40%,transparent),0 18px 60px -16px color-mix(in srgb,var(--amber) 80%,transparent)}"
+    + ".last{position:relative;margin:10px 0 0;color:var(--soft);font-size:13.5px}.last code,.ticker code{font-family:ui-monospace,Consolas,monospace;color:var(--ink);background:color-mix(in srgb,var(--white) 6%,transparent);padding:1px 7px;border-radius:7px}"
     + "h3.head{max-width:1180px;margin:30px auto 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}"
     + ".ticker{max-width:1180px;margin:0 auto;padding:0;list-style:none}.ticker li{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:9px 14px;margin:0 0 8px;border-radius:12px;background:var(--panel);border-left:3px solid var(--c);animation:rise .5s both}"
     + ".ticker time{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--soft)}.ticker b{color:var(--c)}.ticker .mz{flex:none}.ticker em{font-style:normal;font-size:12px;color:var(--soft)}"
@@ -149,4 +149,8 @@ test "a card says what the agent did last and how it ended" {
 test "the board's and the diary's motion pass Kosika Designs' motion check" {
   expect motion_check(team_page({title: "Agents", entries: [], waiting: []})) == []
   expect motion_check(diary_page({title: "Diary", entries: []})) == []
+}
+
+test "every colour on the cards and the board is named from Kosika Designs' palette" {
+  expect raw_colours(page_css() + team_css() + mascot_css()) == []
 }

@@ -39,13 +39,13 @@ fn board(s: Swarm) -> Board {
     cards = cards.append(card(c))
     if c.result == "passed" { passed += 1 }
   }
-  let style = "body{margin:0;background:#07080d;color:#eef0f7;font:15px 'Segoe UI',Arial,sans-serif}"
-    + "header{padding:18px 26px;border-bottom:1px solid #1d2140}h1{margin:0;font-size:20px}h1 small{color:#a3a8bd;font-weight:400}"
+  let style = look_vars() + "body{margin:0;background:var(--bg);color:var(--ink);font:15px 'Segoe UI',Arial,sans-serif}"
+    + "header{padding:18px 26px;border-bottom:1px solid color-mix(in srgb,var(--think) 12%,var(--panel))}h1{margin:0;font-size:20px}h1 small{color:var(--soft);font-weight:400}"
     + "main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;padding:22px}"
-    + ".card{background:#111428;border:1px solid #1d2140;border-top:4px solid var(--c);border-radius:14px;padding:16px 18px}"
+    + ".card{background:var(--panel);border:1px solid color-mix(in srgb,var(--think) 12%,var(--panel));border-top:4px solid var(--c);border-radius:14px;padding:16px 18px}"
     + ".pointer svg{display:block;height:58px;width:auto}.ask{margin:10px 0;line-height:1.4}"
-    + ".facts{display:flex;flex-wrap:wrap;gap:12px;color:#a3a8bd;font-size:13px}.doing{color:#a993ff;font-size:13px;min-height:1em}"
-    + ".ok{color:#4fe0a6}.no{color:#ff6b81}.work{color:#f5b45c}"
+    + ".facts{display:flex;flex-wrap:wrap;gap:12px;color:var(--soft);font-size:13px}.doing{color:var(--violet);font-size:13px;min-height:1em}"
+    + ".ok{color:var(--mint)}.no{color:var(--rose)}.work{color:var(--gold)}"
   let summary = passed.to_text() + " of " + s.coders.length().to_text() + " passed"
   let html = "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"5\">"
     + "<title>Kosika coders</title><style>" + style + "</style></head><body>"

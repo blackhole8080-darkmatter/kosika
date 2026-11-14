@@ -123,7 +123,7 @@ fn agents_of(entries: Entry[]) -> Text[] {
 }
 
 fn colour_of(name: Text) -> Text {
-  if name == "" { return "#a3a8bd" }
+  if name == "" { return look("soft") }
   return colour_for(name, kit_named(name).colour)
 }
 
@@ -180,22 +180,22 @@ fn diary_page(d: Diary) -> Text {
 fn diary_css() -> Text {
   return ".tallies{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}"
     + ".tally{display:flex;gap:10px;align-items:center;padding:8px 14px;border-radius:14px;background:color-mix(in srgb,var(--c) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--c) 45%,transparent)}"
-    + ".tally i{width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 12px var(--c)}.tally span{color:var(--soft);font-size:13px}.tally .other{color:#ff9a9a}"
+    + ".tally i{width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 12px var(--c)}.tally span{color:var(--soft);font-size:13px}.tally .other{color:var(--rose)}"
     + ".line{position:relative;max-width:980px;margin:0 auto;padding:0 0 0 0;list-style:none}"
-    + ".line:before{content:\"\";position:absolute;left:86px;top:0;bottom:0;width:2px;background:linear-gradient(var(--amber),var(--violet),var(--sky));box-shadow:0 0 14px #a993ff88}"
+    + ".line:before{content:\"\";position:absolute;left:86px;top:0;bottom:0;width:2px;background:linear-gradient(var(--amber),var(--violet),var(--sky));box-shadow:0 0 14px color-mix(in srgb,var(--violet) 53%,transparent)}"
     + ".line li{position:relative;display:grid;grid-template-columns:72px 30px 1fr;align-items:start;gap:0;margin:0 0 14px;animation:rise .6s both}"
     + "time{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--soft);padding-top:14px;text-align:right;padding-right:8px}"
-    + ".dot{width:14px;height:14px;margin:14px 0 0 8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px #07080d,0 0 16px var(--c);animation:pulse 2.4s ease-in-out infinite}"
+    + ".dot{width:14px;height:14px;margin:14px 0 0 8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg),0 0 16px var(--c);animation:pulse 2.4s ease-in-out infinite}"
     + ".what{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-radius:16px;background:linear-gradient(150deg,color-mix(in srgb,var(--c) 14%,var(--panel)),var(--panel) 60%);border:1px solid color-mix(in srgb,var(--c) 40%,transparent)}"
     + ".pointer{flex:none;width:44px;height:44px;overflow:hidden}.pointer svg{max-width:44px;max-height:44px}"
     + ".head{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.head b{color:var(--c)}"
-    + "code{font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:2px 8px;border-radius:8px;background:#ffffff10}"
+    + "code{font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:2px 8px;border-radius:8px;background:color-mix(in srgb,var(--white) 6%,transparent)}"
     + "em{font-style:normal;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px}"
-    + ".ok em{color:#4fe0a6;background:#4fe0a61c}.no em{color:#f5b45c;background:#f5b45c1c}.stop em{color:#55d6ff;background:#55d6ff1c}.bad em{color:#ff6b81;background:#ff6b811c}"
+    + ".ok em{color:var(--mint);background:color-mix(in srgb,var(--mint) 11%,transparent)}.no em{color:var(--gold);background:color-mix(in srgb,var(--gold) 11%,transparent)}.stop em{color:var(--sky);background:color-mix(in srgb,var(--sky) 11%,transparent)}.bad em{color:var(--rose);background:color-mix(in srgb,var(--rose) 11%,transparent)}"
     + ".ok-by{font-size:12px;color:var(--soft)}.said{margin:4px 0 0;color:var(--soft);font-size:13px;white-space:pre-wrap;word-break:break-word}"
-    + ".job{margin:4px 0 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6f7590}"
+    + ".job{margin:4px 0 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--soft) 65%,var(--bg))}"
     + ".empty{text-align:center;color:var(--soft)}"
-    + "@keyframes pulse{50%{box-shadow:0 0 0 4px #07080d,0 0 26px var(--c)}}"
+    + "@keyframes pulse{50%{box-shadow:0 0 0 4px var(--bg),0 0 26px var(--c)}}"
     + "@media (max-width:560px){.line:before{left:62px}.line li{grid-template-columns:50px 26px 1fr}time{font-size:10px}}"
 }
 
@@ -248,4 +248,8 @@ test "typed words are not written into the diary" {
   expect not diary_page({title: "x", entries: [e]}).contains("secret")
   r: Entry = {run: 1, at: "2", job: "note", step: "read", args: ["hands.py", "--agent", "coder-1", "read", "notepad"], exit_code: 0, said: "read\nmy secret", approved_by: ""}
   expect not diary_page({title: "x", entries: [r]}).contains("secret")
+}
+
+test "every colour in the diary is named from Kosika Designs' palette" {
+  expect raw_colours(diary_css()) == []
 }

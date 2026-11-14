@@ -71,10 +71,11 @@ fn mascot_problems(m: Mascot) -> Text[] {
 
 // ---- The creatures, on a 120 by 120 stage ----------------------------------
 
-fn cream() -> Text { return "#fff4e6" }
-fn ink() -> Text { return "#07080d" }
-fn gold() -> Text { return "#f5b45c" }
-fn blush() -> Text { return "#ff9ec8" }
+fn cream() -> Text { return look("ink") }
+fn ink() -> Text { return look("bg") }
+fn gold() -> Text { return look("gold") }
+fn white() -> Text { return look("white") }
+fn blush() -> Text { return look("rose") }
 
 fn eyes(lx: Number, rx: Number, y: Number, size: Number) -> Text {
   let l = lx.to_text()
@@ -85,8 +86,8 @@ fn eyes(lx: Number, rx: Number, y: Number, size: Number) -> Text {
   let hi = (size * 0.38).to_text()
   return "<g class=\"mz-eye\">"
     + f"<ellipse cx=\"{l}\" cy=\"{at}\" rx=\"{w}\" ry=\"{h}\" fill=\"{ink()}\"/><ellipse cx=\"{r}\" cy=\"{at}\" rx=\"{w}\" ry=\"{h}\" fill=\"{ink()}\"/>"
-    + f"<circle cx=\"{(lx + size * 0.35).to_text()}\" cy=\"{(y - size * 0.45).to_text()}\" r=\"{hi}\" fill=\"#fff\"/>"
-    + f"<circle cx=\"{(rx + size * 0.35).to_text()}\" cy=\"{(y - size * 0.45).to_text()}\" r=\"{hi}\" fill=\"#fff\"/>"
+    + f"<circle cx=\"{(lx + size * 0.35).to_text()}\" cy=\"{(y - size * 0.45).to_text()}\" r=\"{hi}\" fill=\"{white()}\"/>"
+    + f"<circle cx=\"{(rx + size * 0.35).to_text()}\" cy=\"{(y - size * 0.45).to_text()}\" r=\"{hi}\" fill=\"{white()}\"/>"
     + "</g>"
 }
 
@@ -121,7 +122,7 @@ fn hare(c: Text) -> Text {
     + f"<circle cx=\"60\" cy=\"64\" r=\"25\" fill=\"{c}\"/>"
     + f"<ellipse cx=\"60\" cy=\"74\" rx=\"11\" ry=\"8\" fill=\"{cream()}\"/>"
     + eyes(50, 70, 60, 3.6)
-    + f"<path d=\"M57 70 L63 70 L60 73.5 Z\" fill=\"{blush()}\"/><rect x=\"57.5\" y=\"76\" width=\"5\" height=\"5\" rx=\"1.2\" fill=\"#fff\"/>"
+    + f"<path d=\"M57 70 L63 70 L60 73.5 Z\" fill=\"{blush()}\"/><rect x=\"57.5\" y=\"76\" width=\"5\" height=\"5\" rx=\"1.2\" fill=\"{white()}\"/>"
     + f"<path d=\"M46 72 L34 70 M46 75 L35 77 M74 72 L86 70 M74 75 L85 77\" stroke=\"{ink()}\" stroke-width=\"1\" opacity=\".55\" stroke-linecap=\"round\"/>"
 }
 
@@ -132,7 +133,7 @@ fn sun(c: Text) -> Text {
     f"<rect x=\"56.5\" y=\"{top}\" width=\"7\" height=\"{long}\" rx=\"3.5\" fill=\"{c}\" transform=\"rotate({angle.to_text()} 60 60)\"/>"
   }).join("")
   return f"<g class=\"mz-rays\">{rays}</g>"
-    + f"<circle cx=\"60\" cy=\"60\" r=\"30\" fill=\"{c}\"/><circle cx=\"60\" cy=\"56\" r=\"22\" fill=\"#ffd9a8\" opacity=\".45\"/>"
+    + f"<circle cx=\"60\" cy=\"60\" r=\"30\" fill=\"{c}\"/><circle cx=\"60\" cy=\"56\" r=\"22\" fill=\"{gold()}\" opacity=\".35\"/>"
     + eyes(50, 70, 56, 3.6)
     + f"<circle cx=\"43\" cy=\"66\" r=\"4.5\" fill=\"{blush()}\" opacity=\".75\"/><circle cx=\"77\" cy=\"66\" r=\"4.5\" fill=\"{blush()}\" opacity=\".75\"/>"
     + f"<path d=\"M51 68 Q60 77 69 68\" stroke=\"{ink()}\" stroke-width=\"2.6\" fill=\"none\" stroke-linecap=\"round\"/>"
@@ -229,7 +230,7 @@ record Picture { html: Text }
 
 fn sheet_page(title: Text) -> Text {
   let names = (for m in mascots() { m.agent }).append("helper")
-  let colours = ["#ff8a4c", "#ff3ea5", "#55d6ff", "#4fe0a6", "#a993ff"]
+  let colours = (for name in ["amber", "pink", "sky", "mint", "violet"] { look(name) })
   var rows: Text[] = []
   var at = 0
   for agent in names {
@@ -239,15 +240,15 @@ fn sheet_page(title: Text) -> Text {
     at += 1
   }
   return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    + f"<title>{escaped_text(title)}</title><style>" + sheet_css() + mascot_css() + "</style></head><body>"
+    + f"<title>{escaped_text(title)}</title><style>" + look_vars() + sheet_css() + mascot_css() + "</style></head><body>"
     + f"<h1>{escaped_text(title)}</h1>" + rows.join("") + "</body></html>"
 }
 
 fn sheet_css() -> Text {
-  return "body{margin:0;padding:28px 16px;background:radial-gradient(1000px 500px at 0 -10%,#1b1f4a,transparent 60%),#07080d;color:#eef0f7;font:15px/1.5 'Segoe UI',Inter,system-ui,sans-serif}"
-    + "h1{max-width:1100px;margin:0 auto 18px;font-size:34px;background:linear-gradient(90deg,#ff8a4c,#f5b45c 40%,#a993ff);-webkit-background-clip:text;background-clip:text;color:transparent}"
-    + "section{max-width:1100px;margin:0 auto 16px;padding:16px 20px;border-radius:20px;background:linear-gradient(150deg,color-mix(in srgb,var(--c) 14%,#111428),#111428 60%);border:1px solid color-mix(in srgb,var(--c) 40%,transparent)}"
-    + "h2{margin:0 0 6px;font-size:20px}h2 small{margin-left:10px;font-size:13px;font-weight:500;color:#a3a8bd}"
+  return "body{margin:0;padding:28px 16px;background:radial-gradient(1000px 500px at 0 -10%,color-mix(in srgb,var(--think) 22%,var(--bg)),transparent 60%),var(--bg);color:var(--ink);font:15px/1.5 'Segoe UI',Inter,system-ui,sans-serif}"
+    + "h1{max-width:1100px;margin:0 auto 18px;font-size:34px;background:linear-gradient(90deg,var(--amber),var(--gold) 40%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}"
+    + "section{max-width:1100px;margin:0 auto 16px;padding:16px 20px;border-radius:20px;background:linear-gradient(150deg,color-mix(in srgb,var(--c) 14%,var(--panel)),var(--panel) 60%);border:1px solid color-mix(in srgb,var(--c) 40%,transparent)}"
+    + "h2{margin:0 0 6px;font-size:20px}h2 small{margin-left:10px;font-size:13px;font-weight:500;color:var(--soft)}"
     + ".row{display:flex;flex-wrap:wrap;gap:14px}figure{margin:0;text-align:center}figcaption{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--c)}"
 }
 
@@ -293,4 +294,8 @@ test "a mascot is drawn in its agent's colour, showing its state" {
 test "the mascots' motion passes Kosika Designs' motion check" {
   expect motion_check(mascot_css()) == []
   expect motion_check(sheet_page("Mascots")) == []
+}
+
+test "every colour of the mascot sheet is named from Kosika Designs' palette" {
+  expect raw_colours(sheet_css() + mascot_css()) == []
 }
