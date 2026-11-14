@@ -12,6 +12,10 @@
 //   typing  how fast it types: "steady", "fast" or "instant"
 //   patience  seconds the person must have left keyboard and mouse alone
 //           before an action that needs them; 0 does not wait
+//   servers the MCP servers it may be given (reach.kos); naming one grants
+//           nothing until a run's environment gives it
+//   model   the model that plans for it (reach.kos), or "" to only do the
+//           jobs it is given
 //
 // A kit only narrows: the person still says yes to every action, and holding
 // Escape still stops any action at once.
@@ -19,10 +23,11 @@
 import "pointer_look.kos"
 import "std/designs_palette.kos"
 import "apps.kos"
+import "reach.kos"
 
 export [Kit, KitCheck, known_hands, typing_speeds, kit_problems, kit_card, page_css, hand_for, refusal, typed_check, Typed, quiet_needed, wait_at_most]
 
-record Kit { name: Text colour: Text skills: Text[] tools: Text[] hands: Text[] typing: Text patience: Number }
+record Kit { name: Text colour: Text skills: Text[] tools: Text[] hands: Text[] typing: Text patience: Number servers: Text[] model: Text }
 record KitCheck { ok: Bool problems: Text[] colour: Text }
 record Typed { ok: Bool checked: Bool said: Text }
 
@@ -104,7 +109,15 @@ fn kit_problems(k: Kit) -> Text[] {
       out = out.append(f"'{hand}' is not a hand; the hands are {all_hands}")
     }
   }
-  for twice in repeated(k.hands).concat(repeated(k.skills)).concat(repeated(k.tools)) {
+  for server in k.servers {
+    if not known_servers().contains(server) {
+      out = out.append(f"'{server}' is not a server; the servers are {known_servers().join(\", \")}")
+    }
+  }
+  if k.model != "" and not known_models().contains(k.model) {
+    out = out.append(f"'{k.model}' is not a model; the models are {known_models().join(\", \")}")
+  }
+  for twice in repeated(k.hands).concat(repeated(k.skills)).concat(repeated(k.tools)).concat(repeated(k.servers)) {
     out = out.append(f"'{twice}' is listed twice")
   }
   if not typing_speeds().contains(k.typing) {
@@ -208,6 +221,8 @@ fn kit_card(k: Kit) -> Text {
     + "<h3>Hands</h3><div class=\"chips\">" + chips(k.hands, "hand", "no hands: it only thinks") + "</div>"
     + "<h3>Skills</h3><div class=\"chips\">" + chips(k.skills, "skill", "no skills yet") + "</div>"
     + "<h3>Tools</h3><div class=\"chips\">" + chips(k.tools, "tool", "no tools") + "</div>"
+    + "<h3>Servers</h3><div class=\"chips\">" + chips(k.servers, "server", "no MCP servers") + "</div>"
+    + "<h3>Model</h3><div class=\"chips\">" + chips(if k.model == "" { [] } else { [k.model] }, "model", "no model: only does jobs it is given") + "</div>"
     + f"<h3>Typing</h3><div class=\"speed\"><b style=\"--to:{level}%\"></b></div>"
     + f"<p class=\"rate\"><strong>{escaped_text(k.typing)}</strong> · {rate} · {escaped_text(row[2])}</p>"
     + f"<p class=\"rate\">{waits}</p>"
@@ -229,7 +244,7 @@ fn page_css() -> Text {
     + ".swatch{position:relative;margin:2px 0 0;color:var(--soft);font-family:ui-monospace,Consolas,monospace;font-size:12px;display:flex;gap:8px;align-items:center}.swatch i{width:14px;height:14px;border-radius:50%;background:var(--c);box-shadow:0 0 12px var(--c)}"
     + ".chips{position:relative;display:flex;flex-wrap:wrap;gap:6px}.chip{padding:3px 10px;border-radius:999px;font-size:12.5px;font-weight:600;border:1px solid;cursor:default}"
     + ".chip.hand{color:var(--c);border-color:color-mix(in srgb,var(--c) 60%,transparent);background:color-mix(in srgb,var(--c) 14%,transparent)}"
-    + ".chip.skill{color:var(--violet);border-color:#a993ff66;background:#a993ff18}.chip.tool{color:var(--sky);border-color:#55d6ff66;background:#55d6ff18}.chip.none{color:var(--soft);border-style:dashed;border-color:#ffffff30}"
+    + ".chip.skill{color:var(--violet);border-color:#a993ff66;background:#a993ff18}.chip.tool{color:var(--sky);border-color:#55d6ff66;background:#55d6ff18}.chip.server{color:#f5b45c;border-color:#f5b45c66;background:#f5b45c18}.chip.model{color:#ff6b81;border-color:#ff6b8166;background:#ff6b8118}.chip.none{color:var(--soft);border-style:dashed;border-color:#ffffff30}"
     + ".speed{position:relative;height:8px;border-radius:9px;background:#ffffff12;overflow:hidden}.speed b{display:block;height:100%;width:var(--to);border-radius:9px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 40%,transparent),var(--c));box-shadow:0 0 14px var(--c);animation:fill 1.6s cubic-bezier(.2,.8,.2,1) both .4s}"
     + ".rate{position:relative;margin:8px 0 0;color:var(--soft);font-size:13px}.rate strong{color:var(--ink)}"
     + "@keyframes fly{0%,100%{transform:translate(0,0)}30%{transform:translate(110px,30px)}60%{transform:translate(30px,52px)}80%{transform:translate(130px,10px)}}"
@@ -238,13 +253,13 @@ fn page_css() -> Text {
 }
 
 test "a good kit has no problems, and its colour is the one it asked for" {
-  k: Kit = {name: "coder-1", colour: "pink", skills: ["notes"], tools: ["hand"], hands: ["look", "press"], typing: "fast", patience: 3}
+  k: Kit = {name: "coder-1", colour: "pink", skills: ["notes"], tools: ["hand"], hands: ["look", "press"], typing: "fast", patience: 3, servers: [], model: ""}
   expect kit_problems(k) == []
   expect colour_for(k.name, k.colour) == "#ff3ea5"
 }
 
 test "an unknown hand, a bad speed, a repeat and a dark colour are all told" {
-  k: Kit = {name: "x y", colour: "#050505", skills: [], tools: [], hands: ["look", "fly", "look"], typing: "warp", patience: 2.5}
+  k: Kit = {name: "x y", colour: "#050505", skills: [], tools: [], hands: ["look", "fly", "look"], typing: "warp", patience: 2.5, servers: [], model: ""}
   said = kit_problems(k).join("\n")
   expect said.contains("'fly' is not a hand")
   expect said.contains("'look' is listed twice")
@@ -255,7 +270,7 @@ test "an unknown hand, a bad speed, a repeat and a dark colour are all told" {
 }
 
 test "a card shows the agent's colour, its hands and how fast it types" {
-  k: Kit = {name: "scout", colour: "mint", skills: [], tools: ["web"], hands: ["browse"], typing: "instant", patience: 0}
+  k: Kit = {name: "scout", colour: "mint", skills: [], tools: ["web"], hands: ["browse"], typing: "instant", patience: 0, servers: [], model: ""}
   html = kit_card(k)
   expect html.contains("--c:#4fe0a6")
   expect html.contains("browse") and html.contains("all at once")
@@ -274,7 +289,7 @@ test "only an action that takes the keyboard, the mouse or the front window wait
 }
 
 test "each action needs its hand, and a kit without it is refused" {
-  k: Kit = {name: "coder-2", colour: "sky", skills: [], tools: [], hands: ["look", "press"], typing: "steady", patience: 3}
+  k: Kit = {name: "coder-2", colour: "sky", skills: [], tools: [], hands: ["look", "press"], typing: "steady", patience: 3, servers: [], model: ""}
   expect hand_for(["open", "notepad"]) == "open:notepad"
   expect hand_for(["click-on", "notepad", "Edit"]) == "click"
   expect refusal(k, ["press", "notepad", "View"]) == ""
@@ -282,7 +297,7 @@ test "each action needs its hand, and a kit without it is refused" {
   expect refusal(k, ["memory"]) == "" and refusal(k, ["remember", "notepad keys 60 exact"]) == ""
   expect refusal(k, ["write", "notepad", "hi"]).contains("'write' hand")
   expect refusal(k, ["open", "calculator"]).contains("'open:calculator'")
-  nobody: Kit = {name: "x", colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3}
+  nobody: Kit = {name: "x", colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: [], model: ""}
   expect refusal(nobody, ["look", "notepad"]).contains("no hands")
 }
 
@@ -293,4 +308,14 @@ test "typing is checked against what the field really holds" {
   unread = typed_check("hello", "", false)
   expect unread.ok and not unread.checked
   expect unread.said.contains("not checked")
+}
+
+test "a kit names only servers and a model Kosika knows" {
+  k: Kit = {name: "helper", colour: "lime", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: ["files", "mailbox", "files"], model: "gpt-paid"}
+  said = kit_problems(k).join("\n")
+  expect said.contains("'mailbox' is not a server")
+  expect said.contains("'files' is listed twice")
+  expect said.contains("'gpt-paid' is not a model")
+  html = kit_card({name: "helper", colour: "lime", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: ["fetch"], model: "kosika-coder"})
+  expect html.contains("chip server") and html.contains("kosika-coder")
 }

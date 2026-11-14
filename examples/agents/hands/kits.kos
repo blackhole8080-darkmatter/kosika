@@ -8,6 +8,8 @@
 //           open:calculator browse
 //   typing  steady (15 letters a second), fast (about 60), instant (pasted)
 //   skills  a note in skills/NAME.md, or another agent's, like coder/python
+//   servers MCP servers it may be given (reach.kos): files fetch github memory kosika
+//   model   the model that plans for it (reach.kos), or "" for none
 //   patience  seconds you must have left keyboard and mouse alone before it
 //           types, clicks or brings a window forward (0 to 30; 0 never waits)
 
@@ -18,13 +20,17 @@ export [kits, kit_named]
 fn kits() -> Kit[] {
   return [
     {name: "Kosika", colour: "amber", skills: ["notes", "windows"], tools: ["hand"],
-     hands: ["look", "press", "write", "read", "move", "click", "type", "keys", "open:notepad", "open:calculator", "browse"], typing: "fast", patience: 3},
+     hands: ["look", "press", "write", "read", "move", "click", "type", "keys", "open:notepad", "open:calculator", "browse"], typing: "fast", patience: 3,
+     servers: ["files", "fetch", "memory", "kosika"], model: "kosika-router"},
     {name: "coder-1", colour: "pink", skills: ["windows", "coder/python"], tools: ["hand"],
-     hands: ["look", "press", "write", "read", "open:notepad"], typing: "fast", patience: 3},
+     hands: ["look", "press", "write", "read", "open:notepad"], typing: "fast", patience: 3,
+     servers: ["files", "kosika"], model: "kosika-coder"},
     {name: "coder-2", colour: "sky", skills: ["windows", "coder/tests"], tools: ["hand"],
-     hands: ["look", "press"], typing: "steady", patience: 3},
+     hands: ["look", "press"], typing: "steady", patience: 3,
+     servers: ["files"], model: "qwen3-small"},
     {name: "scout", colour: "mint", skills: ["web-reading"], tools: ["hand"],
-     hands: ["browse"], typing: "instant", patience: 3}
+     hands: ["browse"], typing: "instant", patience: 3,
+     servers: ["fetch"], model: "kosika-router"}
   ]
 }
 
@@ -33,7 +39,7 @@ fn kit_named(name: Text) -> Kit {
   for k in kits() {
     if k.name == name { return k }
   }
-  return {name: name, colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3}
+  return {name: name, colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: [], model: ""}
 }
 
 test "every kit here is a good kit" {

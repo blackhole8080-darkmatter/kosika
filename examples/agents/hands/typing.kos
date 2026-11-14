@@ -192,7 +192,7 @@ fn remembered(memory: Text, new: Text[]) -> Text {
 // ---- Tests -----------------------------------------------------------------
 
 fn kit_typing(typing: Text) -> Kit {
-  return {name: "coder-1", colour: "pink", skills: [], tools: [], hands: ["write"], typing: typing, patience: 3}
+  return {name: "coder-1", colour: "pink", skills: [], tools: [], hands: ["write"], typing: typing, patience: 3, servers: [], model: ""}
 }
 
 test "with nothing remembered, keys start at 60 a second" {

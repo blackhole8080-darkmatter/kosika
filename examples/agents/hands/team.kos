@@ -63,7 +63,7 @@ fn team_card(k: Kit, entries: Entry[], waiting: Text[]) -> Text {
     + f"<div class=\"stage\"><div class=\"walk\">{pointer}</div></div>"
     + f"<h2>{escaped_text(k.name)}</h2>{status(acted, asks)}"
     + f"<p class=\"last\">{last}</p>"
-    + f"<p class=\"rate\"><strong>{done.to_text()}</strong> done · <strong>{(acted.length() - done).to_text()}</strong> not done · {k.hands.length().to_text()} hands · types {escaped_text(k.typing)}</p>"
+    + f"<p class=\"rate\"><strong>{done.to_text()}</strong> done · <strong>{(acted.length() - done).to_text()}</strong> not done · {k.hands.length().to_text()} hands · {k.servers.length().to_text()} servers · types {escaped_text(k.typing)}</p>"
     + "</section>"
 }
 
