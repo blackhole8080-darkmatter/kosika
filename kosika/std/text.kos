@@ -10,8 +10,9 @@
 // sentences(text)           the text's sentences
 // shorten(text, most)       at most `most` characters, ending in "…"
 // clean_answer(text)        a model's answer without code fences around it
+// title_case(text)          each word capitalized (first letter upper, rest unchanged)
 
-export [words_of, chunks, keywords, likeness, sentences, shorten, clean_answer]
+export [words_of, chunks, keywords, likeness, sentences, shorten, clean_answer, title_case]
 
 record StdWordCount { word: Text count: Number first: Number }
 
@@ -106,4 +107,21 @@ fn shorten(text: Text, most: Number) -> Text {
 fn clean_answer(text: Text) -> Text {
   let kept = for line in text.lines() where not line.trim().starts_with("```") { line }
   return kept.join("\n").trim()
+}
+
+// Title‑case each word: first letter upper‑cased, rest unchanged.
+fn title_case(text: Text) -> Text {
+  let words = std_raw_words(text)
+  let titled = for w in words {
+    if w.length() == 0 { "" } else {
+      w.slice(0, 1).upper() + w.slice(1, w.length())
+    }
+  }
+  return titled.join(" ")
+}
+
+// Tests
+test "title_case capitalizes each word" {
+  result = title_case("hello world! this is kosika.")
+  expect result == "Hello World! This Is Kosika."
 }
