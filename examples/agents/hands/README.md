@@ -82,6 +82,17 @@ The page shows each waiting action with a Yes and a No button. Without the
 key in the address nothing is shown or answered. Windows may ask once whether
 Python may accept connections on your private network.
 
+From anywhere (mobile data, another city), through a push relay:
+
+    kosika answer FOLDER --relay https://ntfy.sh
+
+Install the free ntfy app on the phone and subscribe to the topic it prints
+(kept in FOLDER/.relay.json, so once is enough). Each ask arrives as a
+notification with Yes and No buttons. The laptop only calls out, so nothing
+on it is opened to the internet. Each ask's buttons carry a one-time token,
+so an old or made-up reply approves nothing. What is sent is the ask's one
+line; use your own ntfy server instead of ntfy.sh if that line is private.
+
 ## Skills that grow
 
 A run that worked, every step done, can become a skill note. You approve it

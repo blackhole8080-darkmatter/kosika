@@ -2126,6 +2126,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     answer_parser.add_argument("--port", type=int, default=8795)
+    answer_parser.add_argument(
+        "--relay",
+        metavar="SERVER",
+        help=(
+            "Send each ask as a push with Yes and No buttons through this ntfy "
+            "server (https://ntfy.sh or your own), to answer from anywhere."
+        ),
+    )
 
     story_parser = subparsers.add_parser(
         "story", help="Tell what happened in a run, in plain words, from its trace."
@@ -3696,6 +3704,22 @@ def main() -> int:
     if args.command == "answer":
         from .ask_folder import AskFolderError, answer, serve, waiting
 
+        if args.relay:
+            from .ask_relay import AskRelayError, Relay
+
+            if args.words or args.serve:
+                print("--relay answers from the phone; give only the folder.", file=sys.stderr)
+                return 2
+            try:
+                relay = Relay(args.folder, args.relay, args.by or getpass.getuser())
+            except AskRelayError as exc:
+                print(f"Relay not started: {exc}", file=sys.stderr)
+                return 2
+            try:
+                relay.run()
+            except KeyboardInterrupt:
+                pass
+            return 0
         if args.serve:
             if args.words:
                 print("--serve answers from the page; give only the folder.", file=sys.stderr)
