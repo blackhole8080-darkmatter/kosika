@@ -96,6 +96,46 @@ def asks_waiting(folder: Path | None) -> list[str]:
     return [str(ask.get("says", "")) for ask in waiting(folder)]
 
 
+def kos(text: str) -> str:
+    """A Kosika text literal that reads back as exactly this text."""
+    return json.dumps(text, ensure_ascii=False)
+
+
+def recorded_tests(actions: list[dict]) -> str:
+    """Kosika tests from real runs: each run's recorded results, given to
+    main.kos's `done`, must end the way the run really ended."""
+    out = ["// Real runs of the hands, recorded by diary.py --tests and replayed as",
+           "// tests: if a change to main.kos would judge one of them differently,",
+           "// a test here fails. Typed words are left out of what is kept.",
+           "", 'import "main.kos"', ""]
+    runs: dict[int, list[dict]] = {}
+    for action in actions:
+        runs.setdefault(action["run"], []).append(action)
+    for run, steps in runs.items():
+        # The note job checks its read-back apart from `done`, so it is left out.
+        steps = [a for a in steps if not (a["job"] == "note" and a["step"] == "read")]
+        if not steps:
+            continue
+        first_bad = next((i for i, a in enumerate(steps) if a["exit_code"] != 0), None)
+        stopped = first_bad is not None
+        count = first_bad if stopped else len(steps)
+        ends = f"stopped at step {first_bad + 1}" if stopped else f"all {count} steps done"
+        out.append(f'test "recorded run {run} ({steps[0]["job"]}, {steps[0]["at"]}): {ends}" {{')
+        out.append("  steps: Ran[] = [")
+        rows = []
+        for a in steps:
+            said = a["said"].splitlines()[0] if a["said"] else ""
+            rows.append(f'    {{exit_code: {int(a["exit_code"])}, stdout: {kos(said)}, stderr: ""}}')
+        out.append(",\n".join(rows))
+        out.append("  ]")
+        out.append("  d = done(steps)")
+        out.append(f"  expect d.stopped == {'true' if stopped else 'false'}")
+        out.append(f"  expect d.steps == {count}")
+        out.append("}")
+        out.append("")
+    return "\n".join(out)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("paths", nargs="+", type=Path)
@@ -105,6 +145,8 @@ def main() -> int:
                         help="Write lesson.json from this run of the diary, for learn.kos to learn a skill from.")
     parser.add_argument("--name", default="", help="The learned skill's name, with --lesson.")
     parser.add_argument("--when", default="", help="When the learned skill fits, words split by commas, with --lesson.")
+    parser.add_argument("--tests", type=Path, metavar="FILE.kos",
+                        help="Write each run as a Kosika test that replays it against main.kos.")
     parser.add_argument("--board", action="store_true", help="Draw the live board of all agents (team.kos) instead.")
     parser.add_argument("--asks", type=Path, help="The --approve-in folder, so the board shows who waits for a yes.")
     parser.add_argument("--watch", action="store_true", help="Draw again every few seconds, until stopped.")
@@ -125,6 +167,10 @@ def once(args: argparse.Namespace) -> int:
     actions: list[dict] = []
     for trace in traces(args.paths):
         actions += entries(trace, actions[-1]["run"] if actions else 0)
+    if args.tests is not None:
+        args.tests.write_text(recorded_tests(actions), encoding="utf-8")
+        print(f"{len({a['run'] for a in actions})} runs written as tests to {args.tests}")
+        return 0
     if args.lesson is not None:
         lesson = {"l": {"name": args.name, "when": [w.strip() for w in args.when.split(",") if w.strip()],
                         "entries": [a for a in actions if a["run"] == args.lesson]}}

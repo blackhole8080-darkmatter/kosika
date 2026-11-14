@@ -85,3 +85,11 @@ One card for every agent, in its colour, with what it did last, its counts,
 and a glowing "waiting for your yes" when one of its actions is asked about:
 
     python diary.py traces --board --asks FOLDER --watch    # keeps board.html fresh; open it in a browser
+
+## Real runs kept as tests
+
+    python diary.py traces --tests recorded.kos
+
+writes each recorded run as a Kosika test that gives its real results to
+`done` in main.kos and expects the same ending. If a change would judge a
+real run differently, `kosika test recorded.kos` fails. Typed words are not kept.
