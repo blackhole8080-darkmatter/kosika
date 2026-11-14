@@ -16,11 +16,21 @@
 # Edit), so what was typed can be checked against what is really there.
 #
 #   powershell -File eyes.ps1 -Class Notepad -Read
+#
+# Or asked to -Write: the words in the environment variable KOSIKA_HANDS_TEXT
+# are added at the end of that text field through accessibility (its Value),
+# with no keyboard and without bringing the window forward; -Clear empties
+# it first. A field that cannot be written so says {"error": "...", "way":
+# "field"}, exits 7, and nothing is changed.
+#
+#   powershell -File eyes.ps1 -Class Notepad -Write [-Clear]
 param(
     [Parameter(Mandatory = $true)][string]$Class,
     [int]$Most = 150,
     [string]$Press = "",
-    [switch]$Read
+    [switch]$Read,
+    [switch]$Write,
+    [switch]$Clear
 )
 
 Add-Type -AssemblyName UIAutomationClient
@@ -58,6 +68,28 @@ if ($Read) {
         exit 2
     }
     [Console]::Out.WriteLine((@{ text = $text } | ConvertTo-Json -Compress))
+    exit 0
+}
+
+if ($Write -or $Clear) {
+    $isText = New-Object System.Windows.Automation.OrCondition(
+        (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Document)),
+        (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)))
+    $field = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $isText)
+    $pattern = $null
+    if ($null -eq $field -or -not $field.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern) -or $pattern.Current.IsReadOnly) {
+        [Console]::Out.WriteLine((@{ error = "this window's text field cannot be written directly"; way = "field" } | ConvertTo-Json -Compress))
+        exit 7
+    }
+    $before = if ($Clear) { "" } else { $pattern.Current.Value }
+    $words = if ($Write) { [string]$env:KOSIKA_HANDS_TEXT } else { "" }
+    try {
+        $pattern.SetValue($before + $words)
+    } catch {
+        [Console]::Out.WriteLine((@{ error = "the text field refused the words: $($_.Exception.Message)"; way = "field" } | ConvertTo-Json -Compress))
+        exit 7
+    }
+    [Console]::Out.WriteLine(([ordered]@{ wrote = $words.Length; cleared = [bool]$Clear } | ConvertTo-Json -Compress))
     exit 0
 }
 

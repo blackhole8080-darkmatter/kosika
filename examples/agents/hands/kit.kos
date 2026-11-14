@@ -128,11 +128,12 @@ workflow check(k: Kit) -> KitCheck {
 // ---- What a kit allows ----------------------------------------------------
 
 // The hand a hands.py action needs: "open notepad" needs "open:notepad",
-// "click-on" needs "click", "key" needs "keys". "where" needs none ("").
+// "click-on" needs "click", "key" needs "keys". "where", and reading or
+// keeping the hands' own memory of past writes, need none ("").
 fn hand_for(action: Text[]) -> Text {
   if action.length() == 0 { return "?" }
   let what = action[0]
-  if what == "where" { return "" }
+  if ["where", "memory", "remember", "skip"].contains(what) { return "" }
   if what == "open" { return "open:" + action.drop(1).take(1).join("") }
   if what == "move-to" { return "move" }
   if what == "click-on" { return "click" }
@@ -278,6 +279,7 @@ test "each action needs its hand, and a kit without it is refused" {
   expect hand_for(["click-on", "notepad", "Edit"]) == "click"
   expect refusal(k, ["press", "notepad", "View"]) == ""
   expect refusal(k, ["where"]) == ""
+  expect refusal(k, ["memory"]) == "" and refusal(k, ["remember", "notepad keys 60 exact"]) == ""
   expect refusal(k, ["write", "notepad", "hi"]).contains("'write' hand")
   expect refusal(k, ["open", "calculator"]).contains("'open:calculator'")
   nobody: Kit = {name: "x", colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3}

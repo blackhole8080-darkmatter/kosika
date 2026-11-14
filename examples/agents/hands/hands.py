@@ -14,7 +14,14 @@
     python hands.py click                 # a left click where the cursor is
     python hands.py type "some words"     # type them, a letter at a time
     python hands.py key enter|tab|escape  # press one key
-    python hands.py open notepad          # start one of the allowed programs
+    python hands.py open notepad          # start it, or a fresh page if it is open
+    python hands.py memory                # what past writes taught (typing.kos reads it)
+    python hands.py remember "LINES"      # keep the memory typing.kos wrote
+    python hands.py skip "why"            # a step Kosika decided is not needed: nothing done
+
+Before the action, Kosika may also say how to write (typing.kos):
+--way field|keys|paste, --rate LETTERS_A_SECOND, --clear-first; and how long
+to wait for the person (kit.kos): --quiet SECONDS --wait-most SECONDS.
 
 Every action is one run of this file, which a Kosika agent asks for through
 its shell tool, so Kosika asks the person before each one. Holding Escape
@@ -357,6 +364,65 @@ def letter(ch: str) -> None:
 PAUSES = {"steady": (0.015, 0.05), "fast": (0.004, 0.010), "instant": (0.004, 0.010)}
 SPEED = "steady"
 
+#: How the words go in, and how fast, as Kosika chose (main.kos, typing.kos):
+#: "keys" letter by letter at RATE letters a second (0: by SPEED's name),
+#: "paste" through the clipboard, "field" straight into the field through
+#: accessibility with no keyboard at all. CLEAR_FIRST empties the page
+#: first; Kosika asks for it only on a page it opened fresh itself.
+WAY, RATE, CLEAR_FIRST = "keys", 0.0, False
+MEMORY = Path.home() / ".kosika" / "hands-typing.txt"
+
+
+def set_rate(rate: float) -> None:
+    """Letters a second, as pauses: three tenths of each letter's time with
+    the key down, the rest after it."""
+    global SPEED
+    PAUSES["rate"] = (0.3 / rate, 0.7 / rate)
+    SPEED = "rate"
+
+
+def write_by_field(name: str, handle: int, words: str) -> None:
+    """Put the words at the end of the program's field through Windows'
+    accessibility: no keyboard, the window not brought forward, so the
+    person can go on working. Exit 7, nothing done, if the field will not
+    take them so."""
+    field = None if user32.IsIconic(handle) else text_field(name)
+    if field:
+        point_at(field["x"], field["y"], "typing")
+    started = time.time()
+    run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
+                          "-Class", app(name)["window"], "-Write", *(["-Clear"] if CLEAR_FIRST else [])],
+                         capture_output=True, text=True, encoding="utf-8", timeout=60,
+                         env={**os.environ, "KOSIKA_HANDS_TEXT": words.replace("\r\n", "\n").replace("\n", "\r\n")})
+    try:
+        said = json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        said = {"error": (run.stderr.strip() or "eyes.ps1 said nothing")[:200]}
+    if field:
+        point_at(field["x"], field["y"], "idle")
+    if "error" in said:
+        print(f"not written: {said['error']}")
+        sys.exit(7)
+    cleared = "emptied the page, then " if CLEAR_FIRST else ""
+    print(f"{cleared}wrote {len(words)} letters straight into {name}'s field, no keyboard (field, {time.time() - started:.1f} s)")
+
+
+def clear_page(name: str) -> str:
+    """Empty the page Kosika opened fresh: through accessibility if the field
+    allows it, else Ctrl+A and Delete in the window in front."""
+    if "error" not in eyes(name, "-Clear"):
+        return "emptied the page through accessibility, then "
+    held, a_down, a_up, let_go = (INPUT(type=INPUT_KEYBOARD) for _ in range(4))
+    held.ki.wVk = let_go.ki.wVk = VK_CONTROL
+    a_down.ki.wVk = a_up.ki.wVk = 0x41
+    a_up.ki.dwFlags = let_go.ki.dwFlags = KEYUP
+    still_in_front()
+    send(held, a_down, a_up, let_go)
+    time.sleep(0.15)
+    key(0x2E)  # Delete
+    time.sleep(0.2)
+    return "emptied the page with Ctrl+A and Delete, then "
+
 
 def still_in_front(done: int = 0) -> None:
     if TARGET and not in_front(TARGET):
@@ -498,10 +564,20 @@ def main(args: list[str]) -> None:
     global OWN_POINTER_ONLY, AGENT, COLOUR, SPEED, TARGET, QUIET, WAIT_MOST
     # Who acts, in what colour, how fast, and how long to wait for the
     # person: told by Kosika before the action.
+    global WAY, RATE, CLEAR_FIRST
     described: dict[str, str] = {}
-    while len(args) > 1 and args[0] in ("--agent", "--colour", "--speed", "--quiet", "--wait-most",
-                                        "--app", "--window", "--program", "--fields", "--fresh"):
-        if args[0] in ("--app", "--window", "--program", "--fields", "--fresh"):
+    while args and (args[0] == "--clear-first" or len(args) > 1 and args[0] in (
+            "--agent", "--colour", "--speed", "--quiet", "--wait-most",
+            "--app", "--window", "--program", "--fields", "--fresh", "--way", "--rate")):
+        if args[0] == "--clear-first":
+            CLEAR_FIRST, args = True, args[1:]
+            continue
+        if args[0] == "--way" and args[1] in ("keys", "paste", "field"):
+            WAY = args[1]
+        elif args[0] == "--rate" and float(args[1]) > 0:
+            RATE = float(args[1])
+            set_rate(RATE)
+        elif args[0] in ("--app", "--window", "--program", "--fields", "--fresh"):
             described[args[0][2:]] = args[1]
         elif args[0] == "--agent":
             AGENT = args[1]
@@ -610,6 +686,10 @@ def main(args: list[str]) -> None:
         if not handle:
             print(f"no {rest[0]} window to write in")
             sys.exit(2)
+        words = " ".join(rest[1:])
+        if WAY == "field":
+            write_by_field(rest[0], handle, words)
+            return
         # Restored and in front first: a minimised window's field is far off
         # the screen, and keys only reach the window in front.
         must_be_in_front(handle, rest[0])
@@ -618,10 +698,12 @@ def main(args: list[str]) -> None:
         point_at(x, y, "typing")
         must_be_in_front(handle, rest[0])  # looking and drawing the pointer took time
         TARGET = handle
-        words, started = " ".join(rest[1:]), time.time()
-        how = type_text(words)
+        cleared = clear_page(rest[0]) if CLEAR_FIRST else ""
+        started = time.time()
+        how = type_text(words, "instant" if WAY == "paste" else None)
         point_at(x, y, "idle")
-        print(f"typed {len(words)} letters into {rest[0]} ({how}, {time.time() - started:.1f} s)")
+        rate = f"{RATE:g} a second" if how == "rate" else how
+        print(f"{cleared}typed {len(words)} letters into {rest[0]} ({rate}, {time.time() - started:.1f} s)")
     elif what == "read" and rest and app(rest[0]):
         # The first line says whether the field could be read; the words follow.
         there = field_text(rest[0]) if window(rest[0]) else None
@@ -630,6 +712,17 @@ def main(args: list[str]) -> None:
     elif what == "refuse":
         print("refused:", " ".join(rest))
         sys.exit(5)
+    elif what == "skip":
+        # A step Kosika decided is not needed this time: nothing is done.
+        print("skipped:", " ".join(rest))
+    elif what == "memory":
+        # What the hands remember of past writes (typing.kos reads and decides).
+        print(MEMORY.read_text(encoding="utf-8") if MEMORY.exists() else "", end="")
+    elif what == "remember" and rest:
+        # The memory as typing.kos wrote it, kept for next time.
+        MEMORY.parent.mkdir(parents=True, exist_ok=True)
+        MEMORY.write_text(" ".join(rest).strip() + "\n", encoding="utf-8")
+        print(f"remembered {len(' '.join(rest).strip().splitlines())} lines in {MEMORY}")
     elif what == "click":
         click()
         print("clicked at", *where())
@@ -657,7 +750,20 @@ def main(args: list[str]) -> None:
             handle = window(rest[0])
             if handle:
                 to_front(handle)
-            print("opened", rest[0])
+            fresh = ""
+            if handle and told["fresh"]:
+                # Started, it may show pages kept from before (Notepad brings
+                # back unsaved tabs): a fresh one too, so none of those is written in.
+                for _ in range(10):
+                    said = eyes_press(rest[0], told["fresh"])
+                    if "error" not in said:
+                        fresh = f", with a fresh page ({said['pressed']})"
+                        break
+                    time.sleep(0.5)
+                else:
+                    print(f"opened {rest[0]}, but its {told['fresh']!r} could not be pressed, so there is no fresh page")
+                    sys.exit(2)
+            print(f"opened {rest[0]}{fresh}")
     else:
         print(f"not something the hands do: {' '.join(args)}")
         sys.exit(2)

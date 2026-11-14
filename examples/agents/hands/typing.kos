@@ -1,0 +1,274 @@
+// How an agent puts words into a program, and how the hands learn to do it
+// well, decided here in Kosika. hands.py only does what this says and keeps
+// the memory file (~/.kosika/hands-typing.txt) it is given.
+//
+// The ways, best first:
+//   field  straight into the program's field through Windows' accessibility:
+//          no keyboard, the window not brought forward, so the person can go
+//          on working. Used whenever the program allows it (apps.kos) and the
+//          agent's typing is not "steady" (steady is for watching it type).
+//   paste  the whole text through the clipboard, which is put back after
+//          ("instant" typing, when the field cannot be written).
+//   keys   letter by letter, at a rate in letters a second learned per program.
+//
+// The memory is one line per write: "PROGRAM WAY RATE RESULT", like
+// "notepad keys 60 exact", "notepad keys 110 garbled" or "notepad field 0
+// refused". From it, the rate for keys is the fastest one that wrote exact
+// lately; a rate that garbled lately is not used again, and after three exact
+// writes in a row the next faster rate not yet tried is tried once. A write
+// that comes back garbled is done again, slower, on the page the job opened
+// fresh, and both are remembered. No model is asked: it learns from what the
+// read-back check saw.
+
+import "kit.kos"
+import "apps.kos"
+
+export [Try, ladder, slower, rate_for, field_refused, first_try, second_try, write_flags, outcome_line, remembered, memory_lines]
+
+record Try { way: Text rate: Number clear: Bool why: Text }
+
+// The rates keys may go at, fastest first, in letters a second.
+fn ladder() -> Number[] { return [150, 110, 80, 60, 40, 25, 15] }
+
+// Where a program never written to before starts: 60 a second was exact in
+// twenty runs in a row on Windows 11's Notepad.
+fn start_rate() -> Number { return 60 }
+
+// The fastest a "fast" kit may ever type, and how many lines are kept.
+fn ceiling() -> Number { return 150 }
+fn kept() -> Number { return 40 }
+
+// The memory's lines that are lines of it: four words each.
+fn memory_lines(memory: Text) -> Text[] {
+  var out: Text[] = []
+  for line in memory.lines() {
+    let words = line.trim().split(" ")
+    if words.length() == 4 and ["exact", "garbled", "refused"].contains(words[3]) {
+      out = out.append(line.trim())
+    }
+  }
+  return out
+}
+
+fn last(items: Text[], n: Number) -> Text[] {
+  if items.length() <= n { return items }
+  return items.drop(items.length() - n)
+}
+
+// What happened at that rate in that program, oldest first.
+fn results_at(lines: Text[], app: Text, rate: Number) -> Text[] {
+  var out: Text[] = []
+  for line in lines {
+    let w = line.split(" ")
+    if w[0] == app and w[1] == "keys" and w[2] == rate.to_text() {
+      out = out.append(w[3])
+    }
+  }
+  return out
+}
+
+fn garbled_lately(results: Text[]) -> Bool {
+  return last(results, 5).contains("garbled")
+}
+
+fn exact_streak(results: Text[], n: Number) -> Bool {
+  if results.length() < n { return false }
+  return not last(results, n).contains("garbled")
+}
+
+// The next rate down the ladder, or 0 when there is none.
+fn slower(rate: Number) -> Number {
+  for r in ladder() {
+    if r < rate { return r }
+  }
+  return 0
+}
+
+fn faster(rate: Number, most: Number) -> Number {
+  var found = 0
+  for r in ladder() {
+    if r > rate and r <= most { found = r }
+  }
+  return found
+}
+
+// The rate for keys in this program, no faster than `most`.
+fn rate_for(memory: Text, app: Text, most: Number) -> Number {
+  let lines = memory_lines(memory)
+  var best = 0
+  for r in ladder() {
+    let at = results_at(lines, app, r)
+    if best == 0 and r <= most and at.length() > 0 and not garbled_lately(at) {
+      best = r
+    }
+  }
+  if best == 0 {
+    // Nothing proven yet: start at 60, lower if that garbled lately.
+    for r in ladder() {
+      if r <= most and r <= start_rate() and not garbled_lately(results_at(lines, app, r)) { return r }
+    }
+    return ladder()[ladder().length() - 1]
+  }
+  let up = faster(best, most)
+  if up > 0 and results_at(lines, app, up).length() == 0 and exact_streak(results_at(lines, app, best), 3) {
+    return up
+  }
+  return best
+}
+
+// Whether this program's field would not take words the last time it was tried.
+fn field_refused(memory: Text, app: Text) -> Bool {
+  var refused = false
+  for line in memory_lines(memory) {
+    let w = line.split(" ")
+    if w[0] == app and w[1] == "field" { refused = w[3] == "refused" }
+  }
+  return refused
+}
+
+fn keys_try(k: Kit, memory: Text, app: Text, clear: Bool, why: Text) -> Try {
+  if k.typing == "steady" { return {way: "keys", rate: 15, clear: clear, why: why + "steady keys, 15 letters a second, to watch"} }
+  let r = rate_for(memory, app, ceiling())
+  return {way: "keys", rate: r, clear: clear, why: why + f"keys at {r.to_text()} letters a second, the fastest exact lately in {app}"}
+}
+
+// How the words go in first.
+fn first_try(k: Kit, a: App, memory: Text) -> Try {
+  if k.typing != "steady" and a.ways.contains("field") and not field_refused(memory, a.name) {
+    return {way: "field", rate: 0, clear: false, why: "straight into the field, no keyboard"}
+  }
+  if not a.ways.contains("keys") {
+    return {way: "field", rate: 0, clear: false, why: "the field is the only way into " + a.name}
+  }
+  if k.typing == "instant" {
+    return {way: "paste", rate: 0, clear: false, why: "pasted at once, your clipboard put back after"}
+  }
+  return keys_try(k, memory, a.name, false, "")
+}
+
+// Whether to write again, and how: after the field would not take the words
+// (exit 7, nothing written), by keys; after keys that came out garbled, on a
+// page this job opened fresh, slower and on the emptied page. Otherwise
+// nothing: way "" and the reason.
+fn second_try(k: Kit, a: App, memory: Text, first: Try, typed_exit: Number, checked: Bool, exact: Bool, fresh: Bool) -> Try {
+  if typed_exit == 7 and first.way == "field" and a.ways.contains("keys") {
+    return keys_try(k, memory, a.name, false, "the field would not take the words, so typed instead: ")
+  }
+  if typed_exit == 0 and first.way == "keys" and checked and not exact {
+    let down = slower(first.rate)
+    if not fresh { return {way: "", rate: 0, clear: false, why: "garbled, but the page was not opened fresh by this job, so it is left for you to see"} }
+    if down == 0 { return {way: "", rate: 0, clear: false, why: "garbled even at the slowest rate; left for you to see"} }
+    return {way: "keys", rate: down, clear: true, why: f"garbled at {first.rate.to_text()} letters a second, so the page was emptied and typed again at {down.to_text()}"}
+  }
+  return {way: "", rate: 0, clear: false, why: "nothing to write again"}
+}
+
+// What hands.py is told about how to write.
+fn write_flags(t: Try) -> Text[] {
+  let clear: Text[] = if t.clear { ["--clear-first"] } else { [] }
+  if t.way == "keys" { return clear.concat(["--way", "keys", "--rate", t.rate.to_text()]) }
+  return clear.concat(["--way", t.way])
+}
+
+// The memory line for one write, or "" when there is nothing to learn:
+// a paste, a write stopped before it was done, or one that could not be read back.
+fn outcome_line(app: Text, t: Try, typed_exit: Number, checked: Bool, exact: Bool) -> Text {
+  if t.way == "field" and typed_exit == 7 { return f"{app} field 0 refused" }
+  if typed_exit != 0 or not checked or t.way == "" or t.way == "paste" { return "" }
+  let result = if exact { "exact" } else { "garbled" }
+  if t.way == "field" { return f"{app} field 0 {result}" }
+  return f"{app} keys {t.rate.to_text()} {result}"
+}
+
+// The memory with the new lines added, only the last `kept()` lines kept.
+fn remembered(memory: Text, new: Text[]) -> Text {
+  var lines = memory_lines(memory)
+  for line in new {
+    if line != "" { lines = lines.append(line) }
+  }
+  return last(lines, kept()).join("\n")
+}
+
+// ---- Tests -----------------------------------------------------------------
+
+fn kit_typing(typing: Text) -> Kit {
+  return {name: "coder-1", colour: "pink", skills: [], tools: [], hands: ["write"], typing: typing, patience: 3}
+}
+
+test "with nothing remembered, keys start at 60 a second" {
+  expect rate_for("", "notepad", 150) == 60
+  expect rate_for("", "notepad", 40) == 40
+  expect slower(60) == 40 and slower(15) == 0
+}
+
+test "three exact writes in a row try the next faster rate once" {
+  m = "notepad keys 60 exact\nnotepad keys 60 exact\nnotepad keys 60 exact"
+  expect rate_for(m, "notepad", 150) == 80
+  expect rate_for("notepad keys 60 exact\nnotepad keys 60 exact", "notepad", 150) == 60
+  expect rate_for(m, "notepad", 60) == 60
+}
+
+test "a rate that garbled lately is not used again" {
+  m = "notepad keys 60 exact\nnotepad keys 60 exact\nnotepad keys 60 exact\nnotepad keys 80 garbled"
+  expect rate_for(m, "notepad", 150) == 60
+  expect rate_for("notepad keys 60 garbled", "notepad", 150) == 40
+  expect rate_for("calculator keys 60 garbled", "notepad", 150) == 60
+}
+
+test "an agent that types fast writes straight into a field that allows it" {
+  n = app_named("notepad")
+  expect first_try(kit_typing("fast"), n, "").way == "field"
+  expect first_try(kit_typing("instant"), n, "").way == "field"
+  steady = first_try(kit_typing("steady"), n, "")
+  expect steady.way == "keys" and steady.rate == 15
+  refused = first_try(kit_typing("fast"), n, "notepad field 0 refused")
+  expect refused.way == "keys" and refused.rate == 60
+  expect first_try(kit_typing("instant"), n, "notepad field 0 refused").way == "paste"
+  expect field_refused("notepad field 0 refused\nnotepad field 0 exact", "notepad") == false
+}
+
+test "a field that will not take the words is typed instead" {
+  n = app_named("notepad")
+  first: Try = {way: "field", rate: 0, clear: false, why: ""}
+  again = second_try(kit_typing("fast"), n, "", first, 7, false, false, true)
+  expect again.way == "keys" and again.rate == 60 and not again.clear
+  expect again.why.contains("would not take")
+}
+
+test "garbled keys are typed again slower, only on a page the job opened fresh" {
+  n = app_named("notepad")
+  first: Try = {way: "keys", rate: 60, clear: false, why: ""}
+  again = second_try(kit_typing("fast"), n, "", first, 0, true, false, true)
+  expect again.way == "keys" and again.rate == 40 and again.clear
+  expect second_try(kit_typing("fast"), n, "", first, 0, true, false, false).way == ""
+  expect second_try(kit_typing("fast"), n, "", first, 0, true, true, true).way == ""
+  expect second_try(kit_typing("fast"), n, "", first, 3, false, false, true).way == ""
+  slowest: Try = {way: "keys", rate: 15, clear: false, why: ""}
+  expect second_try(kit_typing("fast"), n, "", slowest, 0, true, false, true).why.contains("slowest")
+}
+
+test "hands.py is told the way, the rate and whether to empty the page" {
+  expect write_flags({way: "field", rate: 0, clear: false, why: ""}) == ["--way", "field"]
+  expect write_flags({way: "keys", rate: 40, clear: true, why: ""}) == ["--clear-first", "--way", "keys", "--rate", "40"]
+}
+
+test "what each write teaches is remembered, the last forty lines kept" {
+  keys: Try = {way: "keys", rate: 60, clear: false, why: ""}
+  field: Try = {way: "field", rate: 0, clear: false, why: ""}
+  expect outcome_line("notepad", keys, 0, true, false) == "notepad keys 60 garbled"
+  expect outcome_line("notepad", field, 7, false, false) == "notepad field 0 refused"
+  expect outcome_line("notepad", field, 0, true, true) == "notepad field 0 exact"
+  expect outcome_line("notepad", keys, 3, false, false) == ""
+  expect outcome_line("notepad", keys, 0, false, false) == ""
+  m = remembered("old junk line\nnotepad keys 60 exact", ["notepad keys 80 garbled", ""])
+  expect m == "notepad keys 60 exact\nnotepad keys 80 garbled"
+  expect remembered(repeated_line("notepad keys 60 exact", 50), ["notepad keys 80 exact"]).lines().length() == 40
+}
+
+fn repeated_line(line: Text, times: Number) -> Text {
+  var out: Text[] = []
+  while out.length() < times {
+    out = out.append(line)
+  }
+  return out.join("\n")
+}

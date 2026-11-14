@@ -15,7 +15,8 @@ Every agent's kit is in [kits.kos](kits.kos). Edit it to change an agent:
 | skills | notes it reads before it works: `skills/NAME.md`, or another agent's, like `coder/python`. A skill is advice only and never gives the agent a power. |
 | tools  | the Kosika tools it may call |
 | hands  | what it may do here: `look press write read move click type keys open:notepad open:calculator browse` |
-| typing | `steady` (15 letters a second), `fast` (about 60) or `instant` (pasted at once, your clipboard put back after) |
+| typing | `steady` (keys, 15 letters a second, to watch), `fast` (straight into the field when the program allows it, else keys at the fastest rate learned exact for that program) or `instant` (the field, else pasted at once, your clipboard put back after) |
+| patience | seconds you must have left keyboard and mouse alone before it types, clicks or brings a window forward (0 never waits) |
 
 Everything is decided in Kosika:
 
@@ -30,6 +31,19 @@ Everything is decided in Kosika:
   states: `idle`, `typing` (its tag says so) and `press` (rings spread from
   the tip).
 - [cards.kos](cards.kos) draws every kit as one page of cards.
+- [apps.kos](apps.kos) describes the programs the hands may work in: what to
+  start, which window is theirs, where their words are, the button for a
+  fresh page, and the ways words may be put in. hands.py is told this with
+  each action, so a note always goes on a fresh page, never on one of yours.
+- [typing.kos](typing.kos) chooses how words go in: straight into the field
+  through Windows' accessibility (no keyboard, the window not brought
+  forward, so you can go on working), pasted, or typed by keys. For keys it
+  learns, per program, the fastest rate that came out exact, from the
+  read-back checks kept in `~/.kosika/hands-typing.txt`; a garbled write is
+  done again slower on the page the job opened, and no model is asked.
+- Every action that takes the keyboard, the mouse or the front window first
+  waits until you have stopped for the kit's patience (kit.kos decides which
+  actions those are); if you keep working for a minute it does nothing.
 
 The Python files only reach Windows. hands.py sends keys and clicks,
 pointer.py shows the pointer window, and ring.py shows the ring round your

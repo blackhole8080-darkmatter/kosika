@@ -29,7 +29,8 @@ fn agent_in(args: Text[]) -> Text {
   return ""
 }
 
-// The action itself, without the program's name and the --flag pairs.
+// The action itself, without the program's name and the --flag pairs
+// (--clear-first, from typing.kos, is a flag with no value after it).
 fn action_in(args: Text[]) -> Text[] {
   var words: Text[] = []
   var skip = false
@@ -38,7 +39,7 @@ fn action_in(args: Text[]) -> Text[] {
       skip = false
     } else {
       if word.starts_with("--") {
-        skip = true
+        skip = word != "--clear-first"
       } else {
         words = words.append(word)
       }
@@ -54,6 +55,8 @@ fn ending(e: Entry) -> Text {
   if action.length() > 0 and action[0] == "refuse" { return "refused" }
   if e.exit_code == 3 { return "stopped by you" }
   if e.exit_code == 4 { return "window not in front" }
+  if e.exit_code == 6 { return "waited for you" }
+  if e.exit_code == 7 { return "field would not take it" }
   if e.exit_code == 2 { return "not found" }
   return "failed"
 }
@@ -207,6 +210,15 @@ test "the agent, the action and its ending are read from the command" {
   expect ending(e) == "done"
   expect shown_action(e) == "write notepad (5 letters)"
   expect pointer_state(e) == "typing"
+}
+
+test "a write's way, rate and emptied page are flags, not the action" {
+  args = ["hands.py", "--agent", "coder-1", "--quiet", "3", "--app", "notepad", "--fresh", "Add New Tab", "--clear-first", "--way", "keys", "--rate", "40", "write", "notepad", "hello"]
+  expect action_in(args) == ["write", "notepad", "hello"]
+  waited: Entry = {run: 1, at: "1", job: "note", step: "typed", args: args, exit_code: 6, said: "you kept working for 60 s, so nothing was done", approved_by: ""}
+  expect ending(waited) == "waited for you"
+  field: Entry = {run: 1, at: "1", job: "note", step: "typed", args: ["hands.py", "--way", "field", "write", "notepad", "hi"], exit_code: 7, said: "not written", approved_by: ""}
+  expect ending(field) == "field would not take it"
 }
 
 test "endings say what happened, and a refused step belongs to its job's agent" {

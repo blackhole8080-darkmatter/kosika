@@ -14,6 +14,7 @@
 import "kit.kos"
 import "kits.kos"
 import "apps.kos"
+import "typing.kos"
 import "pointer_look.kos"
 
 record Note { agent: Text text: Text }
@@ -48,12 +49,26 @@ fn job_refusal(k: Kit, actions: Text[][]) -> Text {
 // in as apps.kos describes it (hands.py knows no program by itself). A
 // refused job's every command is a refusal, so nothing at all is done.
 fn act(k: Kit, refused: Text, what: Text[]) -> Text[] {
+  return act_with(k, refused, [], what)
+}
+
+// The same, with how to write (typing.kos's write_flags) before the action. A
+// write straight into the field takes neither keyboard nor mouse, so it
+// does not wait for the person.
+fn act_with(k: Kit, refused: Text, how: Text[], what: Text[]) -> Text[] {
   if refused != "" { return ["hands.py", "--agent", k.name, "refuse", refused] }
-  let quiet: Text[] = if quiet_needed(what) and k.patience > 0 {
+  let quiet: Text[] = if quiet_needed(what) and not how.contains("field") and k.patience > 0 {
     ["--quiet", k.patience.to_text(), "--wait-most", wait_at_most().to_text()]
   } else { [] }
   let app: Text[] = if what.length() > 1 { app_flags(app_named(what[1])) } else { [] }
-  return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(quiet).concat(app).concat(what)
+  return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(quiet).concat(app).concat(how).concat(what)
+}
+
+// A step this job does not need this time: shown, approved like any other,
+// and nothing is done.
+fn skip(refused: Text, why: Text) -> Text[] {
+  if refused != "" { return ["hands.py", "refuse", refused] }
+  return ["hands.py", "skip", why]
 }
 
 // A job stops at its first failed step. Workflow steps all run, so each
@@ -64,6 +79,14 @@ fn after(earlier: Ran, command: Text[]) -> Text[] {
     return ["hands.py", "refuse", "an earlier step stopped, so this one was not done"]
   }
   return command
+}
+
+// A second write follows the first when the first was written, or when the
+// field would not take the words (exit 7: nothing was written, so typing
+// them is the way on). Any other failure stops the job there.
+fn after_write(typed: Ran, command: Text[]) -> Text[] {
+  if typed.exit_code == 7 { return command }
+  return after(typed, command)
 }
 
 fn why_stopped(ran: Ran) -> Text {
@@ -91,21 +114,54 @@ fn done(steps: Ran[]) -> Done {
 // `hands.py read` says "read" or "unreadable" on its first line, then the
 // field's words; Kosika checks the typed words are among them before it
 // says the note was written.
+fn read_check(read: Ran, text: Text) -> Typed {
+  let lines = read.stdout.split("\n")
+  return typed_check(text, lines.drop(1).join("\n"), read.exit_code == 0 and lines[0].trim() == "read")
+}
+
 fn checked_note(steps: Ran[], read: Ran, text: Text) -> Done {
   let d = done(steps)
   if d.stopped { return d }
-  let lines = read.stdout.split("\n")
-  let check = typed_check(text, lines.drop(1).join("\n"), read.exit_code == 0 and lines[0].trim() == "read")
+  let check = read_check(read, text)
   return {said: d.said + "\n" + check.said, steps: d.steps, stopped: not check.ok, checked: check.checked}
 }
 
+// The page the words go on is one this job opened fresh: hands.py's open
+// always gives a fresh page in a program that has a button for one.
+fn fresh_page(opened: Ran, a: App) -> Bool {
+  return opened.exit_code == 0 and a.fresh != ""
+}
+
+// The note's outcome: how it was written first, and, when it was written
+// again (typing.kos's second_try), why and how that went.
+fn note_done(opened: Ran, typed: Ran, read: Ran, again: Try, retyped: Ran, reread: Ran, text: Text) -> Done {
+  if again.way == "" { return checked_note([opened, typed], read, text) }
+  let before = if typed.exit_code == 7 { typed.stdout.trim() } else { typed.stdout.trim() + "\n" + read_check(read, text).said }
+  let d = checked_note([opened, retyped], reread, text)
+  return {said: before + "\n" + again.why + "\n" + d.said, steps: d.steps + 1, stopped: d.stopped, checked: d.checked}
+}
+
+// Write a note in a fresh Notepad page. typing.kos chooses how (straight into
+// the field when Notepad allows it, else keys at the rate learned for it),
+// the words are read back and checked, a garbled or refused write is done
+// once more the way typing.kos says, and what was learned is kept.
 workflow note(n: Note) -> Done {
   k = kit_named(n.agent)
-  refused = job_refusal(k, [["open", "notepad"], ["write", "notepad"], ["read", "notepad"]])
-  opened = execute hands.hand(args: act(k, refused, ["open", "notepad"]))
-  typed  = execute hands.hand(args: after(opened, act(k, refused, ["write", "notepad", n.text])))
-  read   = execute hands.hand(args: after(typed, act(k, refused, ["read", "notepad"])))
-  result = checked_note([opened, typed], read, n.text)
+  a = app_named("notepad")
+  refused = job_refusal(k, [["open", a.name], ["write", a.name], ["read", a.name]])
+  opened = execute hands.hand(args: act(k, refused, ["open", a.name]))
+  memory = execute hands.hand(args: after(opened, act(k, refused, ["memory"])))
+  first = first_try(k, a, memory.stdout)
+  typed = execute hands.hand(args: after(memory, act_with(k, refused, write_flags(first), ["write", a.name, n.text])))
+  read = execute hands.hand(args: after(typed, act(k, refused, ["read", a.name])))
+  check = read_check(read, n.text)
+  again = second_try(k, a, memory.stdout, first, typed.exit_code, check.checked, check.ok, fresh_page(opened, a))
+  retyped = execute hands.hand(args: if again.way == "" { skip(refused, again.why) } else { after_write(typed, act_with(k, refused, write_flags(again), ["write", a.name, n.text])) })
+  reread = execute hands.hand(args: if again.way == "" { skip(refused, "nothing to read again") } else { after(retyped, act(k, refused, ["read", a.name])) })
+  recheck = read_check(reread, n.text)
+  learned = remembered(memory.stdout, [outcome_line(a.name, first, typed.exit_code, check.checked, check.ok), outcome_line(a.name, again, retyped.exit_code, recheck.checked, recheck.ok)])
+  kept = execute hands.hand(args: if learned == memory_lines(memory.stdout).join("\n") { skip(refused, "nothing new learned") } else { act(k, refused, ["remember", learned]) })
+  result = note_done(opened, typed, read, again, retyped, reread, n.text)
   require approval
 }
 
@@ -123,6 +179,25 @@ test "a note is written, read back and checked" {
   blind: Ran = {exit_code: 0, stdout: "unreadable\n", stderr: ""}
   b = checked_note(steps, blind, "hello there")
   expect not b.checked and b.said.contains("not checked")
+}
+
+test "a field write is told and does not wait; a refused field is typed instead" {
+  k = kit_named("coder-1")
+  field = act_with(k, "", ["--way", "field"], ["write", "notepad", "hi"])
+  expect not field.contains("--quiet") and field.contains("field")
+  keys = act_with(k, "", ["--way", "keys", "--rate", "60"], ["write", "notepad", "hi"])
+  expect keys.contains("--quiet") and keys.contains("60")
+  opened: Ran = {exit_code: 0, stdout: "opened a fresh page in notepad (Add New Tab)", stderr: ""}
+  refused: Ran = {exit_code: 7, stdout: "not written: this window's text field cannot be written directly", stderr: ""}
+  skipped: Ran = {exit_code: 0, stdout: "skipped", stderr: ""}
+  again: Try = {way: "keys", rate: 60, clear: false, why: "the field would not take the words, so typed instead: keys at 60"}
+  typed: Ran = {exit_code: 0, stdout: "typed 2 letters into notepad (60 a second, 0.1 s)", stderr: ""}
+  reread: Ran = {exit_code: 0, stdout: "read\nhi", stderr: ""}
+  d = note_done(opened, refused, skipped, again, typed, reread, "hi")
+  expect not d.stopped and d.checked
+  expect d.said.contains("cannot be written directly") and d.said.contains("typed instead") and d.said.contains("checked: all 2 letters")
+  expect fresh_page(opened, app_named("notepad"))
+  expect skip("", "nothing to write again") == ["hands.py", "skip", "nothing to write again"]
 }
 
 test "an agent whose kit lacks a hand does nothing at all" {
@@ -171,6 +246,13 @@ test "after a failed step, nothing more is done" {
   expect after(ok, command) == command
   expect after(escaped, command)[1] == "refuse"
   expect after({exit_code: 5, stdout: "", stderr: ""}, command)[1] == "refuse"
+}
+
+test "a field that would not take the words still lets the note be typed" {
+  command = ["hands.py", "write", "notepad", "hi"]
+  expect after_write({exit_code: 7, stdout: "not written", stderr: ""}, command) == command
+  expect after_write({exit_code: 0, stdout: "typed", stderr: ""}, command) == command
+  expect after_write({exit_code: 3, stdout: "stopped: Escape is held", stderr: ""}, command)[1] == "refuse"
 }
 
 test "keys that could not reach the program stop the job, and say why" {
