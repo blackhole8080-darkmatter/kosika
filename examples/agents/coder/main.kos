@@ -2149,31 +2149,116 @@ fn agree_script() -> Text {
   return "import itertools, os, re, subprocess, sys, tempfile\nname, kind = sys.argv[1], sys.argv[2]\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nparams = re.findall(r'\\(\\s*\"(\\w+)\",\\s*\"([^\"]+)\"\\s*\\)', found.group(1))\nresult = found.group(2)\nvalues = {'Text': ['\"\"', '\"abc\"', '\" 12 \"', '\"banana\"', '\"Hello World\"'], 'Number': ['0', '-2.5', '7', '3'], 'Bool': ['true', 'false']}\nreceivers = values.get(kind)\nchoices = [values.get(t) for _, t in params]\nif receivers is None or None in choices:\n    print('skipped: no samples for ' + kind + ' or one of its parameters')\n    sys.exit(0)\nargument_samples = {'Text': ['\"a\"', '\"an\"', '\"zz\"', '\"\"'], 'Number': ['0', '1', '2'], 'Bool': ['true']}\ncombos = list(itertools.product(*[argument_samples[t] for _, t in params]))[:6] or [()]\ncalls = []\nfor receiver in receivers:\n    for combo in combos:\n        args = ', '.join(f'{p}: {v}' for (p, _), v in zip(params, combo))\n        calls.append(f'({receiver}).{name}({args})')\nfolder = tempfile.mkdtemp()\nengine = os.path.join(folder, 'kosika-native.exe' if os.name == 'nt' else 'kosika-native')\nbuilt = subprocess.run(['go', '-C', os.path.join(os.getcwd(), 'native'), 'build', '-o', engine, '.'], capture_output=True, text=True)\nif built.returncode != 0:\n    print('the Go engine does not build: ' + built.stderr[-1500:])\n    sys.exit(1)\n\n\ndef run_both(call):\n    program = 'record Out { v: ' + result + ' }\\nfn f() -> Out {\\n  return {v: ' + call + '}\\n}\\nworkflow main() -> Out { out = f() }\\n'\n    path = os.path.join(folder, 'agree.kos')\n    open(path, 'w', encoding='utf-8').write(program)\n    py = subprocess.run([sys.executable, '-m', 'kosika.cli', 'run', path], capture_output=True, text=True, cwd=folder,\n                        env=dict(os.environ, PYTHONPATH=os.getcwd()))\n    go = subprocess.run([engine, 'run', path], capture_output=True, text=True, cwd=folder)\n    said = lambda ran: (ran.stdout.strip().splitlines() or ['FAILED'])[0] if ran.returncode == 0 else 'FAILED'\n    return said(py), said(go)\n\n\napart = 0\nfor call in calls:\n    py, go = run_both(call)\n    same = py == go\n    apart += 0 if same else 1\n    print(('same  ' if same else 'APART ') + call + '  python: ' + py + '  go: ' + go)\nsys.exit(0 if apart == 0 else 1)\n"
 }
 
-// The Go part's exact work, done by the program before the model is asked:
-// from the Python engine's Method line it declares the method in
-// native/types.go and writes an empty shell for it in native/methods.go, so
-// the model only writes the few lines of its body, and cannot misplace,
-// misname or register it twice.
-fn scaffold_script() -> Text {
-  return "import re, sys\nname, kind = sys.argv[1], sys.argv[2]\nmaps = {'Text': 'textMethods', 'Number': 'numberMethods'}\nif kind not in maps:\n    print('skipped: the program writes shells only for Text and Number methods')\n    sys.exit(0)\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nparams = re.findall(r'\\(\\s*\"(\\w+)\",\\s*\"([^\"]+)\"\\s*\\)', found.group(1))\nresult = found.group(2)\ntypes_path, methods_path = 'native/types.go', 'native/methods.go'\ntypes = open(types_path, encoding='utf-8').read()\nline = '\\tm(\"%s\", \"%s\", \"%s\"%s),' % (kind, name, result, ''.join(', \"%s\", \"%s\"' % p for p in params))\nsaid = []\nif 'm(\"%s\", \"%s\",' % (kind, name) not in types:\n    rows = types.split('\\n')\n    last = max((i for i, r in enumerate(rows) if r.startswith('\\tm(\"' + kind + '\", ')), default=-1)\n    if last < 0:\n        print('native/types.go has no m(\"' + kind + '\", ...) line to put it beside')\n        sys.exit(1)\n    rows.insert(last + 1, line)\n    open(types_path, 'w', encoding='utf-8', newline='\\n').write('\\n'.join(rows))\n    said.append('declared it in native/types.go: ' + line.strip())\nmethods = open(methods_path, encoding='utf-8').read()\nif '\\t\"%s\": {' % name not in methods:\n    head = 'var %s = map[string]method{\\n' % maps[kind]\n    if head not in methods:\n        print('native/methods.go has no ' + maps[kind])\n        sys.exit(1)\n    names = '[]string{%s}' % ', '.join('\"%s\"' % p for p, _ in params) if params else 'nil'\n    shell = '\\t\"%s\": {%s, func(r Value, a []Value) Value {\\n\\t\\trunFail(\"%s is not written yet\")\\n\\t\\treturn nil\\n\\t}},\\n' % (name, names, name)\n    methods = methods.replace(head, head + shell, 1)\n    open(methods_path, 'w', encoding='utf-8', newline='\\n').write(methods)\n    said.append('wrote an empty shell for it at the top of ' + maps[kind] + ' in native/methods.go')\nprint('; '.join(said) or 'already declared and shelled')\n"
+// ---------------------------------------------------------------- shells
+//
+// The exact part of adding a method, done by the program in Kosika before a
+// model is asked: from the request's own signature, "name(p: T, ...)" and
+// "giving a T", an empty function and its Method line in the Python engine,
+// and its declaration and an empty entry in the Go one. The model then only
+// writes a body in place of the line that says it is not written yet.
+
+record MethodParam { name: Text type: Text }
+record Signature { ok: Bool params: MethodParam[] result: Text }
+
+fn signature(asked: MethodAsked) -> Signature {
+  let none: Signature = {ok: false, params: [], result: ""}
+  let open = asked.name + "("
+  var params: MethodParam[] = []
+  if asked.text.contains(open) {
+    let inner = asked.text.split(open).drop(1).join(open).split(")").first().or("")
+    for part in inner.split(",") {
+      let bit = part.trim()
+      if not bit.is_empty() {
+        if not bit.contains(":") { return none }
+        params = params.append({name: bit.split(":").first().or("").trim(), type: bit.split(":").drop(1).join(":").trim()})
+      }
+    }
+  }
+  var result = ""
+  for said in ["giving an ", "giving a "] {
+    if result.is_empty() and asked.text.contains(said) {
+      result = asked.text.split(said).drop(1).join(said).words().first().or("").trim_marks(".,;:")
+    }
+  }
+  if result.is_empty() and asked.text.contains("gives the text") { result = "Text" }
+  if result.is_empty() { return none }
+  return {ok: true, params: params, result: result}
 }
 
-// The Python part's exact work, done by the program before the model is
-// asked: from the request's own signature ("name(p: T)" and "giving a T"),
-// an empty function above the METHODS table and its Method line in it, so
-// the model only writes the body, and a method that was never written can
-// no longer pass on tests that do not call it.
-fn scaffold_py_script() -> Text {
-  return "import re, sys\nname, kind, text = sys.argv[1], sys.argv[2], sys.argv[3]\nif kind not in ('Text', 'Number', 'Bool'):\n    print('skipped: the program writes shells only for Text, Number and Bool methods')\n    sys.exit(0)\nsignature = re.search(re.escape(name) + r'\\(([^)]*)\\)', text)\nparams = []\nif signature:\n    for part in [p.strip() for p in signature.group(1).split(',') if p.strip()]:\n        if ':' not in part:\n            print('skipped: the parameter ' + part + ' has no type')\n            sys.exit(0)\n        p, t = [x.strip() for x in part.split(':', 1)]\n        params.append((p, t))\nsaid = re.search(r'giving an? ([A-Z]\\w*(?:\\[\\])?\\??)', text)\nif said:\n    result = said.group(1)\nelif re.search(r'\\bgives? (?:back )?the text\\b', text):\n    result = 'Text'\nelif re.search(r'\\bgives? (?:back )?(?:a|the) number\\b|\\bgives? -?\\d', text):\n    result = 'Number'\nelse:\n    print('skipped: the request does not say what the method gives')\n    sys.exit(0)\npath = 'kosika/builtin_methods.py'\nsource = open(path, encoding='utf-8').read()\nif re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\"', source):\n    print('already registered')\n    sys.exit(0)\ntable = 'METHODS: tuple[Method, ...] = (\\n'\nif table not in source:\n    print('no METHODS table in ' + path)\n    sys.exit(1)\nreceiver = {'Text': 'text', 'Number': 'number', 'Bool': 'flag'}[kind]\nnames = ', '.join([receiver] + [p for p, _ in params])\nstub = 'def _%s(%s):\\n    raise RuntimeError(\"%s is not written yet\")\\n\\n\\n' % (name, names, name)\ntypes = ', '.join('(\"%s\", \"%s\")' % p for p in params)\ntypes = '(' + types + (',)' if len(params) == 1 else ')')\nline = '    Method(\"%s\", \"%s\", %s, \"%s\", _%s),\\n' % (kind, name, types, result, name)\nif 'def _%s(' % name not in source:\n    source = source.replace(table, stub + table, 1)\nsource = source.replace(table, table + line, 1)\nopen(path, 'w', encoding='utf-8', newline='\\n').write(source)\nprint('wrote def _%s(%s) above the METHODS table and registered it: %s' % (name, names, line.strip()))\n"
+fn not_written(name: Text) -> Text {
+  return name + " is not written yet"
 }
 
-fn scaffold_py_args(asked: MethodAsked) -> Text[] {
-  return ["-c", scaffold_py_script(), asked.name, asked.kind, asked.text]
+fn receiver_name(kind: Text) -> Text {
+  if kind == "Text" { return "text" }
+  if kind == "Number" { return "number" }
+  return "flag"
 }
 
-fn scaffold_args(asked: MethodAsked) -> Text[] {
-  return ["-c", scaffold_script(), asked.name, asked.kind]
+fn py_method_line(asked: MethodAsked, sig: Signature) -> Text {
+  var types: Text[] = []
+  for p in sig.params { types = types.append("(\"" + p.name + "\", \"" + p.type + "\")") }
+  let tuple = if types.length() == 1 { "(" + types[0] + ",)" } else { "(" + types.join(", ") + ")" }
+  return "    Method(\"" + asked.kind + "\", \"" + asked.name + "\", " + tuple + ", \"" + sig.result + "\", _" + asked.name + "),"
 }
+
+// The Python engine with the empty function and its Method line, or the
+// source as it was when the method is there already or cannot be shelled.
+fn py_shelled(source: Text, asked: MethodAsked, sig: Signature) -> Text {
+  let table = "METHODS: tuple[Method, ...] = (\n"
+  if not sig.ok or not source.contains(table) { return source }
+  if source.contains("Method(\"" + asked.kind + "\", \"" + asked.name + "\"") { return source }
+  var names: Text[] = [receiver_name(asked.kind)]
+  for p in sig.params { names = names.append(p.name) }
+  let stub = "def _" + asked.name + "(" + names.join(", ") + "):\n    raise RuntimeError(\"" + not_written(asked.name) + "\")\n\n\n"
+  let with_stub = if source.contains("def _" + asked.name + "(") { source } else { source.replace(table, stub + table) }
+  return with_stub.replace(table, table + py_method_line(asked, sig) + "\n")
+}
+
+fn go_map(kind: Text) -> Text {
+  if kind == "Text" { return "textMethods" }
+  if kind == "Number" { return "numberMethods" }
+  return ""
+}
+
+// native/types.go with the method declared after the last line like it.
+fn go_typed(types: Text, asked: MethodAsked, sig: Signature) -> Text {
+  let mark = "\tm(\"" + asked.kind + "\", "
+  if not sig.ok or go_map(asked.kind).is_empty() or types.contains(mark + "\"" + asked.name + "\",") { return types }
+  var parts = ""
+  for p in sig.params { parts = parts + ", \"" + p.name + "\", \"" + p.type + "\"" }
+  let line = mark + "\"" + asked.name + "\", \"" + sig.result + "\"" + parts + "),"
+  let lines = types.split("\n")
+  var last = -1
+  for i in 0 until lines.length() {
+    if lines[i].starts_with(mark) { last = i }
+  }
+  if last < 0 { return types }
+  return lines.take(last + 1).concat([line]).concat(lines.drop(last + 1)).join("\n")
+}
+
+// native/methods.go with an empty entry at the top of the method's map.
+fn go_shelled(methods: Text, asked: MethodAsked, sig: Signature) -> Text {
+  let head = "var " + go_map(asked.kind) + " = map[string]method{\n"
+  if not sig.ok or go_map(asked.kind).is_empty() or not methods.contains(head) or methods.contains("\t\"" + asked.name + "\": {") { return methods }
+  var quoted: Text[] = []
+  for p in sig.params { quoted = quoted.append("\"" + p.name + "\"") }
+  let names = if quoted.is_empty() { "nil" } else { "[]string{" + quoted.join(", ") + "}" }
+  let shell = "\t\"" + asked.name + "\": {" + names + ", func(r Value, a []Value) Value {\n\t\trunFail(\"" + not_written(asked.name) + "\")\n\t\treturn nil\n\t}},\n"
+  return methods.replace(head, head + shell)
+}
+
+// What the program did, for the model's task: "" when it wrote no shell.
+fn shell_said(before: Text, after: Text, asked: MethodAsked, sig: Signature) -> Text {
+  if before == after { return "" }
+  var names: Text[] = [receiver_name(asked.kind)]
+  for p in sig.params { names = names.append(p.name) }
+  return "wrote def _" + asked.name + "(" + names.join(", ") + ") above the METHODS table and registered it: " + py_method_line(asked, sig).trim()
+}
+
+
+
+
 
 fn agree_args(asked: MethodAsked) -> Text[] {
   return ["-c", agree_script(), asked.name, asked.kind]
@@ -2203,8 +2288,10 @@ fn stopped_after(asked: MethodAsked, python: Result) -> Result {
 
 workflow kosika_method(task: Task) -> Result {
   asked  = method_asked(task)
-  shell  = execute runner.run_python(scaffold_py_args(asked))
-  tried  = call on_my_own(python_part(asked, shell.stdout))
+  sig    = signature(asked)
+  before = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
+  shell  = call write_py_shell({asked: asked, sig: sig, old: before.text})
+  tried  = call on_my_own(python_part(asked, shell_said(before.text, py_shelled(before.text, asked, sig), asked, sig)))
   // A small model often writes the method's function and never registers
   // it. Registering is exact work, so the program does it, from the
   // function's own signature, and runs the tests again.
@@ -2217,6 +2304,45 @@ workflow kosika_method(task: Task) -> Result {
     case _ { stopped_after(asked, python) }
   }
   require approval
+}
+
+// The files a shell changes, before and after.
+record PyShell { asked: MethodAsked sig: Signature old: Text }
+record GoShell { asked: MethodAsked sig: Signature types: Text methods: Text }
+
+workflow write_py_shell(job: PyShell) -> Saved {
+  now   = py_shelled(job.old, job.asked, job.sig)
+  saved = match now == job.old {
+    case true { nothing_saved() }
+    case _ { call save_py_shell({asked: job.asked, sig: job.sig, old: job.old}) }
+  }
+  require approval
+}
+
+workflow save_py_shell(job: PyShell) -> Saved {
+  saved = execute writer.save_all([{path: "kosika/builtin_methods.py", text: py_shelled(job.old, job.asked, job.sig), before: job.old, exists: true}], "An empty " + job.asked.name + " and its Method line, for the model to fill in.")
+  require approval
+}
+
+workflow write_go_shell(job: GoShell) -> Saved {
+  typed = go_typed(job.types, job.asked, job.sig)
+  saved = match typed == job.types {
+    case true { nothing_saved() }
+    case _ { call save_go_shell(job) }
+  }
+  require approval
+}
+
+workflow save_go_shell(job: GoShell) -> Saved {
+  saved = execute writer.save_all([
+    {path: "native/types.go", text: go_typed(job.types, job.asked, job.sig), before: job.types, exists: true},
+    {path: "native/methods.go", text: go_shelled(job.methods, job.asked, job.sig), before: job.methods, exists: true}
+  ], "Declares " + job.asked.name + " and writes an empty entry for it, for the model to fill in.")
+  require approval
+}
+
+fn nothing_saved() -> Saved {
+  return {count: 0}
 }
 
 workflow register_method(asked: MethodAsked, tried: Result) -> Result {
@@ -2243,7 +2369,9 @@ workflow save_registered(job: Registering) -> Result {
 
 workflow method_rest(asked: MethodAsked, python: Result) -> Result {
   source = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
-  shell  = execute runner.run_python(scaffold_args(asked))
+  types  = execute coder.read_file("native/types.go") otherwise {text: ""}
+  table  = execute coder.read_file("native/methods.go") otherwise {text: ""}
+  shell  = call write_go_shell({asked: asked, sig: signature(asked), types: types.text, methods: table.text})
   first  = call on_my_own(go_part(asked, python_lines(source.text, asked.name)))
   agreed = execute runner.run_python(agree_args(asked))
   // The engines disagree, or the Go one has no such method: the Go part is
@@ -2571,6 +2699,30 @@ workflow main(msg: Msg) -> Said {
 }
 
 // ------------------------------------------------------------------ tests
+
+test "the program writes the shells of a new method from the request's own signature" {
+  asked: MethodAsked = {kind: "Text", name: "surround", text: "add a Text method surround(left: Text, right: Text) that gives the text with left before it and right after it"}
+  sig = signature(asked)
+  expect sig.ok
+  expect sig.result == "Text"
+  expect sig.params.length() == 2
+  py = "x = 1\n\nMETHODS: tuple[Method, ...] = (\n    Method(\"Text\", \"upper\", (), \"Text\", f),\n)\n"
+  shelled = py_shelled(py, asked, sig)
+  expect shelled.contains("def _surround(text, left, right):\n    raise RuntimeError(\"surround is not written yet\")")
+  expect shelled.contains("    Method(\"Text\", \"surround\", ((\"left\", \"Text\"), (\"right\", \"Text\")), \"Text\", _surround),")
+  expect py_shelled(shelled, asked, sig) == shelled
+  even: MethodAsked = {kind: "Number", name: "is_even", text: "add a Number method is_even() that says whether a whole number is even, giving a Bool; a number that is not whole gives false"}
+  expect signature(even).result == "Bool"
+  expect signature(even).params.is_empty()
+  types = "var t = []methodType{\n\tm(\"Text\", \"upper\", \"Text\"),\n\tm(\"Number\", \"floor\", \"Number\"),\n}\n"
+  typed = go_typed(types, asked, sig)
+  expect typed.contains("\tm(\"Text\", \"upper\", \"Text\"),\n\tm(\"Text\", \"surround\", \"Text\", \"left\", \"Text\", \"right\", \"Text\"),\n\tm(\"Number\"")
+  methods = "var textMethods = map[string]method{\n\t\"upper\": {nil, f},\n}\n"
+  expect go_shelled(methods, asked, sig).contains("\t\"surround\": {[]string{\"left\", \"right\"}, func(r Value, a []Value) Value {\n\t\trunFail(\"surround is not written yet\")")
+  vague: MethodAsked = {kind: "Text", name: "shout", text: "add a Text method shout that makes it loud"}
+  expect not signature(vague).ok
+  expect py_shelled(py, vague, signature(vague)) == py
+}
 
 test "an edit that drops an import or a definition it was not asked about is refused" {
   bad = overreach(["import (", "\t\"sort\"", "\t\"strings\"", ")"], ["import (", "\t\"strings\"", ")"], 1)
