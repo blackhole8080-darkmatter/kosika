@@ -107,12 +107,22 @@ def main() -> None:
             answer = (row["reply"]["choices"][0]["message"].get("content") or "").strip()
             if asked and answer and row.get("model") not in ("coder", "small", "kept"):
                 taught.append(chat(asked, answer))
-    rows = history + go + firsts + fixes * FIX_WEIGHT + taught * FIX_WEIGHT
+    # Changes the person approved and keep.kos committed (WORK/approved/RUN.json,
+    # already in chat form): the surest examples there are.
+    approved = []
+    for kept in sorted((DAILY / "approved").glob("*.json")):
+        try:
+            row = json.loads(kept.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if isinstance(row, dict) and isinstance(row.get("messages"), list):
+            approved.append({"messages": row["messages"]})
+    rows = history + go + firsts + fixes * FIX_WEIGHT + taught * FIX_WEIGHT + approved * FIX_WEIGHT
     random.Random(7).shuffle(rows)
     target = out / f"{args.name}.jsonl"
     target.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
     print(f"{len(history)} from history, {len(go)} Go once more, {len(firsts)} first answers and "
-          f"{len(fixes)} fixes (x{FIX_WEIGHT}) from passing coder runs, {len(taught)} kept cloud answers (x{FIX_WEIGHT}): "
+          f"{len(fixes)} fixes (x{FIX_WEIGHT}) from passing coder runs, {len(taught)} kept cloud answers and {len(approved)} approved changes (x{FIX_WEIGHT}): "
           f"{len(rows)} in {target}")
 
 

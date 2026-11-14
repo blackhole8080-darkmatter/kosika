@@ -170,6 +170,32 @@ def run_coder(folder: Path, agents: Path, text: str) -> dict:
 DEVELOP = HERE / "develop.kos"
 
 
+KEEP = HERE / "keep.kos"
+
+
+def offer_to_keep(place: Path, text: str, today: str) -> None:
+    """Start keep.kos for a run that passed: it makes a branch daily/RUN from
+    studio in a worktree of its own, applies the change, commits it and keeps
+    it as a training example in WORK/approved, each step waiting for the
+    person's yes (WORK/asks, answerable from the phone). It never pushes:
+    push stays false until the person decides otherwise. Without keep.kos
+    beside this file, nothing happens."""
+    if not KEEP.exists():
+        return
+    asks = WORK / "asks"
+    asks.mkdir(exist_ok=True)
+    kept = place / "kept.json"
+    kept.write_text(json.dumps({"k": {"repo": str(REPO).replace("\\", "/"), "work": str(WORK).replace("\\", "/"),
+                                      "run": place.name, "request": text, "passed": True, "date": today,
+                                      "push": False}}), encoding="utf-8")
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.Popen([sys.executable, "-m", "kosika.cli", "run", str(KEEP), "--input", str(kept),
+                      "--allow-folder", str(WORK), "--allow-shell", "--approve-in", str(asks)],
+                     cwd=WORK, env={**os.environ, "PYTHONPATH": str(REPO)}, creationflags=flags,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("keep.kos is waiting for your yes in", asks)
+
+
 def judge_in_kosika(place: Path, text: str, files: list[str], ran: dict, today: str) -> dict:
     """Run develop.kos on a finished coder run: the checks, the verdict,
     report.md and a line in kosika-daily/coders.kl. Its steps change files
@@ -412,6 +438,7 @@ def main() -> None:
         save_example(text, before, after, files)
         if not os.environ.get("KOSIKA_SWARM"):
             keep_answers(time.time() - float(ran["seconds"]) - 5)
+        offer_to_keep(place, text, today)
     shutil.rmtree(before, ignore_errors=True)
 
     mark_line(text, "- [x] " if passed else "- [!] ", f" ({today}, {place.name})")
