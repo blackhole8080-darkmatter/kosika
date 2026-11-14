@@ -63,14 +63,6 @@ tool python {
   output: Ran
 }
 
-tool go {
-  source system "shell"
-  operation: "go"
-  access: execute
-  input: Command
-  output: Ran
-}
-
 tool write_report {
   source system "files"
   operation: "write"
@@ -88,7 +80,7 @@ tool keep {
 }
 
 agent checker {
-  can: [python, go, write_report, keep]
+  can: [python, write_report, keep]
   max_steps: 1
 }
 
@@ -117,9 +109,12 @@ fn pytest_args(run: Text, files: Text[]) -> Text[] {
   return ["-c", "import os, sys; os.chdir('" + run + "/kosika'); sys.path.insert(0, '.'); import pytest; sys.exit(pytest.main(['-q', '-p', 'no:cacheprovider', '" + quoted + "']))"]
 }
 
+// go vet, started from Python so that Go's build and temporary folders are
+// inside the run: a program the shell tool starts may not write to the
+// system's temporary folder ("go: creating work dir: Access is denied").
 fn vet_args(run: Text, files: Text[]) -> Text[] {
-  if has_go(files) { return ["-C", run + "/kosika/native", "vet", "."] }
-  return ["version"]
+  if not has_go(files) { return ["-c", "print('no Go to check')"] }
+  return ["-c", "import os, subprocess, sys; t = os.path.abspath('" + run + "/.gotmp'); os.makedirs(t, exist_ok=True); env = dict(os.environ, GOTMPDIR=t, GOCACHE=os.path.abspath('" + run + "/.gocache')); r = subprocess.run(['go', '-C', '" + run + "/kosika/native', 'vet', '.'], env=env, capture_output=True, text=True); print(r.stdout + r.stderr); sys.exit(r.returncode)"]
 }
 
 fn check_of(name: Text, ran: Ran) -> Check {
@@ -166,7 +161,7 @@ fn checks_of(d: Done, tests: Ran, vet: Ran) -> Check[] {
 
 workflow main(d: Done) -> Verdict {
   tests   = execute checker.python(pytest_args(d.run, d.files))
-  vet     = execute checker.go(vet_args(d.run, d.files))
+  vet     = execute checker.python(vet_args(d.run, d.files))
   judged  = verdict(d, checks_of(d, tests, vet))
   written = execute checker.write_report(d.run + "/report.md", judged.report)
   kept    = execute checker.keep("coders.kl", d.run, {request: d.request, run: d.run, passed: judged.passed, why: judged.why, seconds: d.seconds, files: d.files})
@@ -201,6 +196,7 @@ test "a change passes only when it changed files, finished, owned up to nothing,
   expect pytest_args("r1", d.files)[1].contains("os.chdir('r1/kosika')")
   expect pytest_args("r1", d.files)[1].contains("'tests/test_x.py'")
   expect pytest_args("r1", ["kosika/a.py"]) == ["-c", "print('no tests to run')"]
-  expect vet_args("r1", d.files) == ["-C", "r1/kosika/native", "vet", "."]
-  expect vet_args("r1", ["kosika/a.py"]) == ["version"]
+  expect vet_args("r1", d.files)[1].contains("'go', '-C', 'r1/kosika/native', 'vet', '.'")
+  expect vet_args("r1", d.files)[1].contains("GOTMPDIR")
+  expect vet_args("r1", ["kosika/a.py"]) == ["-c", "print('no Go to check')"]
 }
