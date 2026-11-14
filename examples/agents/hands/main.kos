@@ -56,6 +56,16 @@ fn act(k: Kit, refused: Text, what: Text[]) -> Text[] {
   return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(quiet).concat(app).concat(what)
 }
 
+// A job stops at its first failed step. Workflow steps all run, so each
+// step's command is made from the step before it: once one has failed,
+// every later command is a refusal and nothing more is done.
+fn after(earlier: Ran, command: Text[]) -> Text[] {
+  if earlier.exit_code != 0 {
+    return ["hands.py", "refuse", "an earlier step stopped, so this one was not done"]
+  }
+  return command
+}
+
 fn why_stopped(ran: Ran) -> Text {
   if ran.exit_code == 3 { return "you stopped it with Escape" }
   if ran.exit_code == 6 { return "you were still working, so it waited and then did nothing: " + ran.stdout.trim() }
@@ -93,8 +103,8 @@ workflow note(n: Note) -> Done {
   k = kit_named(n.agent)
   refused = job_refusal(k, [["open", "notepad"], ["write", "notepad"], ["read", "notepad"]])
   opened = execute hands.hand(args: act(k, refused, ["open", "notepad"]))
-  typed  = execute hands.hand(args: act(k, refused, ["write", "notepad", n.text]))
-  read   = execute hands.hand(args: act(k, refused, ["read", "notepad"]))
+  typed  = execute hands.hand(args: after(opened, act(k, refused, ["write", "notepad", n.text])))
+  read   = execute hands.hand(args: after(typed, act(k, refused, ["read", "notepad"])))
   result = checked_note([opened, typed], read, n.text)
   require approval
 }
@@ -154,6 +164,15 @@ test "Escape held during an action stops the job there" {
   expect d.said.contains("stopped at step 2: you stopped it with Escape")
 }
 
+test "after a failed step, nothing more is done" {
+  ok: Ran = {exit_code: 0, stdout: "opened notepad", stderr: ""}
+  escaped: Ran = {exit_code: 3, stdout: "stopped: Escape is held", stderr: ""}
+  command = ["hands.py", "write", "notepad", "hi"]
+  expect after(ok, command) == command
+  expect after(escaped, command)[1] == "refuse"
+  expect after({exit_code: 5, stdout: "", stderr: ""}, command)[1] == "refuse"
+}
+
 test "keys that could not reach the program stop the job, and say why" {
   steps: Ran[] = [
     {exit_code: 0, stdout: "opened notepad", stderr: ""},
@@ -192,7 +211,7 @@ workflow press(t: Target) -> Pressed {
   k = kit_named(t.agent)
   refused = job_refusal(k, [["look", t.app], ["press", t.app]])
   looked = execute hands.hand(args: act(k, refused, ["look", t.app]))
-  press  = execute hands.hand(args: act(k, refused, ["press", t.app, t.name]))
+  press  = execute hands.hand(args: after(looked, act(k, refused, ["press", t.app, t.name])))
   result = pressed(looked, press)
   require approval
 }
@@ -247,8 +266,8 @@ fn visited(read: Ran) -> Visited {
 workflow visit(s: Site) -> Visited {
   k = kit_named(s.agent)
   started = execute hands.hand(args: web(k, ["start"]))
-  opened  = execute hands.hand(args: web(k, ["open", s.url]))
-  read    = execute hands.hand(args: web(k, ["read"]))
+  opened  = execute hands.hand(args: after(started, web(k, ["open", s.url])))
+  read    = execute hands.hand(args: after(opened, web(k, ["read"])))
   result = visited(read)
   require approval
 }
