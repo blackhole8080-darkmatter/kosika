@@ -110,6 +110,7 @@ from .skills import (
     SkillRouter,
     SkillRoutingError,
     load_skill_notes,
+    open_skill_text,
 )
 from .source_map import (
     SourceMapError,
@@ -821,6 +822,30 @@ def _ask_approval(
     )
 
 
+def _ask_approval_in(
+    folder: Path, request: dict[str, Any], wait_seconds: float
+) -> ApprovalRecord | None:
+    """Ask in a folder and wait for the answer there (see kosika.ask_folder)."""
+
+    from .ask_folder import wait_for_answer
+
+    yes, by = wait_for_answer(
+        folder,
+        request,
+        wait_seconds=wait_seconds,
+        tell=lambda line: print(line, file=sys.stderr, flush=True),
+    )
+    if not yes:
+        print("Refused, or no answer came. Nothing was run.", file=sys.stderr)
+        return None
+    return ApprovalRecord(
+        plan_hash=request["plan_hash"],
+        action_hash=request["action_hash"],
+        approved_by=by or "someone who could write to the folder",
+        reason=f"approved in {folder}",
+    )
+
+
 def _environment_model_bindings(
     environment: Environment, program: Program
 ) -> dict[str, ModelProvider]:
@@ -1451,6 +1476,13 @@ def build_parser() -> argparse.ArgumentParser:
     skills_parser.add_argument("--max-skills", type=int, default=6)
     skills_parser.add_argument("--format", choices=("text", "json"), default="text")
 
+    export_parser = subparsers.add_parser(
+        "skills-export",
+        help="Write a folder of skill notes as open SKILL.md skills, for other AI apps.",
+    )
+    export_parser.add_argument("notes", type=Path, help="Folder of skill notes (NAME.md).")
+    export_parser.add_argument("--out", type=Path, required=True, help="Folder to write NAME/SKILL.md into.")
+
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("source", type=Path)
     run_parser.add_argument("--workflow", default="main")
@@ -1510,6 +1542,35 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--approved-by",
         help="Name recorded with approvals given through --approve.",
+    )
+    run_parser.add_argument(
+        "--mcp",
+        action="append",
+        default=[],
+        metavar="NAME=COMMAND",
+        help=(
+            "An MCP server the program's `source mcp \"NAME\"` tools may use, "
+            'such as fetch="uvx mcp-server-fetch". May be repeated. Kosika '
+            "starts the command itself, not through a shell; a tool that "
+            "changes things must be declared access: execute."
+        ),
+    )
+    run_parser.add_argument(
+        "--approve-in",
+        type=Path,
+        metavar="FOLDER",
+        help=(
+            "Ask for each approval in this folder instead of at the terminal, "
+            "and wait for an answer there (kosika answer FOLDER yes). Only "
+            "the person may be able to write to it."
+        ),
+    )
+    run_parser.add_argument(
+        "--approve-wait",
+        type=float,
+        default=600,
+        metavar="SECONDS",
+        help="How long --approve-in waits for an answer; no answer is a no.",
     )
     run_parser.add_argument("--max-requests", type=int, default=64)
     run_parser.add_argument("--max-tokens", type=int)
@@ -2023,6 +2084,57 @@ def build_parser() -> argparse.ArgumentParser:
             "only on yes. Without this, such actions always fail."
         ),
     )
+    serve_mcp_parser = subparsers.add_parser(
+        "serve-mcp",
+        help="Serve a program's workflows as MCP tools for any AI app; flags after -- are the run's grants.",
+    )
+    serve_mcp_parser.add_argument("source")
+    serve_mcp_parser.add_argument("--only", action="append", metavar="WORKFLOW", help="Serve only this workflow (repeat for more).")
+    serve_mcp_parser.add_argument("run_flags", nargs=argparse.REMAINDER, help="-- then the flags of kosika run: --allow-folder, --allow-shell, --approve-in, --model ...")
+    connect_parser = subparsers.add_parser(
+        "connect",
+        help=(
+            "Start an MCP server once and print Kosika declarations for its "
+            'tools, ready to paste: kosika connect fetch="uvx mcp-server-fetch".'
+        ),
+    )
+    connect_parser.add_argument("grant", metavar="NAME=COMMAND")
+    connect_parser.add_argument(
+        "--out", type=Path, help="Write the declarations to this .kos file instead."
+    )
+
+    answer_parser = subparsers.add_parser(
+        "answer",
+        help=(
+            "See and answer what a run started with --approve-in is waiting "
+            "for: kosika answer FOLDER [ID] yes|no."
+        ),
+    )
+    answer_parser.add_argument("folder", type=Path)
+    answer_parser.add_argument(
+        "words",
+        nargs="*",
+        help="Nothing to list the asks; yes or no; or an ask's id and yes or no.",
+    )
+    answer_parser.add_argument("--by", help="Name recorded with the answer.")
+    answer_parser.add_argument(
+        "--serve",
+        action="store_true",
+        help=(
+            "Serve a page with a yes and a no button for each ask, to open on "
+            "a phone on the same network. Its address carries a key."
+        ),
+    )
+    answer_parser.add_argument("--port", type=int, default=8795)
+    answer_parser.add_argument(
+        "--relay",
+        metavar="SERVER",
+        help=(
+            "Send each ask as a push with Yes and No buttons through this ntfy "
+            "server (https://ntfy.sh or your own), to answer from anywhere."
+        ),
+    )
+
     story_parser = subparsers.add_parser(
         "story", help="Tell what happened in a run, in plain words, from its trace."
     )
@@ -3093,6 +3205,21 @@ def main() -> int:
         except (OSError, SourceMapError, ValueError) as exc:
             print(f"Source map failed safely: {exc}", file=sys.stderr)
             return 2
+    if args.command == "skills-export":
+        try:
+            catalog = load_skill_notes(args.notes)
+            if not len(catalog):
+                print(f"No skill notes in {args.notes}", file=sys.stderr)
+                return 2
+            for skill in catalog:
+                folder = args.out / skill.skill_id
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / "SKILL.md").write_text(open_skill_text(skill), encoding="utf-8", newline="\n")
+                print(f"{skill.skill_id}/SKILL.md")
+            return 0
+        except (OSError, SkillCatalogError) as exc:
+            print(f"Skill export failed safely: {exc}", file=sys.stderr)
+            return 2
     if args.command == "skills":
         try:
             catalog = SkillCatalog.from_directories(args.skill_dir)
@@ -3519,6 +3646,109 @@ def main() -> int:
             approve=ask_first if args.approve else None,
             approved_by=getpass.getuser(),
         )
+        return 0
+
+    if args.command == "serve-mcp":
+        from .mcp_program import ProgramServer, ProgramServerError
+
+        flags = list(args.run_flags)
+        # Written after the program (`serve-mcp plan.kos --only note -- ...`),
+        # --only lands in run_flags: argparse's REMAINDER takes everything
+        # after the source. Take each one back before the "--".
+        only = list(args.only or [])
+        while len(flags) >= 2 and flags[0] == "--only":
+            only.append(flags[1])
+            flags = flags[2:]
+        if flags and flags[0] == "--":
+            flags = flags[1:]
+        try:
+            server = ProgramServer(Path(args.source), flags, only or None)
+        except (ProgramServerError, OSError) as exc:
+            print(f"Not served: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:  # a program that does not check
+            print(f"Not served: {exc}", file=sys.stderr)
+            return 2
+        server.serve()
+        return 0
+    if args.command == "connect":
+        from .mcp_tools import MCPGrantError, MCPHub, declaration, parse_grant
+
+        try:
+            name, command = parse_grant(args.grant)
+            hub = MCPHub({name: command})
+            try:
+                tools = hub.tools(name)
+            finally:
+                hub.close()
+        except (MCPGrantError, MCPProtocolError, OSError) as exc:
+            print(f"Not connected: {exc}", file=sys.stderr)
+            return 2
+        quoted = " ".join(command)
+        from .mcp_tools import _camel, _snake
+
+        names = [
+            name_
+            for tool in tools
+            for name_ in (f"{_camel(tool['name'])}In", f"{_camel(tool['name'])}Out", _snake(tool["name"]))
+        ]
+        text = (
+            f"// Tools of the MCP server {name!r}, as `kosika connect` found them.\n"
+            f"// Run with: kosika run FILE.kos --mcp {name}=\"{quoted}\"\n"
+            "// A tool the server does not mark read-only is access: execute, so\n"
+            "// every call waits for a yes.\n\n"
+            + f"export [{', '.join(names)}]\n\n"
+            + "\n\n".join(declaration(name, tool) for tool in tools)
+            + "\n"
+        )
+        if args.out is not None:
+            args.out.write_text(text, encoding="utf-8")
+            print(f"{len(tools)} tool(s) of {name} declared in {args.out}")
+        else:
+            print(text, end="")
+        return 0
+
+    if args.command == "answer":
+        from .ask_folder import AskFolderError, answer, serve, waiting
+
+        if args.relay:
+            from .ask_relay import AskRelayError, Relay
+
+            if args.words or args.serve:
+                print("--relay answers from the phone; give only the folder.", file=sys.stderr)
+                return 2
+            try:
+                relay = Relay(args.folder, args.relay, args.by or getpass.getuser())
+            except AskRelayError as exc:
+                print(f"Relay not started: {exc}", file=sys.stderr)
+                return 2
+            try:
+                relay.run()
+            except KeyboardInterrupt:
+                pass
+            return 0
+        if args.serve:
+            if args.words:
+                print("--serve answers from the page; give only the folder.", file=sys.stderr)
+                return 2
+            serve(args.folder, args.by or getpass.getuser(), args.port)
+            return 0
+        if not args.words:
+            asks = waiting(args.folder)
+            if not asks:
+                print("Nothing is waiting.")
+            for ask in asks:
+                print(f"{ask['id']}  {ask.get('says', '')}")
+            return 0
+        if len(args.words) > 2:
+            print("Give at most an ask's id and yes or no.", file=sys.stderr)
+            return 2
+        ask_id = args.words[0] if len(args.words) == 2 else None
+        try:
+            print(answer(args.folder, ask_id, args.words[-1], args.by or getpass.getuser()))
+        except AskFolderError as exc:
+            print(f"Not answered: {exc}", file=sys.stderr)
+            return 2
         return 0
 
     if args.command == "story":
@@ -3952,6 +4182,7 @@ def main() -> int:
     bindings: dict[str, ControlledProvider] = {}
     telemetry_error = False
     component_tool_bindings: dict[str, Any] = {}
+    opened_hubs: list[Any] = []
     try:
         inputs = (
             strict_json(args.input.read_text(encoding="utf-8")) if args.input else {}
@@ -4007,7 +4238,9 @@ def main() -> int:
             and any(system_kind(tool) == "db" for tool in program.tools)
             else None
         )
-        if args.approve and not args.journal:
+        if args.approve_in is not None and args.approve:
+            raise ValueError("Use --approve or --approve-in, not both")
+        if (args.approve or args.approve_in is not None) and not args.journal:
             # Approval needs a journal to remember what was approved between
             # the pause and the resume; an asked-for run keeps one for itself.
             approve_scratch = tempfile.TemporaryDirectory(prefix="kosika-approve-")
@@ -4048,6 +4281,14 @@ def main() -> int:
             ).items()
         }
         host_tool_bindings = {**component_tool_bindings, **system_bindings}
+        if args.mcp:
+            from .mcp_tools import MCPHub, bind_mcp_tools, parse_grant
+
+            if environment is not None:
+                raise ValueError("--mcp cannot be used with --env; name it in the environment")
+            granted_hub = MCPHub(dict(parse_grant(grant) for grant in args.mcp))
+            opened_hubs.append(granted_hub)
+            host_tool_bindings.update(bind_mcp_tools(program, granted_hub))
         while True:
             # A fresh session per attempt: after an approval the journal
             # returns finished steps from its checkpoint and resumes at the
@@ -4087,6 +4328,10 @@ def main() -> int:
                 granted = (
                     _ask_approval(pending.request, args.approved_by)
                     if args.approve
+                    else _ask_approval_in(
+                        args.approve_in, pending.request, args.approve_wait
+                    )
+                    if args.approve_in is not None
                     else None
                 )
                 if granted is None:
@@ -4116,6 +4361,8 @@ def main() -> int:
         )
         return 2
     finally:
+        for hub in opened_hubs:
+            hub.close()
         if args.telemetry:
             try:
                 args.telemetry.write_text(

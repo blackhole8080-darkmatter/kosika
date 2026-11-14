@@ -1,0 +1,210 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 2,
+      "tasks": 4,
+      "seconds": 304.6,
+      "attempts": 4
+    }
+  },
+  "languages": {
+    "unknown": {
+      "passed": 2,
+      "tasks": 4
+    }
+  },
+  "results": [
+    {
+      "id": "py-bpe",
+      "language": "unknown",
+      "passed": false,
+      "state": "done",
+      "seconds": 100.5,
+      "approvals": 6,
+      "failures": [
+        "python -m pytest: 3 failed, 9 passed in 0.41s"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote bpe.py, test_bpe.py, one whole file at a time.\nWrote: bpe.py, test_bpe.py\nThe tests failed.\n.......F\n================================== FAILURES ===================================\n________________ test_merge_sequence_affects_subsequent_pairs _________________\n\n    def test_merge_sequence_affects_subsequent_pairs():\n        # After merging \"ab\" -> \"ab\", new pair \"ab\"+\"c\" becomes \"abc\".\n        text = \"abcab\"\n        merges = train(text, 2)\n        # First most frequent pair is (\"a\",\"b\") (appears twice).\n        # After merging: [\"ab\", \"c\", \"ab\"]\n        # Next most frequent pair is (\"ab\",\"c\") (appears once) vs (\"c\",\"ab\") (once);\n        # tie broken by first occurrence -> (\"ab\",\"c\").\n>       assert merges == [(\"a\", \"b\")",
+      "files": [
+        "bpe.py",
+        "calc.py",
+        "test_bpe.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-bpe",
+          "attempt": 1,
+          "asked": "write bpe.py with train(text, n) that learns n byte-pair-encoding merges over the characters of text and returns them as a list of (left, right) pairs, and encode(text, merges) that applies the merges in order and returns the list of tokens. When merging, replace pairs left to right without overlap. When two pairs are equally frequent, take the one that first occurs earlier in the text. Also write test_bpe.py with pytest tests",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 100.5,
+          "approvals": 6,
+          "failures": [
+            "python -m pytest: 3 failed, 9 passed in 0.41s"
+          ],
+          "excerpts": [
+            "python -m said:\n  test_bpe.py:129: AssertionError\n  =========================== short test summary info ===========================\n  FAILED test_bpe.py::test_merge_sequence_affects_subsequent_pairs - AssertionE...\n  FAILED test_bpe.py::test_large_number_of_merges_limited_by_text - AssertionEr...\n  FAILED test_bpe.py::test_multiple_merges_with_tie_break - AssertionError: ass...\n  3 failed, 9 passed in 0.41s"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\nWrote bpe.py, test_bpe.py, one whole file at a time.\nWrote: bpe.py, test_bpe.py\nThe tests failed.\n.......F\n================================== FAILURES ===================================\n________________ test_merge_sequence_affects_subsequent_pairs _________________\n\n    def test_merge_sequence_affects_subsequent_pairs():\n        # After merging \"ab\" -> \"ab\", new pair \"ab\"+\"c\" becomes \"abc\".\n        text = \"abcab\"\n        merges = train(text, 2)\n        # First most frequent pair is (\"a\",\"b\") (appears twice).\n        # After merging: [\"ab\", \"c\", \"ab\"]\n        # Next most frequent pair is (\"ab\",\"c\") (appears once) vs (\"c\",\"ab\") (once);\n        # tie broken by first occurrence -> (\"ab\",\"c\").\n>       assert merges == [(\"a\", \"b\")",
+          "files": [
+            "bpe.py",
+            "calc.py",
+            "test_bpe.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 100.5
+        }
+      }
+    },
+    {
+      "id": "py-astar",
+      "language": "unknown",
+      "passed": true,
+      "state": "done",
+      "seconds": 39.0,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote astar.py, test_astar.py, one whole file at a time.\nWrote: astar.py, test_astar.py\nThe tests for test_astar.py pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "astar.py",
+        "calc.py",
+        "test_astar.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-astar",
+          "attempt": 1,
+          "asked": "write astar.py with shortest_path(grid, start, goal) using A* search on a grid given as a list of strings where '#' is a wall and every other character is open; moves are up, down, left and right; start and goal are (row, col) tuples; return the shortest path as a list of (row, col) from start to goal inclusive, or None when there is no path or start or goal is a wall. Also write test_astar.py with pytest tests",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 39.0,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote astar.py, test_astar.py, one whole file at a time.\nWrote: astar.py, test_astar.py\nThe tests for test_astar.py pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "astar.py",
+            "calc.py",
+            "test_astar.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 39.0
+        }
+      }
+    },
+    {
+      "id": "kosika-paper-agent",
+      "language": "unknown",
+      "passed": false,
+      "state": "done",
+      "seconds": 61.0,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('papers/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed, getattr(x,'message','')) for x in r]\ns=open('papers/main.kos', encoding='utf-8').read()\nassert 'extract' in s and 'decide' in s and 'memory' in s: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-zfdwc42t\\agents\\papers\\main.kos: Expected 'from' at 26:20, got '.'"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote papers/main.kos, one whole file at a time.\nWrote: papers/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-zfdwc42t\\agents\\papers\\main.kos: Expected 'from' at 26:20, got '.'\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "papers\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-paper-agent",
+          "attempt": 1,
+          "asked": "create a Kosika agent in papers/main.kos that is given a record with the text of a paper abstract; uses extract to pull a record Paper with a title and a field out of it; uses decide to answer whether the paper is about machine learning; remembers in memory how many machine learning papers it has seen; returns a record with the title, the field, whether it is about machine learning, and the count; and has at least two tests that give answers for the model",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 61.0,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('papers/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed, getattr(x,'message','')) for x in r]\ns=open('papers/main.kos', encoding='utf-8').read()\nassert 'extract' in s and 'decide' in s and 'memory' in s: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-zfdwc42t\\agents\\papers\\main.kos: Expected 'from' at 26:20, got '.'"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      raise error_type(f\"{resolved}: {exc}\") from None\n  kosika.parser.ParseError: papers\\main.kos: Expected 'from' at 26:20, got '.'"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\nWrote papers/main.kos, one whole file at a time.\nWrote: papers/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-zfdwc42t\\agents\\papers\\main.kos: Expected 'from' at 26:20, got '.'\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "papers\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 61.0
+        }
+      }
+    },
+    {
+      "id": "dashboard",
+      "language": "unknown",
+      "passed": true,
+      "state": "done",
+      "seconds": 104.1,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "attempts": [
+        {
+          "id": "dashboard",
+          "attempt": 1,
+          "asked": "create a one-page analytics dashboard with plain HTML, CSS and JavaScript in index.html, styles.css and script.js: a header with a theme toggle button that switches between dark and light and remembers the choice in localStorage; three summary cards laid out with CSS grid; a line chart of twelve monthly numbers drawn with the canvas 2D API and no library; a table of eight products with name, units and revenue where clicking a column header sorts by that column; every button has an aria-label; and the layout works on a phone",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 104.1,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+          "files": [
+            "index.html",
+            "script.js",
+            "styles.css"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 104.1
+        }
+      }
+    }
+  ]
+}

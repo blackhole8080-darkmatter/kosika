@@ -7,6 +7,7 @@
 //	    [--model NAME] [--model-url URL] [--model-protocol openai|ollama]
 //	    [--model-timeout SECONDS]    run a workflow, asking a real model
 //	kosika-native replay TRACE.jsonl  check a run's trace, running nothing
+//	kosika-native answer FOLDER [ID] [yes|no]  answer a run started with --approve-in
 //	kosika-native capabilities      the conformance capabilities it reads
 //
 // It is built up stage by stage against the conformance suite; what it
@@ -85,6 +86,9 @@ func main() {
 	}
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
+	}
+	if len(args) >= 2 && args[0] == "answer" {
+		os.Exit(answerCommand(args[1:]))
 	}
 	if len(args) >= 2 && args[0] == "serve" {
 		os.Exit(serveCommand(args[1:]))

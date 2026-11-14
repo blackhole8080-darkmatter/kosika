@@ -1,0 +1,46 @@
+// A specialist model, written and trained entirely in Kosika: given a piece
+// of a file, which language is it, Python, Go, Kosika or Markdown?
+//
+//   kosika run main.kos --input data.json
+//
+// The coder agent needs this answer to pick its language pack and checks.
+// data.json holds 2,243 pieces of Kosika's own files, from its history, each
+// with the kind of file it came from; four in five teach and one in five,
+// never seen in training, judges. No outside model and no Python library:
+// std/learn.kos, and the engine's batch maths.
+
+import "std/learn.kos"
+
+record Data {
+  train_texts: Text[] train_classes: Number[]
+  test_texts: Text[] test_classes: Number[]
+  kinds: Text[]
+}
+record Report {
+  vocabulary: Number taught: Number judged: Number
+  before: Number after: Number train_accuracy: Number
+  examples: Text[]
+}
+
+fn learn(d: Data) -> Report {
+  let vocabulary = d.train_texts.top_words(300)
+  let x = texts_to_rows(d.train_texts, vocabulary)
+  let held = texts_to_rows(d.test_texts, vocabulary)
+  let start = classifier(300, 32, d.kinds.length(), 11)
+  let model = train(start, x, d.train_classes, 0.5, 150)
+  let guessed = guess(model, held)
+  var examples: Text[] = []
+  for i in 0 until 4 {
+    let first = d.test_texts[i].split("\n")[0].trim()
+    examples = examples.append(d.kinds[guessed[i]] + " (really " + d.kinds[d.test_classes[i]] + "): " + first)
+  }
+  return {
+    vocabulary: vocabulary.length(), taught: x.rows(), judged: held.rows(),
+    before: accuracy(start, held, d.test_classes), after: accuracy(model, held, d.test_classes),
+    train_accuracy: accuracy(model, x, d.train_classes), examples: examples
+  }
+}
+
+workflow main(d: Data) -> Report {
+  report = learn(d)
+}
