@@ -254,7 +254,7 @@ fn motion_check(css: Text) -> Text[] {
     let first = part.split(";")[0].split("}")[0]
     for ms in motion_ms_in(first).take(1) {
       if ms > 0 and ms < 80 { problems = problems.append(f"an animation of {ms.to_text()} ms is too quick to see") }
-      if ms > 30000 { problems = problems.append(f"an animation of {(ms / 1000).to_text()} s is too slow to feel") }
+      if ms > 30000 and not first.contains("infinite") { problems = problems.append(f"an animation of {(ms / 1000).to_text()} s is too slow to feel") }
       if ms > 0 and ms < 333 and first.contains("infinite") and (first.contains("opacity") or first.contains("flash") or first.contains("blink")) {
         problems = problems.append("something flashes more than three times a second, which can hurt people with photosensitive epilepsy")
       }
