@@ -221,6 +221,12 @@ func (r *run) logTool(tool *ToolDecl, arguments *Record) Value {
 		entry, _ := arguments.Fields["entry"].(*Record)
 		r.validate(entry, name, "$")
 		by, _ := arguments.Fields["by"].(string)
+		// The same lock as the Python engine's: PATH.lock, a folder, held
+		// while the last line is read and the entry added, so two programs
+		// appending at once take turns.
+		unlock := lockLog(path)
+		defer unlock()
+		lines = logLines(path)
 		var added []string
 		if len(lines) == 0 {
 			lines = []string{r.logHeader(name)}
@@ -252,6 +258,27 @@ func (r *run) logTool(tool *ToolDecl, arguments *Record) Value {
 	result.set("ok", problem == "")
 	result.set("problem", problem)
 	return result
+}
+
+// lockLog waits for PATH.lock, a folder, and gives back what releases it.
+// A lock older than 30 seconds belongs to a writer that died holding it.
+func lockLog(path string) func() {
+	lock := path + ".lock"
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if err := os.Mkdir(lock, 0o755); err == nil {
+			return func() { os.Remove(lock) }
+		}
+		if info, err := os.Stat(lock); err == nil && time.Since(info.ModTime()) > 30*time.Second {
+			os.Remove(lock)
+			continue
+		}
+		if time.Now().After(deadline) {
+			runFail(filepath.Base(path) + " is being written by another program; nothing was added")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func (r *run) logProblem(name string, lines, fields []string) string {
