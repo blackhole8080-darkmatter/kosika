@@ -157,13 +157,13 @@ Python accepted 11 of 20. Those cases were chosen by the author, so read that
 row as "what Kosika checks for free", not an error rate. Details in
 [KOSIKA_PLAN.md](KOSIKA_PLAN.md).
 
-`benchmarks/researcher` asks forty questions about a folder of notes, nothing
+`benchmarks/researcher` (in [kosika-agents](https://github.com/blackhole8080-darkmatter/kosika-agents)) asks forty questions about a folder of notes, nothing
 scripted. Last run: `qwen2.5:7b` was right 39 of 40 with no false answer;
 `qwen2.5:1.5b` was right 32 times with 8 false answers. Its README has the
 tables and what the numbers do not show.
 
 ```text
-python benchmarks/researcher/run.py --model qwen2.5:7b --embed-model nomic-embed-text
+python ../kosika-agents/benchmarks/researcher/run.py --model qwen2.5:7b --embed-model nomic-embed-text
 ```
 
 `spec-eval` asks whether a model can write Kosika from

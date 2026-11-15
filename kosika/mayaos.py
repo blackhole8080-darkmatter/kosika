@@ -42,6 +42,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
 from . import wsl
+from .agents_home import FETCH, agents_folder
 from .desktop_app import announce, reachable
 
 NAME = "MayaOS"
@@ -52,7 +53,8 @@ MIND = Path(__file__).resolve().parent.parent / "mayaos" / "maya.kos"
 MIND_SECONDS = 150
 #: Kosi, the assistant: the folder of agents the Kosi pill uses, whose
 #: `assistant` program answers what Maya hands over.
-KOSI_AGENTS = Path(__file__).resolve().parent.parent / "examples" / "agents"
+#: They live in the kosika-agents repo beside this one (see agents_home).
+KOSI_AGENTS = agents_folder()
 KOSI_SECONDS = 300
 MAX_BODY = 16 * 1024
 
@@ -313,6 +315,8 @@ class Maya:
         no to anything an agent asks to change, since no one is asked here."""
 
         if self._kosi is None:
+            if not KOSI_AGENTS.is_dir():
+                raise MayaError(FETCH)
             from .pill import Engine, local_binder
 
             self._kosi = Engine(KOSI_AGENTS, local_binder()[0])

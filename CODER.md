@@ -6,7 +6,7 @@ code on that day; where something is not known, it says so.
 ## In one paragraph
 
 The coder is a Kosika program of about 560 lines
-(`examples/agents/coder/main.kos`). You give it one small task in a Python
+(`agents/coder/main.kos` in [kosika-agents](https://github.com/blackhole8080-darkmatter/kosika-agents)). You give it one small task in a Python
 project. It finds out what to change, checks its own plan before you see
 it, shows you every file it will write as one list, writes only after you
 say yes, runs the project's tests, and tells you what really happened. It

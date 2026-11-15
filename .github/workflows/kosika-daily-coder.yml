@@ -1,7 +1,8 @@
 # Kosika's development, every day, with the laptop off.
 #
-# A free GitHub machine checks Kosika out, runs the Kosika coder on the next
-# open request in examples/agents/coder/daily/todo.md with free models only
+# A free GitHub machine checks Kosika out (and the coder, from kosika-agents,
+# beside it), runs the Kosika coder on the next
+# open request in CODER_TODO.md with free models only
 # (the virtual model router: Groq, then OpenRouter's free models), checks
 # the change in both engines, and opens a pull request with it. Nothing
 # reaches studio until its owner merges the pull request.
@@ -19,7 +20,7 @@ on:
   # to this file (the coder's own branch included, before it is in studio).
   push:
     branches: [studio, claude/project-thread-01asp3]
-    paths: [.github/workflows/kosika-daily-coder.yml, examples/agents/coder/daily/todo.md]
+    paths: [.github/workflows/kosika-daily-coder.yml, CODER_TODO.md]
   workflow_dispatch:
     inputs:
       swarm:
@@ -42,6 +43,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # The coder itself lives in kosika-agents; it finds this checkout
+      # through KOSIKA_HOME.
+      - uses: actions/checkout@v4
+        with:
+          repository: blackhole8080-darkmatter/kosika-agents
+          path: .kosika-agents
 
       - uses: actions/setup-python@v5
         with:
@@ -66,14 +74,15 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PYTHONPATH: ${{ github.workspace }}
+          KOSIKA_HOME: ${{ github.workspace }}
           PYTHONIOENCODING: utf-8
         run: |
           git fetch origin studio
-          cd examples/agents/coder/daily
+          cd .kosika-agents/agents/coder/daily
           if [ "${{ github.event.inputs.swarm || '1' }}" != "1" ]; then
-            python daily.py --swarm "${{ github.event.inputs.swarm }}" | tee ../../../../coder.log
+            python daily.py --swarm "${{ github.event.inputs.swarm }}" | tee "$GITHUB_WORKSPACE/coder.log"
           else
-            python daily.py | tee ../../../../coder.log
+            python daily.py | tee "$GITHUB_WORKSPACE/coder.log"
           fi
 
       - name: A pull request for each change that passed its checks
@@ -84,7 +93,8 @@ jobs:
           git config user.email "kosika-coder@users.noreply.github.com"
           # The to-do list as the coder left it, marked, goes into each pull
           # request; the checkout itself goes back to studio first.
-          cp examples/agents/coder/daily/todo.md "$RUNNER_TEMP/todo.md"
+          cp CODER_TODO.md "$RUNNER_TEMP/todo.md"
+          rm -rf .kosika-agents
           git checkout -q -- .
           for place in ~/Aryan_Private/kosika-daily/*/; do
             [ -f "$place/run.json" ] || continue
@@ -93,9 +103,8 @@ jobs:
             branch="coder/$(basename "$place")"
             git checkout -q -B "$branch" origin/studio
             if [ "$passed" = "True" ] && git apply --index "$place/change.patch"; then
-              mkdir -p examples/agents/coder/daily
-              cp "$RUNNER_TEMP/todo.md" examples/agents/coder/daily/todo.md
-              git add examples/agents/coder/daily/todo.md
+              cp "$RUNNER_TEMP/todo.md" CODER_TODO.md
+              git add CODER_TODO.md
               git commit -q -m "The Kosika coder: $title" -m "Made by the daily coder on free models; its checks passed. See the report in the pull request."
               git push -q -f origin "$branch"
               gh pr create --base studio --head "$branch" --title "Kosika coder: $title" --body-file "$place/report.md" || true
