@@ -1,0 +1,34 @@
+record Msg { text: Text }
+record Draft { text: Text }
+record Said { text: Text }
+
+model writer {
+  input: Msg
+  output: Draft
+}
+
+fn short_enough(reply: Draft, most: Msg) -> Text {
+  if reply.text.length() > 12 { return "Too long: at most 12 characters, you used " + reply.text.length() + "." }
+  return ""
+}
+
+fn say(reply: Draft) -> Said {
+  return {text: reply.text}
+}
+
+workflow main(msg: Msg) -> Said {
+  reply = use_model writer(msg.text) verify short_enough(reply, msg) retry 2
+  said = say(reply)
+}
+
+test "a verified model answer retries with the program's reason" {
+  answers writer: [{text: "This is far too long."}, {text: "Short."}]
+  said = main({text: "hi"})
+  expect said.text == "Short."
+}
+
+test "a verified answer that passes is accepted immediately" {
+  answers writer: [{text: "Fine."}]
+  said = main({text: "hi"})
+  expect said.text == "Fine."
+}

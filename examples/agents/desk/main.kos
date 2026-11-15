@@ -1,0 +1,114 @@
+// Desk: your helper for the folders on your laptop you choose to share. Ask
+// where something is, what a file says, or what is in a folder, and it
+// looks for itself and answers, naming the files it read.
+//
+//   kosika test main.kos
+//   kosika run main.kos --input ask.json --allow-folder FOLDER
+//       --model qwen/qwen3.8-27b --model-url https://api.groq.com/openai/v1
+//
+// where ask.json holds {"msg": {"text": "where did I write about my exams?"}}
+// and KOSIKA_MODEL_API_KEY holds a free Groq key.
+//
+// It grows out of Scout, with one more way of looking: searching every file
+// for words, as well as listing a folder and reading a file. The model
+// chooses what to look at, at most eight times a question, and every look
+// is in the run's trace.
+//
+// What it may touch. Only the one folder given with --allow-folder, and
+// only to look: it has no tool that writes, moves, deletes or starts
+// anything, so nothing it reads can make it change your computer. What it
+// reads is sent with the question to the model's company, so share only
+// folders you are happy to have read that way. Changing files is for
+// another agent, and waits for your yes.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Question { text: Text }
+record Where { path: Text }
+record Listing { names: Text[] }
+record FileText { text: Text }
+record Lookup { path: Text query: Text }
+record Lines { matches: Text[] }
+// What it found: the answer, and the files it came from.
+record Finding { answer: Text sources: Text[] }
+
+model thinker {
+  input: Question
+  output: Finding
+  parameters: {
+    max_output_tokens: 1500
+  }
+}
+
+tool list_folder {
+  source system "files"
+  operation: "list"
+  access: observe
+  input: Where
+  output: Listing
+}
+
+tool look_at {
+  source system "files"
+  operation: "peek"
+  access: observe
+  input: Where
+  output: FileText
+}
+
+tool search_words {
+  source system "files"
+  operation: "search"
+  access: observe
+  input: Lookup
+  output: Lines
+}
+
+agent desk {
+  model: thinker
+  can: [list_folder, look_at, search_words]
+  max_steps: 8
+  max_tool_calls: 10
+  instructions: "You help the person with the files in one folder on their laptop, which they chose to share. You cannot see anything until you use a tool. To find where something is written, use search_words with path \".\" and two or three key words; to see what a folder holds, use list_folder; to read a file, use look_at with its path. Look before you answer, and never guess what a file contains. Answer in two to four short sentences, and list in sources the paths of the files that support the answer. If the files do not hold the answer, say so and say where you looked. You can only look: if asked to change, move or delete a file, say that you only read, and that another agent can do it with the person's yes."
+}
+
+fn question(msg: Msg) -> Question {
+  return {text: msg.text.trim()}
+}
+
+fn tell(found: Finding) -> Said {
+  var sources: Text[] = []
+  for source in found.sources {
+    let path = source.trim().split(":").first().or("").trim()
+    if path.length() > 0 { sources = sources.append(path) }
+  }
+  let tail = if sources.length() > 0 { "\nFrom: " + sources.unique().join(", ") } else { "" }
+  return {text: found.answer.trim() + tail}
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 10 model calls, 300 seconds
+  ask   = question(msg)
+  found = ask desk(ask.text) otherwise {answer: "I could not work that out from the files. Try naming the file or a word in it.", sources: []}
+  said  = tell(found)
+}
+
+test "the answer names the files it came from, once each" {
+  a = tell({answer: " Your exam is on 3 November. ", sources: ["school/exams.md:4", "school/exams.md", " "]})
+  b = tell({answer: "Nothing here says.", sources: []})
+  expect a.text == "Your exam is on 3 November.\nFrom: school/exams.md"
+  expect b.text == "Nothing here says."
+}
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen/qwen3.8-27b --model-url https://api.groq.com/openai/v1
+
+eval "it searches, reads, and says where the answer came from" {
+  answers search_words: [{matches: ["school/exams.md:4: Maths exam: 3 November, room 12"]}]
+  answers look_at: [{text: "# Exams\n\nMaths exam: 3 November, room 12\n"}]
+  answers list_folder: [{names: ["school/", "notes.md"]}]
+  a = main({text: "When is my maths exam?"})
+  expect a.text.contains("3 November")
+  expect a.text.contains("school/exams.md")
+}

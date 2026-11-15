@@ -1,0 +1,7 @@
+// Refused: a value that may be absent is used as if it were there.
+
+record Item { name: Text price: Number }
+
+fn first_name(items: Item[]) -> Text {
+  return items.first().name
+}

@@ -1,0 +1,12 @@
+// Refused: a model's temperature is between 0 and 2.
+
+record Question { text: Text }
+record Answer { text: Text }
+
+model writer {
+  input: Question
+  output: Answer
+  parameters: {
+    temperature: 3
+  }
+}

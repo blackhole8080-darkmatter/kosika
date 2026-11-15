@@ -58,22 +58,40 @@ from .chat import ChatError, answer_text, message_parameter
 from .diagnostics import anchors_for, diagnostic_from_exception
 from .direct import AGENT as DIRECT_AGENT
 from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
+from .grants import native_folder_window, too_wide
+from .lessons import Lessons
 from .lexer import lex
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
-from .model import ModelProvider
+from .model import ChatMessage, ModelProvider, ModelProviderError, ModelRequest
 from .modules import load_program
 from .motion import check_scene, to_html, to_svg
 from .project_index import project_index
 from .project_map import beginner_map, read_note, save_note
+from .routing import Candidate, by_words, read_route, route_question
 from .runtime import run
 from .sessions import Session, SessionError, default_home, system_name
-from .skills import SKILLS_FOLDER, load_skill_notes
+from .sessions import unavailable as sessions_unavailable
+from .skills import (
+    MAX_SKILL_BYTES,
+    SKILLS_FOLDER,
+    SkillCatalogError,
+    load_skill_note,
+    load_skill_notes,
+    pick_skills,
+    skills_text,
+)
+from .source_map import SourceMapError, readable_source, scout_sources
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
-from .system_tools import bind_system_tools
+from .system_tools import (
+    bind_agent_tools,
+    bind_kosika_tools,
+    bind_outside_tools,
+    bind_system_tools,
+)
 from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
@@ -214,6 +232,94 @@ def _step_view(program: Program, step: Step) -> dict[str, Any]:
     return view
 
 
+def _first_words(payload: Any) -> str:
+    """The first piece of text inside a run's inputs: what it was asked."""
+
+    if isinstance(payload, str):
+        return payload.strip()
+    if isinstance(payload, dict):
+        for value in payload.values():
+            found = _first_words(value)
+            if found:
+                return found
+    elif isinstance(payload, (list, tuple)):
+        for value in payload:
+            found = _first_words(value)
+            if found:
+                return found
+    return ""
+
+
+def _last_record(path: Path) -> Any:
+    """The last line of a trace, read from the end so a long run costs one
+    seek rather than a whole file."""
+
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            block = min(size, 16384)
+            handle.seek(size - block)
+            tail = handle.read().decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return None
+    for line in reversed(tail.splitlines()):
+        if line.strip():
+            try:
+                return json.loads(line)
+            except ValueError:
+                return None
+    return None
+
+
+#: What a run's last event says about how it ended, in a word.
+RUN_STATES = {
+    "run_complete": "done",
+    "run_failed": "failed",
+    "run_cancelled": "stopped",
+    "run_paused": "paused",
+}
+
+
+def _run_facts(path: Path) -> dict[str, Any]:
+    """What a trace says at both ends: the ask it started with, how it ended,
+    how long it took and how many steps it used. Each is left out when the
+    trace does not record it, so the page never invents a number."""
+
+    facts: dict[str, Any] = {}
+    try:
+        with path.open("rb") as handle:
+            head = handle.readline(65536)
+    except OSError:
+        return facts
+    try:
+        started = json.loads(head.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        started = None
+    if isinstance(started, dict):
+        ask = " ".join(_first_words(started.get("inputs")).split())
+        if ask:
+            facts["ask"] = ask[:160]
+    last = _last_record(path)
+    if isinstance(last, dict):
+        facts["state"] = RUN_STATES.get(str(last.get("event", "")), "unfinished")
+        execution = last.get("execution")
+        if isinstance(execution, dict):
+            seconds = execution.get("elapsed_seconds")
+            if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                facts["seconds"] = round(float(seconds), 2)
+            used = execution.get("used")
+            steps = used.get("steps") if isinstance(used, dict) else None
+            if isinstance(steps, int) and not isinstance(steps, bool):
+                facts["steps"] = steps
+        error = last.get("error")
+        if isinstance(error, dict) and facts.get("state") in ("failed", "paused"):
+            because = str(error.get("code") or error.get("type") or "").strip()
+            if because:
+                facts["because"] = because
+    return facts
+
+
 def _traces(folder: Path) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     for directory in (folder, folder / "runs"):
@@ -225,6 +331,7 @@ def _traces(folder: Path) -> list[dict[str, Any]]:
                     {
                         "name": path.relative_to(folder).as_posix(),
                         "modified": path.stat().st_mtime,
+                        **_run_facts(path),
                     }
                 )
             except OSError:
@@ -252,8 +359,11 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
     except (OSError, UnicodeDecodeError) as exc:
         return {**view, "error": f"Cannot read the file: {exc}"}
     view["about"] = _about(source)
+    # The first paragraph alone, for a card: what the program is for, in the
+    # author's own words, without the running instructions that follow it.
+    view["purpose"] = _about(source, first_only=True) or view["about"]
     try:
-        program = load_program(agent.path)
+        program = _loaded(agent.path)
     except ValueError as exc:
         return {**view, "error": str(exc), **({"source": source} if detail else {})}
     declared = [model for model in program.models if model.provider is None]
@@ -450,11 +560,17 @@ APPROVAL_WAIT_SECONDS = 600
 MAX_SOURCE_BYTES = 1024 * 1024
 _SWARM = re.compile(r"^swarm\s+\w+\s*\{", re.MULTILINE)
 NEW_NAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
+#: What a skill may be called: its file is this name and `.md`.
+SKILL_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")
 _DECLARED = re.compile(
     r"^\s*(?:default\s+)?(record|fn|workflow|model|tool|agent|memory|board|swarm)\s+([A-Za-z_]\w*)",
     re.MULTILINE,
 )
 _FIELD = re.compile(r"\b([A-Za-z_]\w{2,})\s*:")
+_CARRYING = frozenset(
+    {"model_call", "model_return", "agent_call", "agent_return", "tool_call", "tool_return"}
+)
+
 _EVENT_KEYS = (
     "event",
     "step",
@@ -476,6 +592,14 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
 
     slim: dict[str, Any] = {key: event[key] for key in _EVENT_KEYS if key in event}
     slim["depth"] = depth
+    # How much went out or came back, so the page can draw a large answer
+    # as a larger light than a short one.
+    carried = event.get("result", event.get("arguments"))
+    if carried is not None and slim.get("event") in _CARRYING:
+        try:
+            slim["size"] = min(len(json.dumps(carried, default=str)), 1_000_000)
+        except (TypeError, ValueError):
+            pass
     if isinstance(event.get("recovered_from"), dict):
         slim["recovered"] = str(event["recovered_from"].get("message", ""))[:200]
     if "rejected" in event:
@@ -490,6 +614,8 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
         }
     if isinstance(event.get("usage"), dict):
         slim["tokens"] = event["usage"].get("total_tokens")
+    if isinstance(event.get("learned"), dict):
+        slim["learned"] = str(event["learned"].get("how", ""))
     if isinstance(event.get("escalated"), dict):
         slim["escalated"] = str(event["escalated"].get("to", ""))
     # What agents say to each other on a board is the conversation the swarm
@@ -512,6 +638,23 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
     return slim
 
 
+class _Refused(Exception):
+    """The person said no, or did not answer, to something a run asked."""
+
+
+class _Timed(list):  # type: ignore[type-arg]
+    """A run's events, each stamped with when it happened: seconds since the
+    run began. The page plays them back at the pace they really had."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.began = time.monotonic()
+
+    def append(self, event: dict[str, Any]) -> None:  # type: ignore[override]
+        event.setdefault("at", round(time.monotonic() - self.began, 3))
+        super().append(event)
+
+
 class Job:
     """One run started from the app, followed while it works."""
 
@@ -523,7 +666,7 @@ class Job:
             folder,
         )
         self.state = "running"  # running, waiting, done, failed, refused
-        self.events: list[dict[str, Any]] = []
+        self.events: list[dict[str, Any]] = _Timed()
         self.request: dict[str, Any] | None = None
         self.allow: bool | None = None
         self.decision = threading.Event()
@@ -532,6 +675,69 @@ class Job:
         self.story: dict[str, Any] | None = None
         self.error = ""
         self.seconds = 0.0
+
+
+#: Programs already loaded, by entry file, with the files they were read
+#: from as they were then. Loading and checking a large agent takes about a
+#: second; most requests run an agent nobody has changed since the last one.
+_LOADED: dict[Path, tuple[tuple[tuple[str, int, int], ...], Program]] = {}
+_LOADED_LOCK = threading.Lock()
+
+
+def _sources_of(entry: Path) -> tuple[tuple[str, int, int], ...]:
+    """Every program file an entry may import, with when it last changed:
+    imports never reach outside the entry's own folder."""
+
+    found = []
+    for path in sorted(entry.parent.rglob("*.kos")):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        found.append((str(path), stat.st_mtime_ns, stat.st_size))
+    return tuple(found)
+
+
+def _loaded(path: Path) -> Program:
+    """The agent at `path`, loaded and checked, or the same program as last
+    time when none of its files has changed."""
+
+    entry = Path(path).absolute()
+    sources = _sources_of(entry)
+    with _LOADED_LOCK:
+        known = _LOADED.get(entry)
+    if known is not None and known[0] == sources:
+        return known[1]
+    program = load_program(entry)
+    with _LOADED_LOCK:
+        _LOADED[entry] = (sources, program)
+    return program
+
+
+def plain_refusal(program: Program, message: str) -> str:
+    """A run refused for want of a grant, said as what to do about it in
+    Studio. Any other message is given back as it is."""
+
+    found = re.search(r"Agent tool '([^']+)' has no authorized host binding", message)
+    tool = next(
+        (item for item in program.tools if found and item.name == found.group(1)),
+        None,
+    )
+    if tool is None:
+        return message
+    if tool.source == "system:files":
+        return (
+            "this agent works on files, and no folder is granted yet. Open "
+            "Permissions, press Choose a folder, pick the folder it should work "
+            "in, press Apply, and ask again."
+        )
+    if tool.source == "system:shell":
+        return (
+            "this agent starts programs, such as your tests, and that is not "
+            "allowed yet. Open Permissions, turn on Let agents start programs, "
+            "press Apply, and ask again."
+        )
+    return message
 
 
 class App:
@@ -552,7 +758,27 @@ class App:
         embed_label: str = "",
         in_session: bool = False,
         session_home: Path | None = None,
+        pick_folder: Callable[[], str] | None = None,
+        outside: Sequence[str] = (),
+        outside_within: Path | None = None,
+        services: Path | None = None,
     ):
+        # The services file of agents that keep running (see
+        # kosika.services), shown on the Services page. Named by the person
+        # with --services or KOSIKA_SERVICES; without one the page says how.
+        named = services or (Path(os.environ["KOSIKA_SERVICES"]) if os.environ.get("KOSIKA_SERVICES") else None)
+        self.services_file = named.resolve() if named is not None else None
+        # Outside command-line agents the owner allowed, and the one root
+        # they may be shown. With either missing, none is ever asked.
+        self.outside = tuple(outside)
+        self.outside_within = outside_within
+        # How a person picks a folder: the computer's own folder window.
+        # A test hands in its own.
+        self._pick_folder = pick_folder or native_folder_window
+        # The folder last picked there, waiting to be confirmed. Only this
+        # one can be granted from the page.
+        self._picked: Path | None = None
+        self._grant_lock = threading.Lock()
         # With sessions on, each agent works in its own copy of the
         # granted folder, behind a wall. What it does there needs no yes
         # step by step; bringing the result back does.
@@ -580,6 +806,147 @@ class App:
         self._jobs_lock = threading.Lock()
         self.approved_by = approved_by
 
+    def _purpose(self, card: dict[str, Any]) -> str:
+        """What an agent is for: the first paragraph of the comment at the
+        top of its program. The rest of that comment is how to run it, which
+        only blurs the choice between agents."""
+
+        try:
+            source = self.agent(card["id"]).path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError, AppError):
+            return str(card.get("about", ""))
+        return _about(source, first_only=True) or str(card.get("about", ""))
+
+    def route(self, text: str) -> dict[str, Any]:
+        """Which agent a request should go to, and why. Nothing is run."""
+
+        text = text.strip()
+        if not text:
+            raise AppError("Say what you want first.")
+        cards = [describe(agent, detail=False) for agent in self.agents().values()]
+        candidates = [
+            Candidate(card["id"], card["title"], self._purpose(card))
+            for card in cards
+            if card.get("chat") and not card.get("error")
+        ]
+        if not candidates:
+            raise AppError("No agent in this folder can be talked to.", 404)
+
+        def answer(candidate: Candidate, why: str) -> dict[str, Any]:
+            return {"agent": candidate.agent_id, "title": candidate.title, "why": why}
+
+        if len(candidates) == 1:
+            return answer(candidates[0], "it is the only agent here you can talk to")
+        chosen: Candidate | None = None
+        if self.bind_models is not None:
+            system_words, question = route_question(candidates, text)
+            try:
+                program = _loaded(self.agent(candidates[0].agent_id).path)
+                provider = next(iter(self.bind_models(program).values()), None)
+                if provider is not None:
+                    said = provider.complete(
+                        ModelRequest(
+                            messages=(
+                                ChatMessage(role="system", content=system_words),
+                                ChatMessage(role="user", content=question),
+                            ),
+                            temperature=0,
+                            max_output_tokens=40,
+                            json_object=True,
+                        )
+                    )
+                    chosen = read_route(candidates, said.content)
+            except (ModelProviderError, ValueError, OSError):
+                chosen = None
+        if chosen is not None:
+            return answer(
+                chosen, "the model chose it from what each agent says it does"
+            )
+        worded = by_words(candidates, text)
+        if worded is not None:
+            found = next(c for c in candidates if c.agent_id == worded.agent_id)
+            return answer(found, worded.why)
+        first = next(
+            (c for c in candidates if c.agent_id == self.assistant(cards)),
+            candidates[0],
+        )
+        return answer(first, "nothing pointed to one agent, so this is the usual one")
+
+    def pick_folder(self) -> dict[str, Any]:
+        """Open the folder window. What is picked is remembered, not yet
+        granted: the person still has to confirm it."""
+
+        picked = self._pick_folder()
+        if not picked:
+            return {"folder": ""}
+        folder = Path(picked)
+        if not folder.is_dir():
+            raise AppError(f"{picked} is not a folder", 422)
+        problem = too_wide(folder)
+        if problem is not None:
+            raise AppError(problem, 422)
+        self._picked = folder.resolve()
+        return {"folder": str(self._picked)}
+
+    def grant(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Change what agents may touch: the folder, starting programs, and
+        working in a session.
+
+        `folder` is "keep", "none", or "picked", which means the folder last
+        chosen in the folder window. No other folder can be named here.
+        """
+
+        # One change at a time: checking that sessions can work takes a few
+        # seconds, and a second answer must not be decided on what the
+        # first one found.
+        with self._grant_lock:
+            return self._grant(body)
+
+    def _grant(self, body: dict[str, Any]) -> dict[str, Any]:
+        choice = body.get("folder", "keep")
+        if choice not in ("keep", "none", "picked"):
+            raise AppError("folder must be keep, none or picked")
+        with self._jobs_lock:
+            busy = any(
+                job.state in ("running", "waiting") for job in self._jobs.values()
+            )
+        if busy:
+            raise AppError(
+                "An agent is working. Change this when it has finished.", 409
+            )
+        if self._sessions:
+            raise AppError(
+                "A session is open. Bring its changes back or throw it away "
+                "first, in the agent's Session tab.",
+                409,
+            )
+        if choice == "picked" and self._picked is None:
+            raise AppError("Choose a folder first.", 409)
+        folder = (
+            self.allow_folder
+            if choice == "keep"
+            else None
+            if choice == "none"
+            else self._picked
+        )
+        shell = body.get("shell") is True and folder is not None
+        sessions = body.get("sessions") is True and folder is not None
+        if sessions and not self.in_session:
+            problem = sessions_unavailable()
+            if problem is not None:
+                raise AppError(problem, 422)
+        with self._lock:
+            self.allow_folder = folder
+            self.allow_shell = shell
+            self.in_session = sessions
+            if choice == "picked":
+                self._picked = None
+        return {
+            "allow_folder": str(folder) if folder else "",
+            "shell": shell,
+            "sessions": sessions,
+        }
+
     def agents(self) -> dict[str, Agent]:
         return {
             agent.id: agent
@@ -604,6 +971,7 @@ class App:
             "allow_folder": str(self.allow_folder) if self.allow_folder else "",
             "sites": list(self.sites),
             "shell": self.allow_shell,
+            "outside": list(self.outside) if self.outside_within else [],
             "embed": self.embed_label,
             "sessions": self.in_session,
             "mcp": self.mcp.names if self.mcp else [],
@@ -625,7 +993,7 @@ class App:
     def tests(self, agent_id: str) -> dict[str, Any]:
         agent = self.agent(agent_id)
         try:
-            results = run_tests(load_program(agent.path))
+            results = run_tests(_loaded(agent.path))
         except ValueError as exc:
             raise AppError(str(exc)) from exc
         return {"results": [result.to_dict() for result in results]}
@@ -655,7 +1023,7 @@ class App:
             )
         agent = self.agent(agent_id)
         try:
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
             if isinstance(body.get("text"), str):
                 parameter, _ = message_parameter(program, "main")
                 inputs: dict[str, Any] = {parameter: {"text": body["text"]}}
@@ -699,10 +1067,187 @@ class App:
                 allow_shell=self.allow_shell,
                 meaning=self.meaning,
                 session=self._session_for(program, folder),
+                # The Services page's file, so an agent such as the steward
+                # can say what is running, and pause one with a yes.
+                services=self.services_file,
             ),
             **bind_memory_tools(program, folder / "memory"),
             **bind_mcp_tools(program, self.mcp),
+            **self._outside_tools(program, folder),
+            # The agent's own skills give `check_files` their rules.
+            **bind_kosika_tools(program, load_skill_notes(folder / SKILLS_FOLDER)),
         }
+
+    def _outside_tools(self, program: Program, folder: Path) -> dict[str, Any]:
+        """The program's way of asking an outside agent, when the owner has
+        allowed one and the granted folder is inside the root named for
+        them. Otherwise the tool stays unreachable, like any ungranted one.
+
+        The outside agent works in a copy of the folder the agent's own
+        file tools use, so what it proposes fits what they would write.
+        """
+
+        from . import outside as outside_agents
+
+        granted, within = self.allow_folder, self.outside_within
+        if not self.outside:
+            return {}
+        # A folder may be shown only when one is granted inside the root the
+        # owner named. A question alone shows no folder and needs neither.
+        if (
+            granted is None
+            or within is None
+            or not outside_agents.inside(granted, within)
+        ):
+            return {
+                name: bound
+                for name, bound in bind_outside_tools(
+                    program, self._outside_answer
+                ).items()
+                if any(
+                    tool.name == name and tool.operation == "answer"
+                    for tool in program.tools
+                )
+            }
+        session = self._session_for(program, folder)
+        root = session.work if session is not None else granted
+        catalog = load_skill_notes(folder / SKILLS_FOLDER)
+
+        def with_skills(text: str) -> str:
+            """What is asked, followed by the agent's skills that fit it. An
+            outside agent has not read them; they are the owner's know-how
+            for this kind of work, and it is held to their rules after."""
+
+            know_how = skills_text(pick_skills(catalog, text)) if len(catalog) else ""
+            return text + ("\n\n" + know_how if know_how else "")
+
+        def choices(wanted: str) -> list[str]:
+            """The outside agents to try, in order: the one named; with no
+            name, every one that can be asked; with `not:NAME`, every one
+            but that, so that a change is not reviewed by its author. One
+            that fails, having used up its allowance say, is passed over
+            for the next."""
+
+            ready = outside_agents.installed(self.outside)
+            if self._outside_runner is not None:
+                ready = list(self.outside)
+            if wanted.startswith("not:"):
+                return [name for name in ready if name != wanted[4:]]
+            return [wanted] if wanted else ready
+
+        def first_that_answers(wanted: str, asking: Any) -> Any:
+            """Ask each choice in turn until one answers. With none, the
+            last refusal is raised, or a plain one if there was nobody."""
+
+            refusal: outside_agents.OutsideError | None = None
+            for name in choices(wanted):
+                try:
+                    return asking(name)
+                except outside_agents.OutsideError as exc:
+                    refusal = exc
+            raise refusal or outside_agents.OutsideError(
+                "None of the outside agents allowed here is installed."
+            )
+
+        def ask(tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+            wanted = str(arguments.get("agent", "")).strip().lower()
+            if tool.operation == "answer":
+                return self._outside_answer(tool, arguments)
+            if tool.operation == "review":
+                try:
+                    if not choices(wanted):
+                        raise outside_agents.OutsideError(
+                            "There is no second outside agent to review it."
+                        )
+                    read = first_that_answers(
+                        wanted,
+                        lambda name: outside_agents.review(
+                            name,
+                            str(arguments.get("text", "")),
+                            [
+                                outside_agents.Change(
+                                    str(item.get("path", "")),
+                                    str(item.get("text", "")),
+                                    str(item.get("before", "")),
+                                    item.get("exists") is True,
+                                )
+                                for item in arguments.get("files") or []
+                                if isinstance(item, dict)
+                            ],
+                            root,
+                            within=root,
+                            allowed=self.outside,
+                            runner=self._outside_runner,
+                        ),
+                    )
+                except outside_agents.OutsideError as exc:
+                    return {"ok": False, "agent": "", "said": str(exc)}
+                return {"ok": True, "agent": read.agent, "said": read.said}
+            try:
+                found = first_that_answers(
+                    wanted,
+                    lambda name: outside_agents.propose(
+                        name,
+                        with_skills(str(arguments.get("text", ""))),
+                        root,
+                        # The limit is on the folder the owner granted; the
+                        # session's copy of it stands in the same place.
+                        within=root,
+                        allowed=self.outside,
+                        runner=self._outside_runner,
+                    ),
+                )
+            except outside_agents.OutsideError as exc:
+                return {"ok": False, "agent": "", "said": str(exc), "files": []}
+            said = found.said
+            if found.left_out:
+                said += "\nNot offered: " + "; ".join(found.left_out) + "."
+            return {
+                "ok": True,
+                "agent": found.agent,
+                "said": said,
+                "files": [
+                    {
+                        "path": change.path,
+                        "text": change.text,
+                        "before": change.before,
+                        "exists": change.existed,
+                    }
+                    for change in found.changes
+                ],
+            }
+
+        return bind_outside_tools(program, ask)
+
+    def _outside_answer(self, _tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Ask the allowed outside agents a question, the named one or each
+        in turn until one answers. They are shown no folder."""
+
+        from . import outside as outside_agents
+
+        wanted = str(arguments.get("agent", "")).strip().lower()
+        ready = (
+            list(self.outside)
+            if self._outside_runner is not None
+            else outside_agents.installed(self.outside)
+        )
+        refusal = "None of the outside agents allowed here is installed."
+        for name in [wanted] if wanted else ready:
+            try:
+                agent, text = outside_agents.answer(
+                    name,
+                    str(arguments.get("text", "")),
+                    allowed=self.outside,
+                    runner=self._outside_runner,
+                )
+            except outside_agents.OutsideError as exc:
+                refusal = str(exc)
+                continue
+            return {"ok": True, "agent": agent, "text": text}
+        return {"ok": False, "agent": "", "text": refusal}
+
+    #: How an outside agent is started; a test puts its own here.
+    _outside_runner: Any = None
 
     @staticmethod
     def _session_key(folder: Path) -> str:
@@ -800,6 +1345,110 @@ class App:
             "left": [path for path in waiting if path not in brought] if keep else [],
         }
 
+    def _skills_folder(self, agent_id: str) -> Path:
+        return self.agent(agent_id).path.parent / SKILLS_FOLDER
+
+    def skills(self) -> dict[str, Any]:
+        """Every skill in the app's folder, gathered by the folder whose
+        agents it serves. A skill is a note of know-how beside a program:
+        it is picked by the words of a request and given to the model, and
+        its checks are rules a file made under it must keep. A note that
+        cannot be read is still listed, with the reason."""
+
+        places: dict[Path, dict[str, Any]] = {}
+        for agent in self.agents().values():
+            folder = agent.path.parent / SKILLS_FOLDER
+            place = places.setdefault(
+                folder,
+                {
+                    "id": agent.id,
+                    "title": agent.path.parent.name
+                    if agent.path.parent != self.root
+                    else "this folder",
+                    "agents": [],
+                    "skills": [],
+                },
+            )
+            place["agents"].append(agent.title)
+        for folder, place in places.items():
+            for path in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+                if not path.is_file():
+                    continue
+                item: dict[str, Any] = {"name": path.stem}
+                try:
+                    item["text"] = path.read_text(encoding="utf-8")[:MAX_SKILL_BYTES]
+                    skill = load_skill_note(path)
+                    item.update(
+                        summary=skill.summary,
+                        when=list(skill.keywords),
+                        files=list(skill.files),
+                        checks=list(skill.checks),
+                    )
+                except (SkillCatalogError, OSError, UnicodeDecodeError) as exc:
+                    item.setdefault("text", "")
+                    item["error"] = str(exc)
+                place["skills"].append(item)
+        return {"places": list(places.values())}
+
+    def try_skills(self, agent_id: str, text: str) -> dict[str, Any]:
+        """Which of an agent's skills a request would pick, and the words
+        that pick each. No model is asked and nothing is run."""
+
+        try:
+            catalog = load_skill_notes(self._skills_folder(agent_id))
+        except SkillCatalogError as exc:
+            raise AppError(str(exc), 422) from exc
+        picked = pick_skills(catalog, text) if len(catalog) else None
+        return {
+            "picked": [
+                {"name": name, "why": why}
+                for name, why in (picked.reasons if picked else ())
+            ]
+        }
+
+    def check_skill(self, name: str, text: str) -> dict[str, Any]:
+        """Would this text be a skill Kosika can read? Nothing is written."""
+
+        if not SKILL_NAME.fullmatch(name or ""):
+            return {
+                "ok": False,
+                "error": "Name it with lowercase letters, digits and dashes "
+                "(for example: page-motion)",
+            }
+        if len(text.encode("utf-8")) > MAX_SKILL_BYTES:
+            return {"ok": False, "error": "A skill may be at most 64 KiB."}
+        with tempfile.TemporaryDirectory(prefix="kosika-skill-") as scratch:
+            path = Path(scratch) / f"{name}.md"
+            path.write_text(text, encoding="utf-8", newline="")
+            try:
+                skill = load_skill_note(path)
+            except SkillCatalogError as exc:
+                return {"ok": False, "error": str(exc)}
+        return {
+            "ok": True,
+            "summary": skill.summary,
+            "when": list(skill.keywords),
+            "files": list(skill.files),
+            "checks": list(skill.checks),
+        }
+
+    def save_skill(self, agent_id: str, name: str, text: str) -> dict[str, Any]:
+        """Write a skill beside an agent. The page's own Save button is the
+        yes: this is the person editing their own note. A note Kosika cannot
+        read is not saved, because one unreadable note would stop every
+        skill beside that agent from being used."""
+
+        folder = self._skills_folder(agent_id)
+        checked = self.check_skill(name, text)
+        if not checked["ok"]:
+            raise AppError(checked["error"], 422)
+        try:
+            folder.mkdir(exist_ok=True)
+            (folder / f"{name}.md").write_text(text, encoding="utf-8", newline="")
+        except OSError as exc:
+            raise AppError(f"Could not save: {exc}", 422) from exc
+        return {"saved": True, **checked}
+
     def mcp_tools(self) -> dict[str, Any]:
         """Every granted MCP server with the tools it offers, and for each
         tool the Kosika text that declares it."""
@@ -851,7 +1500,7 @@ class App:
             raise AppError("A swarm runs only after you allow it", 403)
         agent = self.agent(agent_id)
         try:
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
             name = str(body.get("swarm", ""))
             if name not in [swarm.name for swarm in program.swarms]:
                 raise AppError("No such swarm in this program", 404)
@@ -1059,7 +1708,7 @@ class App:
 
         agent = self.agent(agent_id)
         try:
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
             with tempfile.TemporaryDirectory(prefix="kosika-scene-") as scratch:
                 made = run(program, "main", Path(scratch) / "run.jsonl", inputs=inputs)
         except (ValueError, RuntimeError, OSError) as exc:
@@ -1083,6 +1732,32 @@ class App:
             "moves": len(made["moves"]),
         }
 
+    def outside_sources(self) -> dict[str, Any]:
+        """What code in this folder Kosika can read but did not write.
+
+        Python, JavaScript, TypeScript and Rust are read as structure only:
+        nothing is imported, run, or judged. A folder too large for a full
+        source map is not an error here; the answer says it stopped early.
+        """
+
+        try:
+            return scout_sources(self.root)
+        except SourceMapError as exc:
+            raise AppError(str(exc), 422) from exc
+
+    def other_source(self, relative: str) -> dict[str, Any]:
+        """The text of one other-language file, to read beside the map.
+
+        Read-only, and only a file the map itself could have read: see
+        :func:`source_map.readable_source`. Nothing is written, run, or
+        judged, so this is a reading pane and nothing more.
+        """
+
+        try:
+            return readable_source(self.root, relative)
+        except SourceMapError as exc:
+            raise AppError(str(exc), 422) from exc
+
     def map(self, agent_id: str) -> dict[str, Any]:
         """What this agent is for, what it may touch and what it does, from
         the checked program and a person's own note. No model is asked."""
@@ -1090,7 +1765,7 @@ class App:
         agent = self.agent(agent_id)
         try:
             source = agent.path.read_text(encoding="utf-8")
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             raise AppError(f"No map: the program does not check. {exc}", 422) from exc
         return beginner_map(
@@ -1145,124 +1820,256 @@ class App:
                 self._lock,
                 tempfile.TemporaryDirectory(prefix="kosika-app-") as scratch,
             ):
-                approvals: list[ApprovalRecord] = []
-                # True when this agent's file and shell tools work in a session.
-                walled = self._session_key(job.folder) in self._sessions
-                while True:
-                    session = ExecutionSession(
-                        Path(scratch) / "run.sqlite",
-                        binding_id="studio",
-                        approvals=approvals,
-                    )
-                    try:
-                        result = run(
-                            program,
-                            "main",
-                            job.trace,
-                            skills=load_skill_notes(job.folder / SKILLS_FOLDER),
-                            inputs=inputs,
-                            model_bindings=models,
-                            tool_bindings=tools,
-                            session=session,
-                            on_event=watch,
-                        )
-                        break
-                    except ApprovalPending as pending:
-                        asked = next(
-                            (
-                                tool
-                                for tool in program.tools
-                                if tool.name == pending.request["tool"]
-                            ),
-                            None,
-                        )
-                        if (
-                            walled
-                            and asked is not None
-                            and asked.source in ("system:files", "system:shell")
-                        ):
-                            # Inside a session this cannot reach the real
-                            # folder, so it does not wait for a yes. The
-                            # yes comes when the changes are brought back.
-                            approvals.append(
-                                ApprovalRecord(
-                                    plan_hash=pending.request["plan_hash"],
-                                    action_hash=pending.request["action_hash"],
-                                    approved_by="session",
-                                    reason="confined to the session's copy",
-                                )
-                            )
-                            job.events.append(
-                                {
-                                    "event": "session_allowed",
-                                    "tool": pending.request["tool"],
-                                    "depth": 0,
-                                }
-                            )
-                            continue
-                        job.request = {
-                            "tool": pending.request["tool"],
-                            "arguments": pending.request["arguments"],
-                            "step": pending.request.get("step"),
-                            # So the page can say plainly what kind of
-                            # action this is, such as which program starts.
-                            "kind": asked.source if asked else "",
-                            "operation": asked.operation if asked else "",
-                        }
-                        if pending.request["tool"] == PLAN_TOOL:
-                            # A planning agent's whole list of changes: one
-                            # question, even inside a session, because this
-                            # is where the person sees what will be done.
-                            declared = {tool.name: tool for tool in program.tools}
-                            job.request = {
-                                "tool": "plan",
-                                "agent": pending.request["arguments"]["agent"],
-                                "step": pending.request.get("step"),
-                                "walled": walled,
-                                "warnings": pending.request["arguments"].get(
-                                    "warnings", []
-                                ),
-                                "plan": [
-                                    {
-                                        "tool": action["tool"],
-                                        "arguments": action["arguments"],
-                                        "kind": declared[action["tool"]].source,
-                                        "operation": declared[action["tool"]].operation,
-                                    }
-                                    for action in pending.request["arguments"][
-                                        "actions"
-                                    ]
-                                ],
-                            }
-                        job.allow = None
-                        job.decision.clear()
-                        job.state = "waiting"
-                        # Nobody answering is a no.
-                        job.decision.wait(timeout=APPROVAL_WAIT_SECONDS)
-                        if job.allow is not True:
-                            job.state = "refused"
-                            job.error = "Refused. Nothing was changed."
-                            return
-                        approvals.append(
-                            ApprovalRecord(
-                                plan_hash=pending.request["plan_hash"],
-                                action_hash=pending.request["action_hash"],
-                                approved_by=self.approved_by,
-                                reason="approved in the Kosika app",
-                            )
-                        )
-                        job.request = None
-                        job.events.append({"event": "resumed", "depth": 0})
-                        job.state = "running"
+                tools = {
+                    **tools,
+                    **bind_agent_tools(program, self._hand(job, Path(scratch))),
+                }
+                result = self._run_asking(
+                    job,
+                    program,
+                    inputs,
+                    models,
+                    tools,
+                    trace=job.trace,
+                    folder=job.folder,
+                    journal=Path(scratch) / "run.sqlite",
+                    on_event=watch,
+                )
             job.result = result
             job.text = answer_text(result)
             job.story = build_story(read_trace(job.trace))
             job.state = "done"
+        except _Refused:
+            job.state = "refused"
+            job.error = "Refused. Nothing was changed."
         except (RuntimeError, ValueError, PermissionError, OSError) as exc:
-            job.error = f"The run did not finish: {exc}"
+            job.error = f"The run did not finish: {plain_refusal(program, str(exc))}"
             job.state = "failed"
         finally:
             job.seconds = round(time.monotonic() - started, 1)
+
+    def _run_asking(
+        self,
+        job: Job,
+        program: Program,
+        inputs: dict[str, Any],
+        models: Mapping[str, ModelProvider],
+        tools: Mapping[str, Any],
+        *,
+        trace: Path,
+        folder: Path,
+        journal: Path,
+        on_event: Any = None,
+        handed: str = "",
+    ) -> Any:
+        """Run a program's `main`, stopping to ask the person each time it
+        reaches something that changes the world, and give back its result.
+
+        `handed` names the agent when this is a request another agent
+        handed over, so the question says who is asking. A no, or no answer,
+        raises _Refused.
+        """
+
+        approvals: list[ApprovalRecord] = []
+        # True when this agent's file and shell tools work in a session.
+        walled = self._session_key(folder) in self._sessions
+        while True:
+            session = ExecutionSession(
+                journal,
+                binding_id="studio",
+                approvals=approvals,
+            )
+            try:
+                return run(
+                    program,
+                    "main",
+                    trace,
+                    skills=load_skill_notes(folder / SKILLS_FOLDER),
+                    # An agent learns in its own memory folder, beside what
+                    # it remembers.
+                    lessons=Lessons(folder / "memory"),
+                    inputs=inputs,
+                    model_bindings=models,
+                    tool_bindings=tools,
+                    session=session,
+                    on_event=on_event,
+                )
+            except ApprovalPending as pending:
+                asked = next(
+                    (
+                        tool
+                        for tool in program.tools
+                        if tool.name == pending.request["tool"]
+                    ),
+                    None,
+                )
+                if (
+                    walled
+                    and asked is not None
+                    and asked.source in ("system:files", "system:shell")
+                ):
+                    # Inside a session this cannot reach the real
+                    # folder, so it does not wait for a yes. The
+                    # yes comes when the changes are brought back.
+                    approvals.append(
+                        ApprovalRecord(
+                            plan_hash=pending.request["plan_hash"],
+                            action_hash=pending.request["action_hash"],
+                            approved_by="session",
+                            reason="confined to the session's copy",
+                        )
+                    )
+                    job.events.append(
+                        {
+                            "event": "session_allowed",
+                            "tool": pending.request["tool"],
+                            "depth": 0,
+                        }
+                    )
+                    continue
+                job.request = {
+                    "tool": pending.request["tool"],
+                    "arguments": pending.request["arguments"],
+                    "step": pending.request.get("step"),
+                    # So the page can say plainly what kind of
+                    # action this is, such as which program starts.
+                    "kind": asked.source if asked else "",
+                    "operation": asked.operation if asked else "",
+                }
+                if pending.request["tool"] == PLAN_TOOL:
+                    # A planning agent's whole list of changes: one
+                    # question, even inside a session, because this
+                    # is where the person sees what will be done.
+                    declared = {tool.name: tool for tool in program.tools}
+                    job.request = {
+                        "tool": "plan",
+                        "agent": pending.request["arguments"]["agent"],
+                        "step": pending.request.get("step"),
+                        "walled": walled,
+                        "warnings": pending.request["arguments"].get("warnings", []),
+                        "plan": [
+                            {
+                                "tool": action["tool"],
+                                "arguments": action["arguments"],
+                                "kind": declared[action["tool"]].source,
+                                "operation": declared[action["tool"]].operation,
+                            }
+                            for action in pending.request["arguments"]["actions"]
+                        ],
+                    }
+                if handed:
+                    job.request["handed"] = handed
+                job.allow = None
+                job.decision.clear()
+                job.state = "waiting"
+                # Nobody answering is a no.
+                job.decision.wait(timeout=APPROVAL_WAIT_SECONDS)
+                if job.allow is not True:
+                    job.request = None
+                    job.state = "running"
+                    raise _Refused
+                approvals.append(
+                    ApprovalRecord(
+                        plan_hash=pending.request["plan_hash"],
+                        action_hash=pending.request["action_hash"],
+                        approved_by=self.approved_by,
+                        reason="approved in the Kosika app",
+                    )
+                )
+                job.request = None
+                job.events.append({"event": "resumed", "depth": 0})
+                job.state = "running"
+
+    def _named(self, wanted: str) -> Agent | None:
+        """The agent someone means by a name: its folder, its file, or its
+        title, whatever the capitals."""
+
+        want = wanted.strip().lower()
+        for agent_id, agent in self.agents().items():
+            folder = agent.path.parent.name.lower()
+            if want in (agent_id.lower(), folder, agent.title.lower()):
+                return agent
+        return None
+
+    def _hand(self, job: Job, scratch: Path) -> Any:
+        """What an `agents` tool does in a run here: pass a request to
+        another agent in the folder and give back what it said.
+
+        The other agent runs as if the person had opened it: its own tools,
+        the same grants, and its own questions, which appear in this run and
+        say who is asking. It is not given this tool, so a request is handed
+        on once and no further.
+        """
+
+        done: dict[tuple[str, str], dict[str, Any]] = {}
+
+        def ask(_tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+            wanted = str(arguments.get("agent", "")).strip()
+            text = str(arguments.get("text", "")).strip()
+
+            def no(words: str, agent: str = "") -> dict[str, Any]:
+                return {"ok": False, "agent": agent, "text": words}
+
+            if not text:
+                return no("There was nothing to hand over.")
+            if (wanted, text) in done:
+                return done[(wanted, text)]
+            others = [
+                agent
+                for agent_id, agent in self.agents().items()
+                if agent_id != job.agent_id
+            ]
+            if wanted:
+                chosen = self._named(wanted)
+                if chosen is None:
+                    names = ", ".join(sorted(a.path.parent.name for a in others))
+                    return no(
+                        f"There is no agent called {wanted}. The agents here are: {names}."
+                    )
+            else:
+                try:
+                    chosen = self.agent(self.route(text)["agent"])
+                except AppError as exc:
+                    return no(str(exc))
+            name = chosen.path.parent.name
+            if chosen.path == self.agent(job.agent_id).path:
+                return no(
+                    "Nobody else here fits that, and an agent cannot hand a request to itself.",
+                    name,
+                )
+            job.events.append({"event": "handed", "agent": name, "depth": 0})
+            program: Program | None = None
+            try:
+                program = _loaded(chosen.path)
+                parameter, _ = message_parameter(program, "main")
+                folder = chosen.path.parent
+                runs = folder / "runs"
+                runs.mkdir(exist_ok=True)
+                trace = runs / (
+                    f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jsonl"
+                )
+                result = self._run_asking(
+                    job,
+                    program,
+                    {parameter: {"text": text}},
+                    self.bind_models(program) if self.bind_models else {},
+                    self._tools(program, folder),
+                    trace=trace,
+                    folder=folder,
+                    journal=scratch / f"handed-{len(done)}.sqlite",
+                    handed=name,
+                )
+                answer = {"ok": True, "agent": name, "text": answer_text(result)}
+            except _Refused:
+                answer = no("That was refused, so nothing was changed.", name)
+            except (RuntimeError, ValueError, PermissionError, OSError) as exc:
+                said = str(exc) if program is None else plain_refusal(program, str(exc))
+                answer = no(f"{name} did not finish: {said}", name)
+            job.events.append({"event": "handed_back", "agent": name, "depth": 0})
+            done[(wanted, text)] = answer
+            return answer
+
+        return ask
 
     def job(self, job_id: str) -> Job:
         with self._jobs_lock:
@@ -1322,11 +2129,52 @@ class App:
             "story": job.story,
         }
 
+    def services(self) -> dict[str, Any]:
+        """Each service of the services file: what it may touch, how often it
+        runs, whether it is paused, and how it last went."""
+
+        from . import services as running
+
+        if self.services_file is None:
+            return {"file": "", "services": []}
+        try:
+            return {"file": str(self.services_file), "services": running.status(self.services_file)}
+        except (OSError, ValueError) as exc:
+            raise AppError(f"The services file could not be read: {exc}", 422) from exc
+
+    def pause_service(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Pause or resume one service. Pausing stops nothing that is running;
+        the service is simply not started again until it is resumed."""
+
+        from . import services as running
+
+        if self.services_file is None:
+            raise AppError("Studio was started without a services file", 404)
+        name, paused = body.get("name"), body.get("paused")
+        if not isinstance(name, str) or not isinstance(paused, bool):
+            raise AppError("Send the service's name and paused: true or false")
+        try:
+            running.set_paused(self.services_file, name, paused)
+        except (OSError, ValueError) as exc:
+            raise AppError(str(exc), 404) from exc
+        return self.services()
+
+    def open_mayaos(self) -> dict[str, Any]:
+        """Open MayaOS, the app the agents live in: its window when it is
+        running, otherwise the app itself, as its shortcut starts it."""
+
+        from .mayaos import MayaError, open_app
+
+        try:
+            return {"did": open_app("mayaos")}
+        except (MayaError, OSError) as exc:
+            raise AppError(f"MayaOS could not be opened: {exc}", 500) from exc
+
     def memory(self, agent_id: str) -> dict[str, Any]:
         """What the agent remembers right now, read from its memory folder."""
 
         agent = self.agent(agent_id)
-        program = load_program(agent.path)
+        program = _loaded(agent.path)
         folder = agent.path.parent / "memory"
         memories = []
         for declared in program.memories:
@@ -1360,7 +2208,7 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; connect-src 'self'",
+                "script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'",
             )
             self.end_headers()
             self.wfile.write(body)
@@ -1413,6 +2261,24 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
         def _serve(self, method: str) -> None:
             url = urlsplit(self.path)
             query = parse_qs(url.query)
+            if method == "GET" and url.path == "/favicon.ico":
+                # The window's icon. It is the same picture for everyone and
+                # says nothing about this computer, so it needs no token.
+                from .desktop_app import icon_bytes
+
+                self._send(200, icon_bytes(), "image/x-icon")
+                return
+            if method == "GET" and url.path.startswith("/fonts/"):
+                # The two typefaces Kosika carries. Like the icon they are
+                # the same for everyone, and only those two files are given.
+                from .fonts import served
+
+                font = served(url.path[len("/fonts/") :])
+                if font is None:
+                    self._json(404, {"error": "There is no such font."})
+                else:
+                    self._send(200, font, "font/ttf")
+                return
             if not self._allowed(query):
                 self._json(
                     403, {"error": "This page was not opened from the Kosika app."}
@@ -1451,6 +2317,12 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                             int(since) if since.isdigit() else 0,
                         ),
                     )
+                elif method == "POST" and url.path == "/api/route":
+                    self._json(200, app.route(str(self._body().get("text", ""))))
+                elif method == "POST" and url.path == "/api/grant/pick":
+                    self._json(200, app.pick_folder())
+                elif method == "POST" and url.path == "/api/grant":
+                    self._json(200, app.grant(self._body()))
                 elif method == "POST" and url.path == "/api/decide":
                     body = self._body()
                     self._json(
@@ -1492,10 +2364,31 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, app.scene(agent_id, body["inputs"]))
                     else:
                         raise AppError("Send inputs to run, or a scene to draw")
+                elif method == "POST" and url.path == "/api/design":
+                    # Kosika Designs: the same front door Chat and the agents use.
+                    from .designs import DesignsError, design
+
+                    body = self._body()
+                    try:
+                        self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/study":
+                    # The study companion: words, the person's notes, and a Designs canvas.
+                    from .designs import DesignsError, study
+
+                    try:
+                        self._json(200, study(str(self._body().get("text", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "GET" and url.path == "/api/brand":
                     self._json(200, app.brand())
                 elif method == "GET" and url.path == "/api/project":
                     self._json(200, app.project())
+                elif method == "GET" and url.path == "/api/outside":
+                    self._json(200, app.outside_sources())
+                elif method == "GET" and url.path == "/api/other":
+                    self._json(200, app.other_source((query.get("path") or [""])[0]))
                 elif method == "GET" and url.path == "/api/map":
                     self._json(200, app.map(agent_id))
                 elif method == "POST" and url.path == "/api/purpose":
@@ -1515,10 +2408,35 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         200,
                         app.end_session(*self._session_answer(agent_id)),
                     )
+                elif method == "GET" and url.path == "/api/skills":
+                    self._json(200, app.skills())
+                elif method == "POST" and url.path in (
+                    "/api/skills/try",
+                    "/api/skills/check",
+                    "/api/skills/save",
+                ):
+                    body = self._body()
+                    name, text = body.get("name"), body.get("text")
+                    if not isinstance(text, str) or (
+                        not url.path.endswith("/try") and not isinstance(name, str)
+                    ):
+                        raise AppError("name and text must be text")
+                    if url.path.endswith("/try"):
+                        self._json(200, app.try_skills(agent_id, text))
+                    elif url.path.endswith("/check"):
+                        self._json(200, app.check_skill(str(name), text))
+                    else:
+                        self._json(200, app.save_skill(agent_id, str(name), text))
                 elif method == "GET" and url.path == "/api/mcp":
                     self._json(200, app.mcp_tools())
                 elif method == "GET" and url.path == "/api/memory":
                     self._json(200, app.memory(agent_id))
+                elif method == "GET" and url.path == "/api/services":
+                    self._json(200, app.services())
+                elif method == "POST" and url.path == "/api/services/pause":
+                    self._json(200, app.pause_service(self._body()))
+                elif method == "POST" and url.path == "/api/open/mayaos":
+                    self._json(200, app.open_mayaos())
                 else:
                     self._json(404, {"error": "Not found"})
             except AppError as exc:
@@ -1584,6 +2502,44 @@ def open_window(url: str) -> bool:
         except OSError:
             continue
     return False
+
+
+def open_app_window(
+    url: str, settings: Path, announce_as: str = "studio"
+) -> subprocess.Popen[bytes] | None:
+    """Open the page as an app window that can be waited for.
+
+    The browser is given a settings folder of its own. Without one it hands
+    the page to a browser that is already running and exits at once, and
+    there would be nothing to wait for. With one, the process lasts exactly
+    as long as the window does.
+
+    The app is announced beside its settings folder, so Kosika's other apps
+    (MayaOS opens Studio, and Studio MayaOS) can find it.
+    """
+
+    settings.mkdir(parents=True, exist_ok=True)
+    if announce_as:
+        from .desktop_app import announce
+
+        announce(announce_as, url, settings.parent)
+    for browser in window_browsers():
+        try:
+            return subprocess.Popen(  # noqa: S603 - a fixed browser path and our own URL
+                [
+                    str(browser),
+                    f"--app={url}",
+                    f"--user-data-dir={settings}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--window-size=1280,860",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            continue
+    return None
 
 
 def address(app: App, server: ThreadingHTTPServer) -> str:

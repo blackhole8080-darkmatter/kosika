@@ -1,0 +1,5 @@
+{
+  "flow": {
+    "command": ["kosika-langflow", "kosika-model"]
+  }
+}

@@ -1,0 +1,3 @@
+PASS  an agent answers, and what it did is what ran
+PASS  an answer in the wrong shape is asked for once more
+2 passed, 0 failed

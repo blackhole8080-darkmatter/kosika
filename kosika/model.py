@@ -1,11 +1,74 @@
 from __future__ import annotations
 
+import http.client
 import json
+import socket
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Protocol
+
+
+# A model is asked over the network, and on some networks the IPv6 route to
+# a provider is broken: every request then waits some 40 seconds for IPv6 to
+# fail before IPv4, which answers in a fraction of a second, is tried. The
+# addresses a name resolves to are therefore tried IPv4 first. A host with
+# only IPv6 addresses is still reached by them.
+_resolve = socket.getaddrinfo
+
+
+def _ipv4_first(host: Any, *args: Any, **kwargs: Any) -> list[Any]:
+    found = _resolve(host, *args, **kwargs)
+    return sorted(found, key=lambda entry: entry[0] != socket.AF_INET)
+
+
+socket.getaddrinfo = _ipv4_first
+
+#: Seconds to wait between tries while a model server is restarting: about
+#: five minutes in all.
+RECONNECT_WAITS = (5, 10, 20, 40, 60, 60, 60, 60)
+
+#: Seconds to wait between tries while a model service says it is too busy
+#: (HTTP 429 or 503): a little over three minutes in all.
+BUSY_WAITS = (5, 15, 30, 60, 90)
+
+#: How Kosika names itself to a model service. Some services, behind
+#: Cloudflare, turn away a request that names no program (HTTP 403, 1010).
+USER_AGENT = "Kosika/1.0"
+
+#: Model servers that have answered at least once while this program runs.
+#: Only one of these is waited for: a server that was never reached is more
+#: likely a wrong address than a restart, and is reported at once.
+_ANSWERED: set[str] = set()
+
+
+def _server_of(url: str) -> str:
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _server_restarting(exc: BaseException, url: str) -> bool:
+    """Whether a failed request found a model server that had been working
+    gone for now, rather than wrong. A refused connection reached nobody, so
+    trying again is safe anywhere; a dropped one may have been answered, so
+    it is tried again only on this computer, where a repeat costs nothing."""
+
+    if _server_of(url) not in _ANSWERED:
+        return False
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, ConnectionRefusedError):
+        return True
+    host = urllib.parse.urlsplit(url).hostname or ""
+    return isinstance(
+        reason, (http.client.RemoteDisconnected, ConnectionResetError)
+    ) and host in (
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    )
 
 
 class ModelProviderError(RuntimeError):
@@ -102,6 +165,33 @@ Transport = Callable[[urllib.request.Request, float], bytes]
 #: ``/chat/completions`` shape most gateways expose. ``ollama`` is Ollama's native
 #: ``/api/chat`` shape, which is the only one of the two that honours ``think``.
 MODEL_PROTOCOLS = ("openai", "ollama")
+#: How long Ollama is asked to keep a model loaded after it answers.
+OLLAMA_KEEP_ALIVE = "30m"
+#: The context windows Ollama is asked for, smallest first. Ollama gives a
+#: model 4096 tokens unless told otherwise, and quietly drops the start of a
+#: conversation that does not fit, which is where an agent's instructions
+#: are. A request is given the smallest window that holds it and its answer;
+#: a few sizes only, since Ollama loads a model again when the size changes.
+OLLAMA_CONTEXTS = (8192, 16384, 32768)
+
+
+def ollama_context(request: ModelRequest) -> int:
+    """The context window a request to Ollama needs: its text, at about three
+    characters a token, its answer and a margin, rounded up to a size in
+    OLLAMA_CONTEXTS."""
+
+    text = 0
+    for message in request.messages:
+        text += len(message.content or "")
+        for call in message.tool_calls:
+            text += len(call.name) + len(json.dumps(call.arguments, sort_keys=True))
+    for tool in request.tools:
+        text += len(tool.name) + len(tool.description)
+        text += len(json.dumps(tool.input_schema, sort_keys=True))
+    wanted = text // 3 + (request.max_output_tokens or 1024) + 512
+    return next(
+        (size for size in OLLAMA_CONTEXTS if size >= wanted), OLLAMA_CONTEXTS[-1]
+    )
 
 
 class OpenAICompatibleProvider:
@@ -162,6 +252,9 @@ class OpenAICompatibleProvider:
         self.api_key = api_key
         self.timeout = timeout
         self._transport = transport
+        # The largest context window this computer has room for, learned
+        # when a larger one did not fit. See OLLAMA_CONTEXTS.
+        self._context_limit = OLLAMA_CONTEXTS[-1]
         #: Reasoning models such as qwen3 emit a separate reasoning trace that
         #: consumes the output budget before any answer is produced. Set this
         #: to False when the caller needs a direct answer, for example a
@@ -186,14 +279,14 @@ class OpenAICompatibleProvider:
                 pass
 
     def _lines(self, request: urllib.request.Request) -> Iterator[bytes]:
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+        with self._open(request) as response:
             yield from response
 
     def _exchange_stream(self, payload: dict[str, Any], *, sse: bool) -> Any:
         """Ask for a streamed reply and put it back together as one reply."""
 
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request_object = urllib.request.Request(
@@ -327,7 +420,7 @@ class OpenAICompatibleProvider:
                 )
             )
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request_object = urllib.request.Request(
@@ -394,11 +487,16 @@ class OpenAICompatibleProvider:
             ):
                 raise ModelProviderError("max_output_tokens must be a positive integer")
             options["num_predict"] = request.max_output_tokens
+        options["num_ctx"] = min(ollama_context(request), self._context_limit)
 
         payload: dict[str, Any] = {
             "model": request.model or self.model,
             "messages": [self._ollama_message(message) for message in request.messages],
             "stream": False,
+            # Ollama unloads a model five minutes after its last answer,
+            # and loading it again costs ten to twenty seconds on a slow
+            # machine. Asked to, it keeps the model ready for half an hour.
+            "keep_alive": OLLAMA_KEEP_ALIVE,
         }
         if options:
             payload["options"] = options
@@ -411,15 +509,30 @@ class OpenAICompatibleProvider:
             payload["format"] = "json"
         if self.think is not None:
             payload["think"] = self.think
-        if self._streams(request):
-            raw = self._exchange_stream({**payload, "stream": True}, sse=False)
-        else:
-            raw = self._exchange(payload)
-        return self._parse_response(raw, "ollama")
+        while True:
+            try:
+                if self._streams(request):
+                    raw = self._exchange_stream({**payload, "stream": True}, sse=False)
+                else:
+                    raw = self._exchange(payload)
+                return self._parse_response(raw, "ollama")
+            except ModelProviderError as exc:
+                # A computer without the memory for a large window says so;
+                # the same request is asked again with half the window, and
+                # this provider asks for no more than that from then on.
+                said = str(exc).lower()
+                if options["num_ctx"] <= OLLAMA_CONTEXTS[0] or not (
+                    "out-of-memory" in said
+                    or "out of memory" in said
+                    or "failed to allocate" in said
+                ):
+                    raise
+                options["num_ctx"] //= 2
+                self._context_limit = options["num_ctx"]
 
     def _exchange(self, payload: dict[str, Any]) -> Any:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request_object = urllib.request.Request(
@@ -450,8 +563,39 @@ class OpenAICompatibleProvider:
     def _send(self, request: urllib.request.Request) -> bytes:
         if self._transport is not None:
             return self._transport(request, self.timeout)
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+        with self._open(request) as response:
             return response.read()
+
+    def _open(self, request: urllib.request.Request) -> Any:
+        waits = list(RECONNECT_WAITS)
+        busy = list(BUSY_WAITS)
+        while True:
+            try:
+                response = urllib.request.urlopen(request, timeout=self.timeout)
+                _ANSWERED.add(_server_of(request.full_url))
+                return response
+            except urllib.error.HTTPError as exc:
+                # A service that says it is too busy, or that the rate is
+                # used up for the moment, is asked again after a while; it
+                # did not take the request, so asking again costs nothing.
+                if exc.code not in (429, 502, 503, 504) or not busy:
+                    raise
+                pause = busy.pop(0)
+                said = exc.headers.get("Retry-After") if exc.headers else None
+                if said and said.strip().isdigit():
+                    pause = min(int(said.strip()), 120)
+                exc.close()
+                time.sleep(pause)
+            except (
+                urllib.error.URLError,
+                http.client.RemoteDisconnected,
+                ConnectionResetError,
+            ) as exc:
+                if not waits or not _server_restarting(exc, request.full_url):
+                    raise
+                # A model server that is restarting, as Ollama does when it
+                # updates itself, is waited for rather than given up on.
+                time.sleep(waits.pop(0))
 
     @staticmethod
     def _message_to_dict(message: ChatMessage) -> dict[str, Any]:

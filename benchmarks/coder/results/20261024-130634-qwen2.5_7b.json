@@ -1,0 +1,352 @@
+{
+  "model": "qwen2.5:7b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 3,
+      "tasks": 7,
+      "seconds": 2408.5,
+      "attempts": 7
+    }
+  },
+  "languages": {
+    "html": {
+      "passed": 0,
+      "tasks": 1
+    },
+    "kosika": {
+      "passed": 0,
+      "tasks": 2
+    },
+    "python": {
+      "passed": 2,
+      "tasks": 3
+    },
+    "typescript": {
+      "passed": 1,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "py-add-function",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 165.3,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-add-function",
+          "attempt": 1,
+          "asked": "add a function is_even to calc.py that says whether a number is even, with a test",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 165.3,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 165.3
+        }
+      }
+    },
+    {
+      "id": "py-fix-bug",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 67.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-fix-bug",
+          "attempt": 1,
+          "asked": "average in calc.py fails on an empty list; make it return 0 for an empty list, with a test",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 67.5,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 67.5
+        }
+      }
+    },
+    {
+      "id": "py-new-module",
+      "language": "python",
+      "passed": false,
+      "state": "out of time",
+      "seconds": 706.8,
+      "approvals": 2,
+      "failures": [
+        "python -m pytest: 1 failed, 3 passed in 0.56s"
+      ],
+      "error": "",
+      "said": "",
+      "files": [
+        "calc.py",
+        "test_calc.py",
+        "test_words.py",
+        "words.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-new-module",
+          "attempt": 1,
+          "asked": "create words.py with a function count_words(text) that returns how many words a text has, and test_words.py with tests for it",
+          "passed": false,
+          "state": "out of time",
+          "abandoned": true,
+          "seconds": 706.8,
+          "approvals": 2,
+          "failures": [
+            "python -m pytest: 1 failed, 3 passed in 0.56s"
+          ],
+          "excerpts": [
+            "python -m said:\n  E        +  where 5 = <function count_words at 0x0000021E570C8E00>('Punctuation, should; not: affect1 word2count.')\n  E        +    where <function count_words at 0x0000021E570C8E00> = words.count_words\n  test_words.py:9: AssertionError\n  =========================== short test summary info ===========================\n  FAILED test_words.py::test_count_words - AssertionError: assert 5 == 6\n  1 failed, 3 passed in 0.56s"
+          ],
+          "error": "",
+          "said": "",
+          "files": [
+            "calc.py",
+            "test_calc.py",
+            "test_words.py",
+            "words.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 706.8
+        }
+      }
+    },
+    {
+      "id": "ts-add-function",
+      "language": "typescript",
+      "passed": true,
+      "state": "done",
+      "seconds": 53.9,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote text.ts, text.test.ts, one whole file at a time.\nWrote: text.ts, text.test.ts\nThe tests for text.test.ts pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "text.test.ts",
+        "text.ts"
+      ],
+      "attempts": [
+        {
+          "id": "ts-add-function",
+          "attempt": 1,
+          "asked": "add a function whisper to text.ts that makes a text lower case and adds three dots, with a test in text.test.ts",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 53.9,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote text.ts, text.test.ts, one whole file at a time.\nWrote: text.ts, text.test.ts\nThe tests for text.test.ts pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "text.test.ts",
+            "text.ts"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 53.9
+        }
+      }
+    },
+    {
+      "id": "kosika-route",
+      "language": "kosika",
+      "passed": false,
+      "state": "done",
+      "seconds": 501.9,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('route/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\r\nWrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests failed.\nCheck failed: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "route\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-route",
+          "attempt": 1,
+          "asked": "create a Kosika program in route/main.kos that sorts a support ticket's text into billing, bug or account with classify, falls back to account when the model's answer is not one of those, and has at least two tests that script the model with answers",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 501.9,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('route/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it"
+          ],
+          "excerpts": [
+            "python -c said:\n    File \"C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika\\kosika\\checker.py\", line 1126, in _expression_type\n      true_type = _expression_type(\n                  ^^^^^^^^^^^^^^^^^\n    File \"C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika\\kosika\\checker.py\", line 882, in _expression_type\n      raise CheckError(\n  kosika.checker.CheckError: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\r\nWrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests failed.\nCheck failed: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "route\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 501.9
+        }
+      }
+    },
+    {
+      "id": "kosika-notes",
+      "language": "kosika",
+      "passed": false,
+      "state": "done",
+      "seconds": 252.7,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-cfpwo557\\kosika\\notes\\main.kos: Tool 'find_first_line' is missing: access, operation, output, source",
+        "python -c import pathlib; s=pathlib.Path('notes/main.kos').read_text(encoding='utf-8')\nassert s.count('tool ') == 1 and 'observe' in s and 'agent ' in s and 'can:' in s and s.count('answers')>=2: AssertionError"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\r\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-cfpwo557\\kosika\\notes\\main.kos: Tool 'find_first_line' is missing: access, operation, output, source\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "notes\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-notes",
+          "attempt": 1,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 252.7,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-cfpwo557\\kosika\\notes\\main.kos: Tool 'find_first_line' is missing: access, operation, output, source",
+            "python -c import pathlib; s=pathlib.Path('notes/main.kos').read_text(encoding='utf-8')\nassert s.count('tool ') == 1 and 'observe' in s and 'agent ' in s and 'can:' in s and s.count('answers')>=2: AssertionError"
+          ],
+          "excerpts": [
+            "python -c said:\n    File \"<string>\", line 4, in <module>\n    File \"C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika\\kosika\\modules.py\", line 374, in load_program\n      load(entry)\n    File \"C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika\\kosika\\modules.py\", line 263, in load\n      raise error_type(f\"{resolved}: {exc}\") from None\n  kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-cfpwo557\\kosika\\notes\\main.kos: Tool 'find_first_line' is missing: access, operation, output, source",
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 2, in <module>\n  AssertionError"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\r\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-cfpwo557\\kosika\\notes\\main.kos: Tool 'find_first_line' is missing: access, operation, output, source\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "notes\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 252.7
+        }
+      }
+    },
+    {
+      "id": "website",
+      "language": "html",
+      "passed": false,
+      "state": "out of time",
+      "seconds": 660.4,
+      "approvals": 0,
+      "failures": [
+        "python -c import pathlib,re; h=pathlib.Path('index.html').read_text(); c=pathlib.Path('styles.css').read_text(); assert '</html>' in h and h.count('<section')>=3 and 'styles.css' in h and 'script.js' in h; assert c.count('{')==c.count('}') and '@media' in c and len(c)>1500: FileNotFoundError: [Errno 2] No such file or directory: 'index.html'",
+        "node --check script.js: Node.js v26.4.0"
+      ],
+      "error": "",
+      "said": "",
+      "files": [],
+      "attempts": [
+        {
+          "id": "website",
+          "attempt": 1,
+          "asked": "create a modern one-page website for a bakery called Crumb, with a hero, a menu of six items with prices, opening hours, and scroll animations",
+          "passed": false,
+          "state": "out of time",
+          "abandoned": true,
+          "seconds": 660.4,
+          "approvals": 0,
+          "failures": [
+            "python -c import pathlib,re; h=pathlib.Path('index.html').read_text(); c=pathlib.Path('styles.css').read_text(); assert '</html>' in h and h.count('<section')>=3 and 'styles.css' in h and 'script.js' in h; assert c.count('{')==c.count('}') and '@media' in c and len(c)>1500: FileNotFoundError: [Errno 2] No such file or directory: 'index.html'",
+            "node --check script.js: Node.js v26.4.0"
+          ],
+          "excerpts": [
+            "python -c said:\n      with self.open(mode='r', encoding=encoding, errors=errors) as f:\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    File \"C:\\Users\\Aryan\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\pathlib.py\", line 1013, in open\n      return io.open(self, mode, buffering, encoding, errors, newline)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  FileNotFoundError: [Errno 2] No such file or directory: 'index.html'",
+            "node --check said:\n      at node:internal/modules/cjs/loader:1568:15\n      at node:internal/main/check_syntax:33:20 {\n    code: 'MODULE_NOT_FOUND',\n    requireStack: []\n  }\n  Node.js v26.4.0"
+          ],
+          "error": "",
+          "said": "",
+          "files": []
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 660.4
+        }
+      }
+    }
+  ]
+}

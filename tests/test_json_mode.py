@@ -53,6 +53,15 @@ class JsonModeTests(unittest.TestCase):
         call_model(provider, {"text": "x"}, SCHEMA)
         self.assertEqual(sent[0]["format"], "json")
 
+    def test_ollama_is_asked_to_keep_the_model_ready(self) -> None:
+        # Loading a model again costs many seconds on a slow machine.
+        provider, sent = capture("ollama")
+        call_model(provider, {"text": "x"}, SCHEMA)
+        self.assertEqual(sent[0]["keep_alive"], "30m")
+        other, sent_other = capture("openai")
+        call_model(other, {"text": "x"}, SCHEMA)
+        self.assertNotIn("keep_alive", sent_other[0])
+
     def test_an_ordinary_request_is_left_alone(self) -> None:
         provider, sent = capture("openai")
         provider.complete(

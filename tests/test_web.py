@@ -12,11 +12,13 @@ from kosika.system_tools import SystemToolError, bind_system_tools
 from kosika.web import (
     MAX_BYTES,
     MAX_CHARACTERS,
+    fetch_from,
     WebError,
     allowed_address,
     clean_site,
     fetch,
     readable,
+    readable_feed,
 )
 
 SITES = ("en.wikipedia.org", "example.org")
@@ -164,6 +166,80 @@ class FetchTests(unittest.TestCase):
                         opener({"https://example.org/x": answer}),
                     )
 
+    def test_a_feed_becomes_one_line_for_each_part_of_each_entry(self) -> None:
+        feed = (
+            b'<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+            b"<title>Search results</title><entry><title>Tea   leaves</title>"
+            b"<published>2026-10-14T10:00:00Z</published>"
+            b'<link href="https://example.org/abs/1" rel="alternate"/>'
+            b'<link href="https://example.org/pdf/1" rel="related"/>'
+            b"<summary>Tea &amp; light.</summary><author><name>Ann Lee</name></author>"
+            b"</entry><entry><title>Second</title></entry></feed>"
+        )
+        got = fetch(
+            "https://example.org/feed",
+            SITES,
+            opener({"https://example.org/feed": (200, {"content-type": "application/atom+xml"}, feed)}),
+        )
+        self.assertEqual(
+            got["text"],
+            "---\nTitle: Tea leaves\nPublished: 2026-10-14T10:00:00Z\n"
+            "Link: https://example.org/abs/1\nSummary: Tea & light.\nAuthor: Ann Lee\n"
+            "---\nTitle: Second",
+        )
+        self.assertEqual(
+            readable_feed("<rss><item><title>A</title><description>B</description></item></rss>"),
+            "---\nTitle: A\nSummary: B",
+        )
+
+    def test_an_rdf_feed_is_read_too_links_authors_dates_and_all(self) -> None:
+        # The shape bioRxiv and other RSS 1.0 feeds use: the link as the
+        # item's about and again as the link tag's own words, authors and
+        # dates behind a dc: prefix, and the long fields in CDATA.
+        rdf = (
+            "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>"
+            "<channel><title>Channel</title><link>https://x.org</link></channel>"
+            "<item rdf:about='https://x.org/content/10.1/2026.10.22.1v1'>"
+            "<title><![CDATA[ Tea and light ]]></title>"
+            "<link>https://x.org/content/10.1/2026.10.22.1v1</link>"
+            "<description><![CDATA[What the paper found.]]></description>"
+            "<dc:creator><![CDATA[ Lee, A. ]]></dc:creator>"
+            "<dc:date>2026-10-25</dc:date>"
+            "</item></rdf:RDF>"
+        )
+        self.assertEqual(
+            readable_feed(rdf),
+            "---\n"
+            "Link: https://x.org/content/10.1/2026.10.22.1v1\n"
+            "Title: Tea and light\n"
+            "Summary: What the paper found.\n"
+            "Author: Lee, A.\n"
+            "Published: 2026-10-25",
+        )
+
+    def test_the_same_line_is_not_said_twice_in_one_entry(self) -> None:
+        # A link said three ways, and a title said as a title and a dc:title.
+        self.assertEqual(
+            readable_feed(
+                "<item rdf:about='https://x.org/1'><link>https://x.org/1</link>"
+                "<link href='https://x.org/1'/><title>Tea</title><dc:title>Tea</dc:title></item>"
+            ),
+            "---\nLink: https://x.org/1\nTitle: Tea",
+        )
+        # Two different authors are two lines.
+        self.assertEqual(
+            readable_feed("<item><creator>Ann</creator><creator>Bo</creator></item>"),
+            "---\nAuthor: Ann\nAuthor: Bo",
+        )
+
+    def test_cdata_is_words_in_a_feed_and_stays_dropped_in_a_page(self) -> None:
+        self.assertEqual(
+            readable_feed("<item><description><![CDATA[<p>Bold words</p>]]></description></item>"),
+            "---\nSummary: <p>Bold words</p>",
+        )
+        _title, text = readable("<p>before<![CDATA[hidden]]>after</p>", True)
+        self.assertNotIn("hidden", text)
+
     def test_text_is_clipped(self) -> None:
         body = b"<main><p>" + b"word " * 20000 + b"</p></main>"
         page = fetch(
@@ -172,6 +248,42 @@ class FetchTests(unittest.TestCase):
             opener({"https://example.org/x": html(body)}),
         )
         self.assertEqual(len(page["text"]), MAX_CHARACTERS)
+
+    def test_a_page_sent_packed_unasked_is_unpacked(self) -> None:
+        import gzip
+
+        packed = gzip.compress(b"<title>Packed</title><p>Unpacked text</p>")
+        page = fetch(
+            "https://example.org/x",
+            SITES,
+            opener({"https://example.org/x": (200, {"content-type": "text/html", "content-encoding": "gzip"}, packed)}),
+        )
+        self.assertEqual((page["title"], page["text"]), ("Packed", "Unpacked text"))
+        with self.assertRaisesRegex(WebError, "cannot be read"):
+            fetch(
+                "https://example.org/x",
+                SITES,
+                opener({"https://example.org/x": (200, {"content-type": "text/html", "content-encoding": "gzip"}, b"not packed")}),
+            )
+
+    def test_a_long_page_is_read_a_part_at_a_time(self) -> None:
+        body = b"<main><p>" + b"word " * 20000 + b"</p></main>"
+        pages = opener({"https://example.org/x": html(body)})
+        whole = fetch("https://example.org/x", SITES, pages)["text"]
+        parts, start = [], 0
+        while start != -1:
+            part = fetch_from("https://example.org/x", start, SITES, pages)
+            parts.append(part["text"])
+            start = part["next"]
+        self.assertEqual(len(parts), 5)
+        self.assertTrue(all(len(part) == MAX_CHARACTERS for part in parts[:-1]))
+        self.assertEqual(parts[0], whole)
+        self.assertEqual("".join(parts), "word " * 19999 + "word")
+        past = fetch_from("https://example.org/x", 10**6, SITES, pages)
+        self.assertEqual((past["text"], past["next"]), ("", -1))
+        for bad in (-1, 1.5, True):
+            with self.subTest(start=bad), self.assertRaisesRegex(WebError, "whole number"):
+                fetch_from("https://example.org/x", bad, SITES, pages)
 
     def test_an_address_that_is_not_allowed_is_never_requested(self) -> None:
         open_ = opener({})
@@ -252,7 +364,7 @@ class ToolTests(unittest.TestCase):
             bind_system_tools(checked(), folder=None, sites=("not a site",))
 
     def test_the_declaration_is_checked(self) -> None:
-        with self.assertRaisesRegex(CheckError, "the only one is fetch"):
+        with self.assertRaisesRegex(CheckError, "use one of: fetch, fetch_from"):
             checked(SOURCE.replace('operation: "fetch"', 'operation: "post"'))
         with self.assertRaisesRegex(CheckError, "must have exactly the fields"):
             checked(

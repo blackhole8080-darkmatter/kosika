@@ -17,6 +17,7 @@ from typing import Any, Iterable
 from .ast import (
     AgentCall,
     FunctionCall,
+    FunctionCallExpr,
     ModelCall,
     Program,
     ToolCall,
@@ -142,6 +143,12 @@ def build_mindmap(
     modules = _module_names(program)
     owners = _owner_map(program, modules)
     record_names = {record.name for record in program.records}
+    choice_names = {choice.name for choice in program.choices}
+    constructors = {
+        alternative.name
+        for choice in program.choices
+        for alternative in choice.alternatives
+    }
     nodes: dict[str, MindmapNode] = {}
     edges: list[MindmapEdge] = []
 
@@ -188,6 +195,14 @@ def build_mindmap(
     def module_for(name: str) -> str:
         return owners.get(name, modules[0])
 
+    def type_node(type_name: str) -> str:
+        """Return the node a record or choice type is drawn as."""
+
+        base_type = _base_type(type_name)
+        if base_type in choice_names:
+            return _node_id("choice", base_type)
+        return _node_id("record", base_type)
+
     for record in sorted(program.records, key=lambda item: item.name):
         record_id = add_node(
             "record",
@@ -215,10 +230,48 @@ def build_mindmap(
             )
             connect(record_id, field_id, "has_field", field.type_name)
             base_type = _base_type(field.type_name)
-            if base_type in record_names:
+            if base_type in record_names or base_type in choice_names:
                 connect(
-                    field_id, _node_id("record", base_type), "field_type", "typed as"
+                    field_id, type_node(base_type), "field_type", "typed as"
                 )
+
+    for choice in sorted(program.choices, key=lambda item: item.name):
+        choice_id = add_node(
+            "choice",
+            choice.name,
+            choice.name,
+            module_for(choice.name),
+            alternatives=[alternative.name for alternative in choice.alternatives],
+        )
+        connect(
+            _node_id("module", module_for(choice.name)),
+            choice_id,
+            "contains",
+            "declares",
+        )
+        for alternative in choice.alternatives:
+            alternative_id = add_node(
+                "constructor",
+                f"{choice.name}.{alternative.name}",
+                alternative.name,
+                module_for(choice.name),
+                choice=choice.name,
+                fields=[
+                    {"name": field.name, "type": field.type_name}
+                    for field in alternative.fields
+                ],
+            )
+            connect(choice_id, alternative_id, "alternative", "one of")
+            connect(alternative_id, choice_id, "constructs", "builds")
+            for field in alternative.fields:  # type: ignore[assignment]
+                base_type = _base_type(field.type_name)
+                if base_type in record_names or base_type in choice_names:
+                    connect(
+                        alternative_id,
+                        type_node(base_type),
+                        "field_type",
+                        field.name,
+                    )
 
     for tool in sorted(program.tools, key=lambda item: item.name):
         tool_id = add_node(
@@ -239,9 +292,9 @@ def build_mindmap(
             "declares",
         )
         if tool.input:
-            target = _node_id("record", tool.input)
+            target = type_node(tool.input)
             connect(tool_id, target, "input", "accepts")
-        target = _node_id("record", tool.output)
+        target = type_node(tool.output)
         connect(tool_id, target, "output", "returns")
 
     for model in sorted(program.models, key=lambda item: item.name):
@@ -259,11 +312,11 @@ def build_mindmap(
             "contains",
             "declares",
         )
-        for relation, record_name, label in (
+        for relation, type_name, label in (
             ("input", model.input, "accepts"),
             ("output", model.output, "returns"),
         ):
-            target = _node_id("record", record_name)
+            target = type_node(type_name)
             connect(model_id, target, relation, label)
 
     for agent in sorted(program.agents, key=lambda item: item.name):
@@ -302,7 +355,6 @@ def build_mindmap(
                 )
             connect(agent_id, target, "cannot", "cannot use")
 
-    record_names = {record.name for record in program.records}
     for swarm in sorted(program.swarms, key=lambda item: item.name):
         swarm_id = add_node(
             "swarm",
@@ -356,22 +408,31 @@ def build_mindmap(
             "contains",
             "declares",
         )
-        if _base_type(function.output_type) in record_names:
+        output_base = _base_type(function.output_type)
+        if output_base in record_names or output_base in choice_names:
             connect(
                 function_id,
-                _node_id("record", _base_type(function.output_type)),
+                type_node(function.output_type),
                 "output",
                 "returns",
             )
         for parameter in function.parameters:
-            if _base_type(parameter.type_name) in record_names:
+            parameter_base = _base_type(parameter.type_name)
+            if parameter_base in record_names or parameter_base in choice_names:
                 connect(
                     function_id,
-                    _node_id("record", _base_type(parameter.type_name)),
+                    type_node(parameter.type_name),
                     "parameter",
                     parameter.name,
                 )
         for function_call in static_function_references(function):
+            # A constructor is written like a call but declares no function
+            # node to point at.
+            if (
+                isinstance(function_call, FunctionCallExpr)
+                and function_call.function_name in constructors
+            ):
+                continue
             connect(
                 function_id,
                 _node_id("function", function_call.function_name),
@@ -407,10 +468,10 @@ def build_mindmap(
             "contains",
             "declares",
         )
-        output_target = _node_id("record", workflow.output_type)
+        output_target = type_node(workflow.output_type)
         connect(workflow_id, output_target, "output", "returns")
         for parameter in workflow.parameters:
-            parameter_target = _node_id("record", parameter.type_name)
+            parameter_target = type_node(parameter.type_name)
             connect(workflow_id, parameter_target, "parameter", parameter.name)
         binding_steps: dict[str, str] = {}
         for index, step in enumerate(workflow.steps, 1):
@@ -435,8 +496,8 @@ def build_mindmap(
                 ),
             )
             connect(workflow_id, step_id, "step", "runs")
-            if step.binding_type in record_names:
-                binding_target = _node_id("record", step.binding_type)
+            if step.binding_type in record_names or step.binding_type in choice_names:
+                binding_target = type_node(step.binding_type)
                 connect(step_id, binding_target, "binding_type", "binds")
             # The fallback keeps the relation of an ordinary call, so every
             # view draws it, and is told apart by its "otherwise" label.

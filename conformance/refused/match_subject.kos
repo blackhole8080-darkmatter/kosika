@@ -1,0 +1,13 @@
+// Refused: a match step is decided by a text, a number or a truth value.
+
+record Ask { kind: Text }
+record Said { text: Text }
+
+fn yes(ask: Ask) -> Said { return {text: "yes"} }
+
+workflow main(ask: Ask) -> Said {
+  said = match ask {
+    case "y" { yes(ask) }
+    case _ { yes(ask) }
+  }
+}

@@ -1,0 +1,5 @@
+PASS  the cheapest way through a network
+PASS  fewest links is another question than cheapest
+PASS  an estimate that never overestimates finds the same way
+PASS  nowhere to go
+4 passed, 0 failed

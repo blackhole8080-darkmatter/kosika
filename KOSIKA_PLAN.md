@@ -27,6 +27,21 @@ Kosika should become more expressive than a collection of Python/JavaScript scri
 - Mindmaps, explanations, design graphs, and replay summaries must be deterministic from checked source, manifests, and traces.
 - Add focused tests for every new branch, then run the full suite, Ruff, and MyPy.
 
+## Projects that may use Kosika
+
+The owner's other projects, kept here so that work on Kosika remembers
+them. Recorded 2026-10-14 from each project's README. The owner chose to
+keep developing Kosika itself first; none of these is being worked on in
+Kosika yet.
+
+| Project | What it is | Where | How Kosika could serve it |
+|---|---|---|---|
+| **Ananta** | A multi-agent knowledge engine: 108 specialist nodes in 9 clusters, an adversarial "courtroom" of a proposer, a critic and judges that debate a problem to a grounded answer, within hard round and cost ceilings, bound by a five-part "Constitution". Python, with local and cloud models. | github.com/blackhole8080-darkmatter/Ananta | **Best fit.** The debate is agents, workflows, budgets and checked answers; the Constitution's rules can be checks every answer must pass (`verify`); the round ceiling is a budget. The strongest showcase Kosika could have. |
+| **DEEP** | A local-first, JARVIS-style assistant with a cybersecurity brain: live network monitoring, MITRE ATT&CK and CVE-enriched threat detection, threat intelligence, voice and chat, offline through Ollama, with cloud models as fallback. | github.com/blackhole8080-darkmatter/DEEP | **Fits its reasoning, not its core.** Kosika could own triaging a threat, choosing which tool to run, approval before any action, a local model first with a cloud model on escalation, and a trace of each decision. Monitoring, packet work and the trained classifier stay in Python, reached as tools. |
+| **Synapse** | A local neural-field prototype with four regions (DEEP, Synapse, Kosika, Ananta) that streams Kosika's normalized run events to a browser. | `../synapse` (this machine) | **Already a Kosika front end**: it runs on `kosika.synapse_bridge` and shows Kosika as one of its regions. |
+| **Deadline** | A first-person noir detective game in the browser: three suspects, questioning decides the killer. TypeScript, on GitHub Pages. | github.com/blackhole8080-darkmatter/deadline-noir | **A small fit.** Kosika could drive what each suspect says (agents with typed answers) and test the questioning with scripted answers. The game stays TypeScript, and would need a server or answers prepared in advance, since Pages serves only static files. |
+| **Parlour** | A local-first board game parlour: seven games, a shared game-spec engine with alpha-beta AI, no accounts. TypeScript. | github.com/blackhole8080-darkmatter/parlour | **Not a fit.** Game rules and search in the browser, with no agents, in the right language already. |
+
 ## K01 — Reconciled capability baseline
 
 This matrix is the implementation baseline for subsequent work. It reconciles
@@ -2750,6 +2765,1687 @@ gate: without them a parser written in Kosika has nothing to return.
   them need the
   network or raw devices, which the wall keeps away; a session is for
   working on files, not for scanning a network.
+
+### Retiring what Studio replaced
+
+- Measured by following imports: Studio, the runtime, `kosika test`,
+  `kosika start`, `kosika motion` and sessions reached 49 of 106 modules,
+  23,000 of 52,700 lines. The owner chose to retire four groups that only
+  older commands reached. Each is its own commit, so each can be brought
+  back with one `git revert`.
+- The first desktop app: `kosika.workbench` and its helpers, the packaged
+  desktop host, its assets, docs and tests, and the CI step that started
+  it. The `workbench` example agent is a different thing and stays.
+- The city pictures: the city, cityscape, metropolis, live city, world and
+  design modules, the `city` and `design` commands, `kosika run --design`,
+  their tests and generated pictures. `kosika run --event-trace` stays.
+- The Python authoring loop: `kosika.authoring`, its evaluation, and the
+  `author` and `author-eval` commands. The `author` example agent, written
+  in Kosika, does that job. `repair`, `corpus` and `benchmark` stay,
+  because `kosika benchmark` and the diagnostics tests use them.
+- The older maps: `audience_maps`, `explain`, `unified_mindmap` and
+  `assistant`, with the commands `audience-map`, `unified`, `explain` and
+  `assistant`. Studio's Map tab does this for a beginner. The `mindmap`
+  module and command stay: other code and many tests use them.
+- The full suite was run after each: 1710 passed after the first, 1587
+  after the second, 1517 after the third with the coder added, 1440
+  after the fourth. It now takes about 8 minutes, where it took 13.
+- Not claimed: the untracked build folders under `desktop/` were left on
+  disk, because they are not in git and were not mine to delete. The
+  module `synapse_bridge`, listed with the desktop app, stays: the event
+  trace of `kosika run` uses it.
+
+### A coder agent
+
+- The owner asked for basic agents, a researcher and a coder, to grow into
+  assistants. The researcher exists. `examples/agents/coder` is new.
+- Given one small task in a Python project, it lists and reads files,
+  plans every file it will write with its whole new text, and after one
+  yes writes them. The workflow then runs `python -m pytest` itself, so
+  the tests are run by code and not left to the model. The report says
+  what was written and whether the tests passed. `fix` asks it again with
+  what the tests printed.
+- It has one writing tool, which replaces a whole file. A first draft had
+  two, create and replace, and the model used create on a file that
+  existed, which failed the step. One tool removed that mistake.
+- When nothing was written, passing tests are not reported as success: it
+  says "Nothing was changed, so the task is not done."
+- Two skills: how a function is added, and how a test file is written,
+  each with checks.
+- Tried on qwen2.5:7b in a session, on a scratch project with two
+  functions and two tests, asked to "add a function is_even to calc.py
+  that says whether a number is even, with a test". Run 1, first draft:
+  failed as described above. Run 2, same draft: the plan held both files
+  but one used create on an existing file, and nothing was written. Run 3,
+  after the change to one tool: the plan wrote calc.py and test_calc.py,
+  kept the existing functions and tests, the tests passed in the session,
+  and the real folder was untouched. 151 s.
+- Not claimed: one success on one easy task. It replaces whole files, so
+  a long file is beyond a 7b model. It has no eval, because an eval cannot
+  answer the plan question. Only Python and pytest. The `fix` path was
+  not reached in a real run, because the one good run passed first time.
+
+### Granting from inside Studio
+
+- The owner tried to start Studio with `--allow-folder Aryan_Private` and
+  was told it was not a folder. Two things followed. The message now shows
+  the full path that was tried and asks for a full path. And he asked to do
+  this in the app instead of the command line.
+- Studio's Permissions page now has "Choose a folder", which asks the
+  server to open the computer's own folder window (Tk, run as a separate
+  process). What is picked there is remembered on the server. The page can
+  then confirm it, keep the current folder, or remove it; it cannot send a
+  folder name of its own. Two switches set starting programs and sessions.
+- Refused: a whole drive, the user folder or anything holding it, and
+  system folders. Refused while an agent is working or a session is open.
+  Turning sessions on checks first that the wall works, and says why if not.
+- Found while trying it in a real Studio window: two changes pressed
+  quickly overlapped, and the slower one put back the folder the faster one
+  had removed. Changes are now made one at a time on the server, and the
+  page disables its buttons while one is applied. A test holds the first
+  change open and shows the second waits.
+- Tried in the browser on a scratch folder: the page showed the granted
+  folder, the programs switch took effect, the session switch said it was
+  checking and then took effect, and "Stop sharing this folder" removed the
+  folder and both switches. `kosika start` and the beginner's guide now
+  point here instead of at a command. `tests/test_grants.py`, 19 tests.
+- Not claimed: the folder window itself was not opened in this work. It
+  appears on the owner's screen and needs a person to answer it, so the
+  owner's first use is its first real test. Tests use a stand-in for it.
+  The model, websites, MCP servers and search by meaning are still chosen
+  when Studio starts. The grant lasts until Studio stops; it is not saved.
+
+### Vectors, matrices, relations and graphs
+
+- The owner is studying discrete mathematics and asked whether Kosika should
+  have matrix operations and graphs. A first answer said yes for discrete
+  maths but not for heavy numerical work. He disagreed: he wants Kosika
+  usable by maths and science students for real calculation. He was right
+  that it can be: Kosika runs on Python, and Python's own speed at this
+  comes from NumPy, which was already installed.
+- Before building, matrix multiplication was written in today's Kosika as a
+  check. It worked and took about 20 lines of loops.
+- `kosika/matrices.py` and 36 built-in methods on `Number[]`, `Number[][]`
+  and `Number`. Whole numbers are exact at any size, by Python's integers
+  or, for large products of small numbers, NumPy's 64-bit integers when a
+  bound proves they cannot overflow. The determinant of an integer matrix
+  is exact (Bareiss). Decimals go to NumPy when present and to plain Python
+  otherwise, and are rounded to 9 places.
+- Relations as 0/1 matrices: the four properties, the Boolean product, and
+  Warshall's closure. Graphs: adjacency from edges, degrees, neighbours,
+  shortest path breadth first, connected parts.
+- Shapes are checked before any arithmetic and the message gives them.
+- A vector and a matrix share method names such as `plus`. At run time the
+  method was found by name alone among arrays, which would have picked the
+  wrong one; it is now found from the value's own shape first.
+- Measured on this laptop, while other work was running: a 500 by 500
+  decimal product 0.26 s with NumPy; 200 by 200, 0.08 s with NumPy and
+  1.1 s in plain Python; solving 300 equations 0.7 s.
+- `tests/test_matrices.py`, 24 tests, among them the two engines compared on
+  the same inputs, and `examples/discrete_maths.kos` with 6 tests.
+- Not claimed: shapes are checked when the program runs, not when it is
+  checked, because the type `Number[][]` does not carry a size. There are
+  no eigenvalues, no complex numbers, no calculus and no statistics beyond
+  the mean yet. A matrix is a list of lists, so very large ones use far
+  more memory than NumPy's own arrays, and each call converts in and out.
+  The limit is 4,000,000 numbers. The owner was told eigenvalues would be
+  there; they are not, and are the next thing to add.
+
+### One box that finds the right agent
+
+- The owner wants to grow a researcher and a coder into assistants. A first
+  step is not having to choose the agent: Studio's Assistant page has a box
+  that takes any request and passes it on.
+- Calling one Kosika program from another was looked at first. An import
+  from outside the program's own folder is refused, and two agents declare
+  the same names (`Msg`, `Said`, `main`), so it cannot be done in the
+  language today. The choosing is done by Studio instead, and the chosen
+  agent then runs as itself, with its own grants, plan and session.
+- The agents' purposes are shown to the bound model, which names one. It
+  can name only an agent that exists. With no model, or an answer that is
+  not one of them, the agent whose description shares the most uncommon
+  words with the request is used; failing that, the usual one. The page
+  says which agent was chosen and why, and nothing is run by the choosing.
+- First real try: 2 of 3. "What do my notes say about the rent?" went to
+  the workbench. The model had been shown 320 characters of each program's
+  top comment, most of it how to run the program. It is now shown only the
+  first paragraph, which says what the agent is for.
+- Measured after that, qwen2.5:7b, twelve requests across the ten example
+  agents: 11 of 12 went to an agent that fits, about 7 s each once loaded.
+  The miss: "explain photosynthesis and then test me" went to the
+  researcher where the coach fits. `tests/test_agent_routing.py`, 13 tests.
+- Not claimed: one run. A request that needs two agents goes to one. An
+  agent with no comment at the top cannot be chosen well. Agents calling
+  agents inside the language is still not possible.
+
+### What an agent really changed, and the coder measured
+
+- Measured before any change, qwen2.5:7b, six small tasks in sessions on
+  scratch Python projects: 3 of 6 done, where done means the tests pass and
+  the asked-for change is in the files. Two of the three failures were the
+  model claiming work it had not done: in one its plan held only one of the
+  two files it then said it wrote, and in the other it made no plan at all
+  and answered "Created greet.py ... and test_greet.py". The third was a
+  bug fix where it also rewrote the test file and dropped its import.
+- An agent's answer record may now have a field `did: Text[]`. The runtime
+  fills it from the transcript: each call of a tool that changes something
+  whose result was not an error, as the tool and its path. The model's own
+  value is thrown away. Replay works the list out again from the recorded
+  calls and refuses a trace whose `did` differs.
+- The coder and the builder report from `did`. With nothing written they
+  say so, and show the model's sentence only as what it said. The coder
+  asks its model once more when nothing was written, and is told to leave
+  the tests alone when fixing a bug. `tests/test_agent_did.py`, 6 tests.
+- Measured again after these changes, same six tasks, one run: 4 of 6
+  done, where it had been 3. Three of the four needed the `fix` round to
+  get there. No report named a file that was not written. The two that
+  failed were real mistakes left standing after a fix: an import of a name
+  that no longer existed after a rename, and a new test file that did not
+  import the function it tested. The run took 3082 s where the first took
+  1519 s, because the fix rounds and the second try cost model time, and
+  for part of it other work was using the same model.
+- Not claimed: one run of six easy tasks each time, so 3 and 4 are not far
+  enough apart to be sure of. `did` says what was written, not whether it
+  was right.
+
+### Maths, saved for later
+
+The owner asked for the rest of the maths work to be planned and kept for
+later, and for the desktop app first. Planned, in this order, none of it
+built:
+
+1. Eigenvalues and eigenvectors of a square matrix. The difficulty is
+   giving the same answer with and without NumPy, and saying plainly when
+   they are complex numbers, which Kosika does not have.
+2. Functions on whole vectors: `sqrt`, `exp`, `log`, `sin`, `cos`, powers,
+   and statistics beyond the mean (median, variance, standard deviation).
+3. Calculus helpers: a numerical derivative, an integral, and root finding,
+   each with a stated error.
+4. Libraries written in Kosika itself, on top of the built-in methods, for
+   topics such as number theory, statistics and geometry. A library is a
+   `.kos` file of functions that is imported. The owner's discrete maths
+   course is the natural first one, and he may want to write it himself.
+5. Drawing a graph or a mind map in Studio from its adjacency matrix, using
+   the scene drawing that already exists.
+
+The owner's own next step, if he wants it: write matrix multiplication by
+hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
+
+### Kosika Studio as a desktop app
+
+- The owner asked for Studio on his desktop "like a real functioning app".
+- `kosika desktop [FOLDER]` writes an icon and makes a shortcut on the
+  Desktop and in the Start menu. The shortcut runs `pythonw -m
+  kosika.desktop_app`, which does what `kosika start` does with no console,
+  opens Studio in a browser app window, and stops when that window closes.
+  `kosika desktop --remove` deletes the two shortcuts.
+- The window is given browser settings of its own. Without that the browser
+  hands the page to one already running and exits at once, so there is
+  nothing to wait for; with it, the process lasts as long as the window.
+- The icon is drawn in code, a dark tile with an orange ring and a pale
+  dot, at 16, 32, 48 and 256 pixels, and is also served as the window icon.
+- With no console, what would be printed goes to a log file that is started
+  afresh each time, and a failure to start shows a message box.
+- The folder name is handed to PowerShell in the environment, never pasted
+  into the command, and a name holding a quotation mark is refused.
+- Done for the owner on this laptop: the two shortcuts were made, pointing
+  at `examples/agents`. Tried for real: opened through the Desktop shortcut,
+  the window appeared, the app ran under pythonw with no console, and
+  closing the window ended the app. `tests/test_desktop_app.py`, 15 tests.
+- Not claimed: Windows only. It is a shortcut to the Python already on the
+  computer, not a packaged program: it needs Python and this folder to stay
+  where they are, and Chrome or Edge for the window. Opening it twice
+  starts two Studios. Closing was tested by ending the window's process,
+  not by a person pressing the X. The log holds the address with its token,
+  in a folder only this user can read.
+
+### An assistant to talk to
+
+- The owner asked for an assistant "with reference to Siri", made with
+  Kosika, on his computer.
+- `examples/agents/assistant`. By rule and in plain code: the time and the
+  date from the clock, reminders that are kept, listed and finished, things
+  it is told to remember, and forgetting it all. Anything else goes to the
+  model with the date, the time, the reminders and what it remembers, and
+  an instruction to answer in one to three sentences fit to be read aloud.
+  It has a clock and its own memory and no other tool.
+- Studio opens on it, because it is the folder named `assistant`, and its
+  chat has a switch "Speak answers aloud". Only a voice the browser marks
+  as living on this computer is used; one that would send the words to a
+  service to be spoken is never picked. The switch is off until chosen.
+- Tried on qwen2.5:7b: the time, a reminder and a thing to remember each
+  answered in about a second with no model call; questions took 10 to 26 s
+  while another job was using the model. It used what it had been told
+  ("when is my exam?" gave "Your discrete maths exam is on Friday").
+- The same try found the fault that matters most in an assistant. Asked to
+  "open my web browser and search for cats", it answered "Sure, I'll open
+  the web browser and search for cats". It can do no such thing. Two
+  guards were added, both in code: a request that begins with a verb for
+  acting on the computer (open, play, search, send, set and others) is
+  answered with a fixed sentence saying it cannot, without asking the
+  model; and any model answer that claims such an action is replaced by
+  that sentence.
+- In a real Studio window: the assistant was the page shown, nine voices
+  were found of which six English ones are on this computer, a sentence
+  was spoken at zero volume to its end, and "what time is it" typed into
+  the chat was answered in half a second. 7 tests in the program, 3 evals,
+  and `tests/test_assistant_agent.py` with 6 tests.
+- Not claimed: it does not hear. The owner was asked to choose between
+  local speech recognition (a download of about 150 MB), the browser's
+  own (which sends the voice to Google), and typing; nothing that opens
+  the microphone is in the page until he answers. There is no wake word.
+  It cannot open programs or act on the computer, by design. Reminders
+  have no times and nothing rings. The guard against false claims is a
+  list of phrases, so a claim worded differently can still get through.
+  Speaking aloud was heard by no one: it was run silent.
+
+### Kosi: the assistant made to feel alive
+
+- The owner chose typing over a microphone, asked what the assistant is
+  called, and asked for Siri's animations and features. It had no name. It
+  is now Kosi by default; `call yourself Nova` renames it and `call me
+  Aryan` tells it who it is talking to. The look is Kosika's own, grown
+  from the ring in the desktop icon, not a copy of Apple's.
+- In the program, all in plain code with no model: a greeting by the hour
+  with the person's name and how many reminders wait; sums worked out with
+  multiplying and dividing before adding and taking away, from words or
+  signs, with percentages; reminders that may carry a time written as
+  "at 6pm", "at 18:30" or "in 10 minutes", turned into the moment they fall
+  due; and a few things to say next, returned beside each answer in a
+  `suggest` field.
+- In Studio: an orb above the assistant's chat, still when idle, turning
+  fast while a run is going, pulsing while an answer is spoken or shown,
+  and ringing when a reminder is due. It is drawn with CSS only and stops
+  for a person who asked for less motion. The assistant says hello when
+  the page opens. Suggestions are shown as things to tap. Every 15 seconds
+  the page reads the assistant's memory and shows, and says if speaking is
+  on, any reminder whose time has come, once.
+- Tried in a real Studio window on a scratch copy: the greeting was "You
+  are up late." at 1:45 at night; "what is 17 times 23" gave 391 in 0.7 s
+  with the orb turning and then pulsing; "call me Aryan" was answered and
+  offered "hello"; "remind me in 1 minute to stretch" was answered "at
+  1:46" and, a minute later, "Reminder: stretch." appeared by itself with
+  the orb ringing. No errors in the page's console.
+- 11 tests in the program, and `tests/test_assistant_agent.py` now has 11.
+- Not claimed: a reminder is announced only while Studio is open on the
+  assistant's page; nothing runs when the app is closed. The sums cover
+  the four operations and percentages, not brackets or powers. A time such
+  as "tomorrow at 9" or "on Friday" is not understood: the words are kept
+  as part of the reminder with no time. The orb was looked at once in a
+  screenshot; whether it feels right is the owner's to say.
+
+### Kosi as a pill that stays on the screen
+
+- The owner asked for "a live interface on screen always minimized", like
+  the small translucent grey pill of a dictation app: hover to see what it
+  is for and its key combination, and reach it easily.
+- `kosika pill [FOLDER]` (module `kosika.pill`) shows a small borderless
+  window against the right-hand edge of the screen, half way down, above
+  other windows: at rest a small translucent grey pill standing on end
+  with only its ring, the way a dictation pill lies along the bottom
+  edge. Hovering, thinking or opening it widens it to the left. (It began
+  at the bottom centre; the owner asked for the right-hand side, its
+  middle, and a sharper look.)
+- How it is drawn: the program tells Windows it draws at the screen's real
+  resolution, so nothing is stretched on a scaled display. The pill is a
+  picture made with Pillow, drawn four times too large and brought down,
+  with a hair of lighter edge and a soft shadow, and handed to Windows
+  with every pixel saying how solid it is (`UpdateLayeredWindow`), so the
+  edge fades instead of ending in steps. The line to type on is a window
+  of its own laid over the pill. The answer bubble asks Windows 11 for
+  rounded corners. Without Pillow, or off Windows, it falls back to plain
+  shapes. Hovering wakes it and shows "Ask Kosi" with the key
+  combination. Clicking it, or pressing the combination from anywhere,
+  opens a line to type in; Enter asks, Esc closes. The answer appears in a
+  bubble above the pill with what Kosi offers next as chips, and stays up
+  longer for a longer answer. Right-click: Ask, Open Kosika Studio, Quit.
+- `kosika desktop --kosi` makes its Desktop and Start-menu shortcut, and
+  `kosika desktop --kosi --remove` takes it away.
+- It runs the same `assistant` agent through the same `App` as Studio, so
+  the reminders and facts are the same ones, and a reminder that comes due
+  is announced by the pill even with Studio closed.
+- Only one pill runs at a time. Only one key combination is registered with
+  Windows (`RegisterHotKey`); the first free of Ctrl+Alt+K,
+  Ctrl+Shift+Space, Ctrl+Alt+J is taken, since another program may hold
+  one. No other key is seen, and a test checks the module holds no keyboard
+  hook, microphone or screen capture.
+- With no model on the computer the pill still starts: sums, the time and
+  reminders work, and an open question gets a polite "could not think of an
+  answer".
+- Verified on the owner's laptop, first by inspecting the window and
+  then by capturing only that corner of the screen: the pill at rest, the
+  opened line with typed words, and the greeting bubble with its chips
+  were each seen. 22 tests in `tests/test_pill.py`.
+- Every agent's own tests on the real model (qwen2.5:7b), as a baseline:
+  researcher 5 of 5, coach 3 of 3, planner 2 of 2, animator 2 of 2, doctor
+  1 of 1, workbench 1 of 1, scout 1 of 1, assistant 2 of 3.
+- Not claimed: the hover state was seen only as a rendered picture, not
+  live. The window code itself (hover, the bubble, the hand-over to
+  Windows) has no automated test, only the logic and the picture under it. It does not start with Windows. Windows only.
+  It answers nothing that needs a grant: if the assistant ever asked for
+  one, the pill says no.
+
+### Kosi understands more, in plain code
+
+- The owner asked for a smarter Kosi. Everything here is worked out by the
+  Kosika program itself, with no model, so it is exact and instant.
+- Times: "tomorrow at 9", "tomorrow" (nine in the morning), "on Friday at
+  5pm", "next Sunday", "today at 6pm", "in 2 days". A time that is not
+  today says its day: "at 9:00 on Tuesday". A day of the week that is
+  today with its time past means a week from now.
+- "timer 25 minutes" and "alarm at 7am" are reminders with a time, so the
+  pill and Studio announce them like any other.
+- Sums: brackets (innermost first), powers ("^", "squared", "cubed", "to
+  the power of") and square roots, before multiplying and adding.
+- Units: length, weight, volume, time, speed and temperature, in "convert
+  5 km to miles", "5 km in miles", "how many feet in a mile", "5km to m".
+  Two different kinds of unit get a plain refusal.
+- Dates: "days until 25 December", "how many days until Christmas", "what
+  day is 1 January 2030". The count of days is integer arithmetic written
+  in Kosika (`day_count`), checked against Python's own for five dates.
+- 17 tests in the program, up from 11.
+- Not claimed: an alarm or timer is announced only while the pill or
+  Studio is open; nothing rings with both closed, and Kosi says so when
+  an alarm is set. "tonight", "next week", "noon" and "half past" are not
+  understood. Seconds are not: a timer is in minutes, hours or days.
+  Gallons, cups and currencies are left out on purpose (they mean
+  different things in different places, or change by the day). Open
+  questions are no smarter than before: that needs a better model.
+
+### Two typefaces of its own
+
+- The owner asked for a fancier font for Kosi and Kosika and liked the
+  ones on a dictation app's website. That site uses EB Garamond for
+  headings and Figtree for the rest; both are under the SIL Open Font
+  License, so Kosika carries them. He approved the download (under 1 MB).
+- The files and their licence texts are in `kosika/app_assets/fonts/`.
+  `kosika/fonts.py` says where they are and gives out only those two.
+- Studio: EB Garamond for the name, headings and card titles; Figtree for
+  everything else. The page asks this computer for them at `/fonts/...`
+  and nowhere else, and the page's security policy now allows fonts from
+  itself only.
+- The pill: Figtree for its label, the typing line and the answer. The
+  fonts are lent to the running program only (`AddFontResourceEx`, kept
+  private); nothing is installed into Windows.
+- Seen: Studio's page reported both families loaded and was looked at;
+  the pill's bubble and label were captured with the new face. 6 tests in
+  `tests/test_fonts.py`.
+- Not claimed: the serif is not used on the pill, where small light text
+  on dark is easier to read without it. Only Studio's first page was
+  looked at with the new headings, not every page.
+
+### Methods the assistant's own program wished for
+
+- Writing Kosi's new skills in Kosika showed what the language lacked: each
+  of these had to be written by hand inside the assistant first.
+- `Number`: `abs()`, `power(exponent)` (a whole power of a whole number is
+  exact, anything else is rounded to nine places, and what cannot be held
+  fails the run in plain words), `is_whole()`.
+- Any array and `Text`: `index_of(...)`, giving `Number?` so "not there"
+  is absent rather than a made-up -1.
+- `Text`: `chars()`, `pad_left(width, fill)`, `pad_right(width, fill)`.
+- The assistant now uses them: its hand-written power loop, zero padding,
+  day lookup and absolute value are gone, and its 17 tests pass unchanged.
+- 12 tests in `tests/test_more_methods.py`; the methods are in the table
+  in `KOSIKA.md`.
+- Not claimed: there is still no `**` operator and no `+` between arrays
+  (`power` and `concat` are the ways). Indexing a list written in place,
+  such as `["a", "b"][0]`, was not tried. `chars()` splits by code point,
+  so an emoji made of several is several parts.
+
+### One agent handing a request to another
+
+- The owner wants Kosi to grow into an assistant that gets work done
+  through the other agents. Until now only the person could choose an
+  agent; no program could.
+- No new syntax. Another agent is a tool: `source system "agents"`,
+  `operation: "ask"`, taking `{agent, text}` and giving `{ok, agent,
+  text}`. A program that wants to hand work over declares it and calls it
+  like any other tool.
+- Handing over grants nothing, which is why the tool may be `observe`.
+  The other agent runs as if the person had opened it: its own tools, the
+  same grants, its own run kept in its own folder, and its own questions
+  before anything changes. Studio shows such a question as "This was
+  handed to coder, which asks: ...". A no stops that agent only; the
+  asking agent is told it was refused and carries on.
+- Limits: an agent cannot hand to itself; an agent that was handed a
+  request is not given the tool, so there are no chains or loops; an
+  empty name lets Studio's own router choose.
+- `App._work`'s approval loop became `App._run_asking`, used both for a
+  run and for a handed-over run, so the two cannot drift apart.
+- Kosi uses it: "ask the coder to ...", "tell the researcher to ...",
+  "@coder ...", and "hand over: ..." go to the other agent, and the
+  answer comes back as "The coder agent says: ...". Its time budget went
+  from 120 to 900 seconds, because a handed request takes as long as the
+  other agent takes.
+- Tried for real on qwen2.5:7b in a scratch folder: "ask the coach to
+  explain what a matrix is in two sentences" came back in 33 seconds with
+  the coach's answer; a made-up agent was named as missing with the list
+  of real ones.
+- 11 tests in `tests/test_hand_over.py`; 18 in the assistant, up from 17.
+- Not claimed: from the pill, an agent that asks to change something is
+  refused, because the pill has nowhere to show what is asked; that work
+  is for Studio. The other agent's steps are not shown live in Studio,
+  only "handing this to coder" and "coder has answered". The agents are
+  not asked together: one hand-over at a time, and the asking run waits.
+  `kosika run` on the command line does not bind the tool.
+
+### The researcher works an answer out, and says so
+
+- The owner asked whether the researcher works perfectly. Asked five real
+  questions about a scratch folder on qwen2.5:7b, it answered what a line
+  states and refused what no line says, but refused everything that needs
+  a step: two marks added together, a time against a closing time, "a
+  tree" against "a connected graph with no cycles".
+- The cause was the program's own check, not the model: an answer had to
+  use words found in the quoted line, so "40" was thrown away because the
+  line says 15 and 25.
+- Now, when nothing can be proven word for word, the model named
+  `thinker` is asked to work the answer out from one line and to say the
+  step. Code still checks that the quote is really in a found line, is not
+  a heading, shares a key word with the question, and (with search by
+  meaning) is among the nearest lines. The answer is shown marked "Worked
+  out, not stated word for word", with its step, quote and line.
+- A second look. On the first try the model wrote "6pm is after 5pm" and
+  answered "Yes" to "is the library open at 6pm". So the model named
+  `judge` reads the line, question, answer and step and says only
+  "follows" or "wrong"; a "wrong" means no answer is shown.
+- Measured on qwen2.5:7b, ten evals run twice: 19 of 20. The five old
+  evals 10 of 10; adding, multiplying and using what a word means 6 of 6;
+  refusing what no line is about 2 of 2; the closing-time question 1 of 2,
+  and the miss was a refusal, not a wrong answer. Before the change the
+  five new evals could not pass at all.
+- 15 tests in the program, up from 11; its budget is 7 model calls and 600
+  seconds, up from 3 and 240.
+- Not claimed: a worked-out answer is checked by a model, not proved by
+  code, so it can still be wrong; that is why it is marked and shows its
+  step. A question that needs two lines together is not attempted. The
+  slow path costs up to four more model calls, about a minute on this
+  laptop. Twenty runs is a small sample.
+
+### The pill asks before an agent changes anything
+
+- Kosi could hand a request to the coder from the pill, but the coder
+  could do nothing there: the pill granted no folder, and any request to
+  change something was refused because there was nowhere to show it.
+- A folder is now chosen from the pill's right-click menu, in the
+  computer's own folder window, through the same grant Studio uses (so a
+  folder that is too wide, such as a whole drive, is refused). It lasts
+  until the pill is quit. Starting programs is not granted from the pill.
+- When an agent wants to change something, the bubble above the pill says
+  who asks and exactly what ("The coder agent wants to make these 2
+  changes, in this order: 1. write the file calc.py ..."), with Allow and
+  No. The bubble stays until one is picked, nothing else may cover it, and
+  no answer in five minutes is a no. `ask_words` writes that text and is
+  tested on its own.
+- Seen: the question bubble was shown and captured on the owner's screen.
+  27 tests in `tests/test_pill.py`, including a real hand-over to an agent
+  that writes a file, allowed once and refused once.
+- Not claimed: a plan of more than six changes shows the first six and
+  points to Studio. The text of a file about to be written is not shown,
+  only its name and length. No real coder run was approved through the
+  pill by a person yet.
+
+### The researcher puts two lines together
+
+- A worked-out answer may now rest on two lines: "which homework is worth
+  more" when each homework has its own line. The second quote is held to
+  the same rules as the first (real, not a heading, about the question)
+  and both lines are shown.
+- The first version of this measured worse, 16 of 24, and the cause was
+  the second look, not the answers. Asked only "follows or wrong", the
+  small model called right answers wrong about half the time. Three
+  changes, each from reading the model's own words:
+  - The judge now works the answer out for itself, in writing, before it
+    sees the answer to compare with.
+  - Code decides whether two answers agree where it can: two answers with
+    numbers agree when they share a number, two that say yes or no agree
+    when they say the same. The model had written "15 + 25 = 40 marks"
+    and then said "40" disagreed.
+  - A small model asked for two quotes often writes both in the first.
+    When the whole is in no line but two of its sentences each are, they
+    are taken as the two quotes.
+- Measured on qwen2.5:7b, twelve evals three times each: 34 of 36. Ten
+  evals passed 3 of 3, including both two-line ones. The closing-time
+  question passed 1 of 3: the model reworded its quote, which is refused,
+  so both misses were refusals and not wrong answers.
+- 18 tests in the program; its budget is 9 model calls and 900 seconds.
+- Not claimed: where neither a number nor a yes or no is in the answer,
+  the judge's own word is still what decides, and that is the weak case.
+  Three lines together are not attempted. The slow path now takes up to a
+  minute and a half on this laptop.
+
+### The coder tested for real, and its plan checked in Kosika
+
+- The owner asked for the coder to be tested, "because this agent will
+  write the code to develop Kosika itself". Six small tasks in a scratch
+  Python project on qwen2.5:7b, each really run with its tests: 3 of 6.
+- Read from the files it left: it wrote a file again with only the new
+  function in it, losing the others; it put tests in the source file; a
+  test forgot its import; one file was not valid Python.
+- None of that needs a model to see. A plan is now checked before a person
+  is asked, and sent back to the model with what is wrong.
+- The owner then asked why this was written in Python "when Kosika can do
+  it itself", and said he wants Kosika gradually independent of Python.
+  The first version of these checks was all in the engine. It was taken
+  apart again:
+  - A language change: an agent may name a function of its own program
+    with `check: NAME`. It is given the request and every file the plan
+    would write, with the file as it is now, and returns what is wrong.
+  - `Text.lines()` was added, because `split` stops at 512 parts and a
+    file has more lines than that.
+  - The checks that only read lines are now in the coder's own program, in
+    Kosika: a function the file has and the plan drops, tests in the wrong
+    file, a task that asks for a test and writes none. 3 tests there.
+  - Only what needs a Python parser stayed in the engine
+    (`kosika/code_checks.py`, 187 lines): not valid Python, a name never
+    defined, an import the other file does not have.
+- A bug found by the tests of my own check: "add a function" was excusing
+  the loss of the function named `add`, because the request named it. A
+  function is now excused only when the request also speaks of renaming
+  or removing.
+- What is read for the check is journaled. Without that, a step resumed
+  after approval would check its plan against the files it had just
+  written, see nothing lost, and no longer match what was approved.
+- Measured, and scored strictly. My first scoring counted a task done when
+  its tests passed and the new function was there, which let through runs
+  that had deleted the project's other functions and rewritten the tests
+  to match. Counting only runs where everything the project had is still
+  there: 2 of 6 before the checks (not the 3 of 6 first reported), 5 of 6
+  with them. The sixth reached the approval step carrying three warnings.
+- A plan found wrong now goes back to the model twice, not once
+  (`PLAN_RETRIES`). On the task that failed, three more runs: 3 of 3.
+- Asking an outside agent (`kosika/outside.py`, not yet reachable from a
+  program). The owner has other command-line agents installed and said
+  they may be given folders inside `Aryan_Private` only. The folder is
+  copied, the agent is started in the copy allowed to edit files and
+  nothing more, and what it changed comes back as a list; the real folder
+  is not touched. A folder outside the one named root is refused before
+  anything is started. Tried by hand on a scratch project: devin and omp
+  each did the task the local coder failed, correctly, in 31 seconds; kilo
+  changed nothing (it is set to an image model); freebuff cannot be run
+  with one request. 12 tests, with a stand-in for the agent.
+- Not claimed: six tasks and three reruns are a small sample, all of one
+  kind (small Python functions). No program can ask an outside agent yet.
+  The three engine checks are for Python only. The coder still writes
+  whole files, which is slow: 4 to 13 minutes a task on this laptop.
+- Stage 1 of five toward Kosika being independent of Python: hooks an
+  author needs are written in Kosika. The others, not started: a standard
+  library in `.kos`; Kosika's lexer in Kosika; its parser and checker in
+  Kosika; an engine that is not Python.
+
+### The coder asks an outside agent first
+
+- Two more pieces of language, so that this could be written in the
+  coder's own program and not in the engine: a `system "outside"` tool
+  (`propose`), and a `system "files"` operation `write_all` that writes
+  several files with one approval. A workflow cannot repeat a tool call
+  over a list, which is why the second was needed.
+- The coder's program, in Kosika: ask the outside agent; run the same
+  `plan_check` on what it proposes; if something is wrong, ask it once
+  more with what was wrong; if that fails too, or nobody can be asked, do
+  the task with the local model as before. A proposal that passes is
+  written with `write_all` after one approval, and the tests are run.
+- The owner's limit is a setting, not a habit: `kosika outside --allow
+  NAMES --within FOLDER`, kept in `outside.json` beside the app's other
+  files. Off until set. The tool is bound only for allowed agents and only
+  when the granted folder is inside that root. Studio and the pill read
+  the setting when they start.
+- Measured on the same six tasks, scored strictly, with devin: 6 of 6 in
+  745 seconds (2 of 6 in 2044 s with the local model and no checks; 5 of 6
+  in 3152 s with checks). Five tasks took 25 to 48 seconds.
+- The sixth showed a fault in the check. On "rename double to twice" it
+  refused devin's correct work twice, because the test `test_double` was
+  renamed too and counted as lost; the coder fell back to the local model
+  and finished in 568 s. The check now lets the test of a renamed or
+  removed function go with it. Rerun: 30 seconds.
+- 16 tests in `tests/test_outside.py`, four of them the coder end to end
+  with a stand-in for the outside agent; 13 tests in the coder's program.
+- Not claimed: what an outside agent proposes is not put through the
+  engine's Python checks (valid Python, undefined names), only through
+  the coder's own check and then the real tests. Six tasks is a small
+  sample and all are toy-sized. The outside agents were told not to run
+  programs but are trusted to obey; they are started with edit-only
+  permission, which is their own setting, not Kosika's. No real project
+  of the owner's has been given to one yet.
+
+### An outside agent on Kosika itself
+
+- The first job that was not a toy: devin, in a copy of this repository,
+  asked to add `Text.capital()` with its test and its row in the reference.
+- Kosika's folder was refused at first as too large (over 40 MB): caches
+  and old builds. An outside agent is now shown what git tracks or would
+  add, 515 files and 5.5 MB here, so what a project ignores stays private.
+  Files named like secrets (`.env`, `*.pem`, `id_rsa`, ...) are never
+  shown, in a git project or not.
+- Result of the second run: 56 seconds, three files changed and nothing
+  else, one line in each of the engine and the reference and one test.
+  Applied to a second copy: the two relevant test files pass (43 tests),
+  ruff is clean, the engine's own plan checks find nothing wrong. The
+  change was not applied to the real repository; it was a trial.
+- What the first run showed. It took 185 seconds because devin ran the
+  tests, although it was told not to run programs and was started in the
+  mode that approves edits only. It did so inside the copy. The caches it
+  left came back as "changed files"; they are now dropped, as anything
+  the project's git rules ignore is.
+- Not claimed: an outside agent cannot be stopped from running programs
+  on this computer. It is told not to and it works in a copy, but that is
+  its good behaviour and its own setting, not a wall of Kosika's. The
+  coder's flow through Studio was not used for this job, because it would
+  run all of Kosika's tests (about 17 minutes); the proposal was tested by
+  hand with the two test files that matter. One job is one job.
+
+### The coder runs only the tests that matter
+
+- Kosika's own tests take about 17 minutes, so the coder could not be
+  used on Kosika. Written in the coder's program, in Kosika: after a
+  change, pytest is asked for the tests whose names hold the name of a
+  changed Python file (`-k "builtin_methods or more_methods"`). If that
+  finds none, they are all run, so a change is never left untested. The
+  report says when only some were run and how to run them all.
+- The whole flow on a copy of Kosika, with devin: asked, checked, the
+  three files written after approval, the narrowed tests run, 97 seconds
+  from start to finish. The test run was 23 seconds of that.
+- 15 tests in the coder's program.
+- Not claimed: tests are chosen by file name only. A change to a file
+  whose tests are named differently, and whose name appears in no test's
+  name, falls back to running everything; a change that breaks a test of
+  another name is not seen until all are run. devin again ran tests of
+  its own in its copy.
+
+### A second agent reads the change, and the coder writes Kosika
+
+- A reviewer. With two outside agents allowed, the one that did not write
+  a change reads it before the person is asked: `system "outside"`,
+  operation `review`. The change is applied in a copy with the old files
+  beside it, because an agent handed the new text in its request read the
+  files on disk and reviewed those. The local model then says only whether
+  the review reports a problem; if it does, the author is asked once more,
+  told what was found. What the reviewer said is shown with the list of
+  files (`note` on `write_all`), before the yes.
+- Tried alone on four changes, one sound and three with a fault their
+  tests did not catch (a wrong upper bound, a test that asserts nothing, a
+  change nobody asked for): omp and devin each passed the sound one and
+  found the fault in the other three.
+- Two faults of mine found on the way, and one cost.
+  - The request to an outside agent was cut at its first line break. It
+    was started through the Windows shell, which ends an argument there.
+    The agents had been given the task and never the rules after it, such
+    as "do not run programs". They are now started directly. With the
+    whole request, omp answered "No programs, tests, or installers run".
+  - The measuring script looked for the words "The tests pass." and so
+    counted every narrowed run, "The tests for calc pass", as a failure,
+    then asked for a "fix" that damaged sound work. That run is discarded.
+  - devin's free daily allowance was used up by these runs. An agent that
+    ends in an error now counts as no answer, and when none was named the
+    next allowed one is asked.
+- Kosika. An outside agent has not been taught the language. Given six
+  small Kosika tasks and nothing else, devin got 4 of 6: `words.length`
+  for `words.length()`, and a `Point(...)` that Kosika does not have.
+  - A guide, `kosika/app_assets/writing_kosika.md`, goes with any request
+    about Kosika. A test checks that every example in it is real Kosika
+    and every method it names exists.
+  - Before anything is written, the engine checks each planned `.kos` file
+    and runs the tests in it: `system "kosika"`, operation `check_files`,
+    which the coder calls on every proposal. The same reading now covers
+    what an outside agent proposes in Python, which it did not before.
+  - The coder's own check, in Kosika, reads Kosika files too: what a file
+    had must stay, and a task that asks for a test must add one.
+  - After a change to Kosika only, that file's own tests are run with
+    `kosika test`, not pytest.
+- Measured: the whole coder with omp on the six Kosika tasks, scored
+  strictly. Five were done in 23 to 58 seconds each. The sixth did not
+  finish: the run stood for an hour and ended on its deadline, most likely
+  the laptop sleeping. Run again alone it was done in 31 seconds.
+- 19 tests in the coder's program; 32 in `tests/test_outside.py`.
+- Not claimed: the six Python tasks have not been run again since the
+  request was fixed, and never with a reviewer; devin was spent. Whether
+  the guide helps was not measured, for the same reason: the only number
+  without it is devin's 4 of 6 and the only number with it is omp's. Six
+  tasks of one small kind are not a measure of writing real Kosika
+  programs with workflows, agents and tools; the guide does not teach
+  those yet.
+
+### The native engine looks at the machine
+
+- `system "computer"` (with `--computer`) and `system "linux"` (with
+  `--linux NAME`, the one Linux under WSL) run in native/
+  (native/machine.go, machine_windows.go, machine_other.go) and read the
+  same as the reference: the computer's name, system, cores, memory, disk
+  and uptime; the Linux's kernel, uptime, load, memory, disk, upgrades and
+  busiest programs, by the reference's own fixed script. So MayaOS's
+  reading of the machine no longer needs Python.
+- `system "agents"` and `system "outside"` tools are read and checked as
+  in the reference, and, as in its command line, left unbound.
+- `kosika-native run` says why the checker refused a program on the
+  error output, as the reference does; it does not yet say the line and
+  column the reference adds.
+- Held by a test in which both engines refuse the same wrong
+  declarations and ungranted calls, read the same computer, and refuse
+  the same Linux names.
+
+### The native engine checks programs and sends notes
+
+- `system "kosika"` tools run in native/ (native/kosikatools.go) as in
+  the reference: `check` checks a program given as text and runs its
+  tests, `check_files` reads files a program means to write as a plan's
+  files are read. They reach nothing, so they need no grant. Python
+  files given to `check_files` are refused by name, as in a plan.
+- `system "notify"` sends a note only to the one https address given
+  with `--notify`, which is refused as the reference refuses it.
+- Held by a test in which both engines check five programs and a set of
+  planned files, and refuse the same notify addresses, word for word.
+
+### The native engine reads an agent's plan before showing it
+
+- A planning agent's plan that writes files runs in native/
+  (native/planreview.go) as in the reference: a file written twice, an
+  empty one, `\n` written for line breaks, a file that only repeats the
+  request, a Kosika file that does not check or whose tests fail, and what
+  the agent's own `check` says, send the plan back to the model, twice at
+  most; a plan still wrong is shown with its warnings.
+- A plan that writes a Python file is still refused by name: telling
+  whether text is Python needs a Python parser. Skills a host chooses are
+  not here either.
+- Held by a test in which a stand-in model plans a Kosika file whose test
+  fails, then an empty file, then a file the agent's check objects to:
+  both engines tell the model the same, ask for the same approval with the
+  same warnings, and once approved write the same files.
+
+### Recalling by likeness, in both engines
+
+- `recall NAME like text` (kosika/memory.py `MemoryStore.like`,
+  native/stores.go `like`) gives a memory's entries nearest to a text,
+  nearest first, at most 10, each with a score, so a program can drop weak
+  links and keep strong ones. Nearness is of meaning with an embedding
+  model and of shared words without one (`by` says which), so tests and
+  programs with no model still find things.
+- Only a program that uses it gets the third tool, so every other memory
+  program is lowered as before and keeps its hash.
+- Asked for by the neural memory thread (its Notebook example). Held by
+  `cases/memory_like.kos` (scores to four places) and by `recall … like`
+  against a stand-in embedding model in both engines.
+
+### The native engine searches by meaning
+
+- A files tool's `find` and a `system "meaning"` tool's `near` run in
+  native/ (native/meaning.go) with the embedding model the host grants
+  (`--embed-model NAME`): the same lines compared, the same labels for
+  nomic-embed-text, at most 400 new vectors a call, and the same order,
+  nearest first. Vectors are kept outside the granted folder as 32-bit
+  numbers, as the reference keeps them, in a store of the native engine's
+  own, since Go cannot read SQLite without an outside package.
+- `--embed-url` (both engines) says where the embedding model is asked,
+  apart from `--model-url`, which also grants a chat model.
+- Held by a test that runs `find` three times and `near` once in both
+  engines against a stand-in embedding model, fresh and from what each
+  remembered, and compares every answer; and by hand against
+  nomic-embed-text on this computer, where both gave the same lines and
+  the same score.
+
+### The native engine reads web pages
+
+- `source system "web"` (`fetch`, `fetch_from`) and the `fetch URL` step
+  run in native/ (native/web.go), with the sites granted by
+  `--allow-site` (repeatable) or an environment's `allow site`: the same
+  address rules and refusals in the same words, redirects only to allowed
+  addresses, 2 MiB, and a page reduced to the same title and text, by a
+  reader written to match Python's html.parser where the reference relies
+  on it (tags, entities, comments, script and style content, `<x/>`,
+  CDATA dropped).
+- Found on the way, in the reference: python.org sends its pages
+  gzip-packed though nothing asks for that, and the reference read the
+  packed bytes as text. Both engines now unpack such a page, and neither
+  asks for packing.
+- `split`, `words` and `chars` give up to 100,000 parts, not 512, so
+  `std/text`'s `chunks` splits a whole paper (the digest found it could
+  not).
+- Held by tests that read seven pages, texts and feeds with odd markup in
+  both engines and compare, compare eight refused addresses and sites,
+  and three real pages fetched by both (Wikipedia, arXiv's feed,
+  python.org) gave the same text.
+
+### Reading a long page a part at a time
+
+- `operation: "fetch_from"` on a `system "web"` tool takes `{url, start}`
+  and gives `{url, title, text, next}`: 20,000 characters from `start`,
+  and where the next part begins, or -1 at the end (kosika/web.py
+  `fetch_from`). `fetch` is unchanged. Asked for by the digest, whose
+  arXiv papers run to about 80,000 characters. Python only: the native
+  engine has no web tool yet and refuses it by name.
+
+### A standard library, in both engines
+
+- `import "std/NAME.kos"` reaches Kosika modules shipped with the engine
+  (kosika/std, embedded in native/ as native/std): `std/text` (words,
+  chunks of a text for a model's prompt, keywords, likeness, sentences,
+  shorten, a model's answer without fences), `std/stats` (median,
+  variance, deviation, percentile, normalized, z-scores, correlation) and
+  `std/search` (BM25 ranking of texts against a question, with no model,
+  for finding the passages of a paper or a folder that answer it). Written
+  in Kosika itself, so both engines run the same code.
+- Held by `cases/std.kos`, `failing/std.kos`, and a test that the native
+  engine's copy is the library, file for file.
+
+### Looking at Linux and this computer
+
+- `source system "linux"` and `source system "computer"`, each with one
+  operation, `status`, that only looks (kosika/system_tools.py
+  `bind_linux_tool`, `computer_status`). The host grants the one Linux
+  distribution under WSL a program may look at (`--linux Ubuntu`) and
+  this computer (`--computer`); the readings come from kosika.wsl and
+  kosika.mayaos, by commands fixed in the host. Nothing that runs a
+  command the program chooses: Aryan has not said yes to that. For
+  MayaOS, so Maya reads both systems herself.
+- `kosika-native` refuses both by name for now. Held by
+  `tests/test_system_readers.py`, which stands in for the readers so it
+  runs anywhere.
+
+### Services as a system tool, in both engines
+
+- `source system "services"` with operations `status`, `pause` and
+  `resume` (kosika/system_tools.py `bind_services_tool`,
+  native/system.go `servicesTool`), bound by the host to the one services
+  file the owner names (`--services FILE`), so Kosi can answer "my
+  services" and "pause lookout". `status` reads the file's service names,
+  the paused list and the runner's last status text; pausing and resuming
+  change only the paused list, and are `execute` tools that need the
+  owner's yes each time. Asked for by the assistants thread for AIOs.
+- Held by a test that runs status, an unapproved pause, approved pause and
+  resume, and a pause of an unknown service in both engines and compares
+  everything, and by `refused/services_pause.kos`,
+  `refused/services_operation.kos`, `refused/services_shape.kos`.
+
+### The native engine learns, and both engines share their lessons
+
+- A step marked `learn` (or `learn by TEXT`) runs in native/
+  (native/lessons.go) as in the reference: with a memory folder it keeps
+  each accepted answer, answers the same question again, a close one, or
+  (for classify and decide) one its examples agree on, without the model,
+  and with nothing learned and no model connected its `otherwise` runs.
+- Lesson files are now named in both engines from the model's declaration
+  written out in one fixed form, not from Python's own record of it, so
+  each engine finds the lessons the other kept. Lessons kept under the
+  earlier name are moved to the shared one the first time they are looked
+  up.
+- Held by `cases/learn.kos`, three refused cases (`learn_model`,
+  `learn_by`, `learn_evidence`), a test that keeps lessons in one engine
+  and answers from them in the other, both ways, with identical traces,
+  and `tests/test_lessons.py` for the move.
+- With this the native engine runs every kind of model step the
+  reference runs. Still missing there: agent plans that write files,
+  `fetch` and the other non-file `system` tools, and `find`.
+
+### Models that answer as text, in the native engine and in tests
+
+- `output: NAME as text` reads, checks and runs in native/: the model is
+  asked for plain text, one fenced block is unwrapped, an empty answer is
+  refused, and the trace marks the answer `plain` for either engine's
+  replay.
+- In both engines a test now scripts such a model with its record,
+  `answers writer: [{text: "..."}]`, and the model is taken to have said
+  that text. Before, the scripted model said the record as JSON, which a
+  real model answering as text never does, so its tests could not say
+  what it wrote.
+- Held by `cases/plain.kos`, `refused/plain_fields.kos`, and a plain step
+  in the run whose trace both engines write alike.
+
+### The native engine reads `parallel` blocks
+
+- `parallel { a = ...  b = ... }` parses and is checked in native/ as in
+  the reference: no step of a block may use another of it, call a
+  workflow, ask an agent, change something, or reach a memory or board.
+  The native engine runs the block's steps in the order written, which
+  the language allows, so its trace is the reference's.
+- Held by `cases/parallel.kos`, `refused/parallel_uses.kos`,
+  `refused/parallel_workflow.kos`, and a block in the run whose trace both
+  engines write alike.
+
+### The native engine checks evidence
+
+- `classify`, `extract` and `decide` written `with evidence` run in
+  native/ (native/evidence.go): the model is asked for its answer plus
+  quotes, every quote must appear in the text the step was given
+  (ignoring case, spacing and curly quotation marks, after NFKC and
+  casefolding as the reference does), and an answer whose quote is not
+  there is refused like any other, so `retry` and `otherwise` apply. The
+  quotes are kept in the trace and proved again on replay, by either
+  engine.
+- The engine's first outside package: `golang.org/x/text`, for NFKC and
+  full case folding, which Go's standard library lacks. It is vendored
+  (3.4 MB), so the engine still builds with no network.
+- Held by `cases/evidence.kos`, `failing/evidence.kos` (the four ways
+  evidence fails, word for word), `refused/evidence_summary.kos`,
+  `refused/evidence_field.kos`, and an evidence step, refused once and
+  then accepted, in the run whose trace both engines write alike.
+
+### The native engine votes, and escalates to a stronger model
+
+- `vote N` (3, 5, 7 or 9) asks a model step N times and keeps what more
+  than half agree on: the same label, the same answer, or the same record;
+  models listed with `using a, b` take turns; answers that do not agree
+  fail the step, so its `otherwise` applies. `escalate NAME` hands the
+  question, with the same checks, to the model bound to NAME when every
+  answer of the step's own was refused. Both kept in the trace (`votes`,
+  `escalated`) as the reference keeps them (native/workflows.go `vote`,
+  `askOnce`).
+- Held by `cases/votes.kos`, four refused cases (`vote_count`,
+  `vote_summary`, `escalate_unknown`, `escalate_votes`), and a vote and an
+  escalation in the run whose trace both engines write alike.
+- A refused `verify` and a vote that does not agree now carry the
+  reference's failure names when `otherwise` takes over.
+
+### The native engine checks a model's answer with `verify`
+
+- `reply = use_model writer(msg.text) verify short_enough(reply, msg)
+  retry 2` runs in native/ as in the reference: the program's function is
+  given each otherwise acceptable answer under the step's name, a reason
+  it gives refuses the answer like any fault so `retry` shows it back to
+  the model, and the accepted answer's check is kept in the trace as
+  `verified`, which each engine's replay holds to having found nothing
+  wrong. Checked as the reference checks it, by checking the program with
+  the check written as a step after it (native/check.go
+  `withChecksAsSteps`).
+- Held by `refused/verify_model.kos`, `refused/verify_text.kos`, and a
+  verified step in the run whose trace both engines must write alike and
+  replay from each other.
+
+### Plain values as workflow steps, in both engines
+
+- A step may be a value worked out by code (kosika/parser.py
+  `parse_step_or_value`, kosika/sugar.py `lower_values`,
+  native/parse_workflows.go, native/sugar.go): `count = before + 1`,
+  `big = if count > 3 { true } else { false }`, `shout = base(m) + 1`.
+  Its type is the one written (`typed: Tally = {...}`), the value's own,
+  the one a later step takes it as, or the workflow's result for the last
+  step. A `match` step whose cases are all values is an ordinary `match`.
+  Record values may leave out the commas between fields.
+- A fault inside the value is reported as itself (`n + "x"`, an unknown
+  name), not as a type that cannot be told.
+- Held by `cases/values.kos`, `refused/value_step.kos`,
+  `refused/value_fault.kos` and `tests/test_value_steps.py`.
+
+### Everyday methods, in both engines
+
+- Text: `capitalize()`, `title()`, `count(part)`, `repeat(times)`,
+  `reverse()`; numbers: `clamp(low, high)`, `log()`, `exp()`,
+  `to_fixed(digits)`; lists: `count(item)`; dates written `YYYY-MM-DD`:
+  `add_days(days)`, `days_until(other)`, `weekday()`. Exact where whole
+  numbers are, refusals in the same words in both engines. Held by
+  `cases/everyday.kos` and `failing/everyday.kos`.
+
+### Shapes, in both engines
+
+- `shape Priced { fn price(self) -> Number }` (kosika/checker.py,
+  kosika/schema.py `implements`, kosika/function_types.py `assignable`,
+  native/shapes.go): a type that every record with those functions is, as
+  an interface is in other languages, without inheritance. A record stands
+  for its shape alone, in a list or optional; a shape's value is called
+  only by its functions; its schema is `anyOf` the records that are it, so
+  values from outside are checked against each.
+- Held by `cases/shapes.kos`, `refused/shape_function.kos`,
+  `refused/shape_record.kos`, `refused/shape_field.kos`, eleven more
+  programs compared side by side, and a run whose trace, schemas included,
+  is the same in both engines.
+- With defaults, constructors (`Item(...)`), records with functions and
+  enums, this is what Python's classes are mostly used for, checked before
+  the program runs.
+
+### Enums, in both engines
+
+- `enum Size { small, medium, large }` (kosika/checker.py, kosika/sugar.py
+  `lower_enums`, native/enums.go): a type whose values are names kept as
+  text; `Size.small`; fields and parameters of the type; values from
+  outside held to the list by their JSON schema, which a model is shown;
+  `+` and f-strings with text; a `match`, in an expression or a workflow
+  step, that names every value needs no `case _`. Refusals, in the same
+  words in both engines: an unknown value, a value named twice, an enum
+  with no values or with a taken name, a pattern that is no value, a match
+  that leaves a value out.
+- A match step's cases are now checked against its subject in the program
+  each case makes, which is what lets a step matching an enum leave out
+  `case _`.
+- Held by `cases/enums.kos`, `refused/enum_value.kos`,
+  `refused/enum_match.kos`, fourteen more programs compared side by side,
+  and a run whose trace is the same in both engines.
+
+### Default values, and making a record by calling it
+
+- The owner asked for Kosika to match Python's functions, classes and
+  attributes, and do better. Agreed order: default values, enums, shapes
+  (interfaces), a larger standard library.
+- Default values, in both engines (kosika/sugar.py `fill_defaults`,
+  native/defaults.go): `fn greet(name: Text, loud: Bool = false)` may be
+  called without `loud`, by name or in order; `record Item { count: Number
+  = 1 }` gives a field a default, and `Item(name: "pen")` makes an Item, as
+  a class is made in Python. A default must be written out and fit its
+  type, checked before the program runs. The call is given its defaults
+  before anything checks it, so traces, replay and every other part see an
+  ordinary call; a program without defaults keeps its tree and its hash.
+- Held by `cases/defaults.kos`, `refused/default_type.kos`,
+  `refused/default_null.kos`, ten more programs compared by hand, and a run
+  whose trace is the same in both engines.
+
+### The clock, chance, files and programs in the native engine
+
+- `now` and `random LOW to HIGH` (native/ambient.go), lowered to tools as
+  the reference lowers them, answered by the computer's clock and its
+  source of chance. Held by `cases/clock.kos` and `failing/random_order.kos`;
+  a trace of either engine replays in the other.
+- `source system "files"` and `source system "shell"` tools
+  (native/system.go), with `--allow-folder` and `--allow-shell` (or an
+  environment's `allow folder` and `allow shell`): read, peek, search,
+  list, write, create and write_all within the folder, a path that leaves
+  it refused; a program found on the path started there, for at most a
+  minute; writing and starting programs wait for an approval. The
+  checker's refusals of a badly declared system tool are the reference's,
+  word for word. `read file`, `list files` and `write file` in one line
+  (native/direct.go). Held by a test in `tests/test_conformance.py` that
+  runs thirteen requests in both engines: listings, reads, a search, the
+  refusals, a write and a program run once approved.
+- Six of the eleven example agents (builder, coach, doctor, planner,
+  scout, workbench) now pass their own tests in the native engine, word
+  for word as in the reference. The rest wait for steps with `verify`, and
+  for the agents, kosika and outside kinds of system tool.
+
+### Imports in the native engine, and stronger agents
+
+- The native engine reads a program in several files (native/modules.go),
+  as `load_program` does: `import "path.kos"`, `export [names]`, each file
+  seeing its own declarations and what its imports export, a file imported
+  twice read once, and the same refusals in the same words: a private
+  name (with its "did you mean"), a cycle, a file outside the program's
+  folder or not a `.kos` file, an export that is not a unique local name,
+  a name declared in two files, a text that is not Kosika in an imported
+  file. Held by `cases/modules.kos` (with `cases/lib/`),
+  `refused/import_clash.kos`, and a test in `tests/test_conformance.py`
+  that makes nine broken programs and compares what both engines say.
+  A refusal of a program now ends with exit code 2 on the output in the
+  native engine, as the reference's does.
+- Agents, for the owner's wish that they do any task well:
+  - Ollama gave every local model 4096 tokens and silently dropped the
+    start of a longer conversation: the agent's instructions and skills.
+    Both engines now ask for 8192, 16384 or 32768 tokens as a request needs.
+  - The coder builds websites: an outside agent (omp) is asked for the
+    whole site first; otherwise its own model writes it in three rounds
+    (page, style, motion), each file allowed before it is written, with
+    checks for a page cut short and a stylesheet that does not close, and
+    Node reading the script in place of tests. Two skills, `page.md` and
+    `style.md`. Measured on one coffee-studio request: omp gave a polished
+    three-file site in six minutes; qwen2.5:7b on the laptop's CPU wrote a
+    plain page before the half-hour budget ran out, now an hour.
+  - Studio says which permission an agent lacks (a folder, or starting
+    programs) instead of naming a tool with no binding; Kosi hands a
+    request on however it is said ("use the coder agent to ...").
+
+### Memories and boards in the native engine
+
+- `memory NAME of Record` with `recall` and `remember`, and `board NAME of
+  Record` with `post ... as AGENT` and `read`, now run in the native engine
+  (native/stores.go). As in the reference they are lowered to ordinary
+  tools that only look, through generated agents named `memory` and
+  `board`, with the same records, the same refusals when they cannot be
+  (an unknown record, a name already taken, a post signed by no agent),
+  and the same failures when a key is empty or a memory is full.
+- `kosika-native run --memory FOLDER` keeps memories as one JSON file each,
+  written byte for byte as the reference writes them; an environment keeps
+  them in `keep/memory` and refuses `--memory` beside `--env`; a test's
+  memories are its own; a run that needs a memory not granted is refused
+  before it starts.
+- Found on the way, by running the example agents: the native checker
+  refused `use_model ... retry 1 otherwise {...}`, carrying the retry over
+  to the fallback when it checked it. Fixed; the coach example's six tests
+  now pass in both engines, word for word.
+- Held by the suite (`cases/memories.kos`, `failing/memory_key.kos`,
+  `refused/memory_record.kos`, `refused/memory_clash.kos`,
+  `refused/board_author.kos`) and by `tests/test_conformance.py`: both
+  engines run the same program twice over one memory folder and give the
+  same results, traces and file.
+- Still refused by name in the native engine: files, pages, the clock and
+  chance (`read file`, `fetch`, `now`, `random`) and system tools, which
+  the other example agents use; swarms and imports.
+
+### The native engine lets an agent make its approved changes
+
+- An agent's model may now ask for a tool that changes the world, in the
+  native engine as in the reference (native/agent_changes.go). An agent
+  that plans (`plan: first`, or by default when it has a model, a tool
+  that changes something and two turns) shows all its changes as one
+  plan; the run waits with exit code 3 for an approval of that plan, and
+  begun again it is given back what its model said before, so the plan
+  carried out is the one approved, in order. Changes asked for after the
+  plan was carried out are told they cannot happen. An agent with `plan:
+  off` may make one approved change a step; a second is refused. What the
+  agent changed (`did`) is written from what ran.
+- Held by `tests/test_conformance.py` with a stand-in model and the
+  example MCP server that makes a change, in four ways (planning or not,
+  one change or two): both engines refuse without a journal, ask for the
+  same approval after the same model requests, make the change once
+  approved with the same result and the same trace, and do not make it
+  again.
+- Not yet: a plan that writes files, and an agent's own `check` of its
+  plan. The reference checks both before showing a plan, partly with its
+  Python code checks; the native engine refuses them by name.
+
+### Kosika environments, in both engines
+
+- The owner's idea, agreed and shaped "in kosika form": a project keeps a
+  `kosika.env` beside its programs, written in Kosika's own words, with an
+  `environment NAME { ... }` for each way it runs: `model NAME: "..." at
+  "..." protocol ollama`, `models answer from "file"`, `mcp SOURCE:
+  "command" pinned "manifest"`, `allow folder/shell/site`, `budget N model
+  calls, N tool calls, N seconds` and `keep "folder"`.
+- `kosika run --env NAME` (kosika/environment.py) and `kosika-native run
+  --env NAME` (native/env.go) find the file beside the program or above
+  it and take everything from it. The options it decides (`--model`,
+  `--mcp-server`, `--allow-folder`, `--journal` and the rest) are refused
+  beside `--env`. Budgets only tighten. Traces go to `keep/traces`, one a
+  run; a journal named by program, workflow and input goes to
+  `keep/journals`, so an approval resumes the right run, and is let go
+  when the run finishes. An environment may name a server for each MCP
+  source, each pinned by its own manifest.
+- The native engine gained the deadline a `seconds` budget sets, stopping
+  a run with `deadline` as the reference does, and now checks a program
+  before it looks at anything the run would reach, as the reference does.
+- Held by `tests/test_conformance.py`: in a project made for the test,
+  both engines give the same result and the same trace in the test
+  environment, refuse the same options and an unknown environment in the
+  same words, wait for the same approval in the live one with a real MCP
+  server, make the change once approved, let the journal go, and refuse a
+  broken file in the same words. Separately, 27 broken files were read by
+  both: 26 refused word for word; the last differs only in the operating
+  system's own words for a missing manifest, as `--mcp-manifest` already did.
+- Not yet in the native engine: the folder, shell and site grants, which
+  wait for its `system` tools; memories, which wait for its memories.
+
+### The native engine runs a change once it is approved
+
+- Asked to choose, the owner took the recommendation: the native engine
+  keeps a journal of its own, plain JSON, rather than sharing the
+  reference's SQLite journal, which would have needed a SQLite module
+  downloaded for Go and a port of the reference's hash of a program's tree.
+- `kosika-native run` takes `--journal`, `--binding-id`,
+  `--approval-record`, `--approve` and `--approved-by` as `kosika run`
+  does. A run that reaches a tool that changes the world stops with exit
+  code 3 and prints the action to approve; an approval names that one
+  action of that one run and is claimed once, in a ledger beside the
+  journal; begun again, the run takes each step it already finished from
+  the journal, so the change is made once. A journal of a different
+  program, input or binding is refused, and so is a step left half done.
+- Held by `tests/test_conformance.py` on the example
+  `approval_mutation.kos`: both engines refuse the change without a
+  journal, ask for the same action (tool, arguments, step) with one, make
+  the change once approved, and do not make it again when run again.
+- Not yet: an agent's own change, which asks for approval inside its
+  loop; approvals are refused there by name.
+- Next: Kosika environments, the owner's idea, agreed: one checked-in file
+  per project naming the models, tools, grants, budgets and the place
+  where memories, traces and approvals are kept.
+
+### The native engine writes traces, and replays them
+
+- The owner said to continue in the order given: traces, then approvals,
+  then the remaining declarations.
+- `kosika-native run` now writes a run's trace, trace version 5, as
+  `kosika/runtime.py` writes it: every step's start, call, return and
+  completion; every function call with the calls made working out its
+  arguments and the calls made in its body; a workflow's own run inside
+  its call; a model's refused answers; an agent's whole transcript; a
+  fallback's `recovered_from`; and, for a run that fails, how far it got.
+  Set beside the reference's trace of the same run, with the time, the
+  program's hash and the elapsed time set aside, they are the same, event
+  for event: 18, 26 and 6 events on three programs that between them use
+  nested functions with captures, record methods, a called workflow, a
+  fallback, a model refused twice, thinking steps, an agent whose answer
+  was reshaped, a match step and an MCP tool; and a failed run's 12.
+- The program's hash is a hash of the program's text, not the reference's
+  hash of its tree; replay asks only that a called workflow's trace carry
+  the same hash as its caller's.
+- `kosika-native replay TRACE` checks a trace, running nothing, as
+  `kosika/trace_replay.py` does, with its JSON schema subset, its reading
+  of a model's answer again, and its checks of an agent's transcript.
+  Each engine's replay accepts the other's traces. Traces tampered with in
+  hundreds of small ways get the same verdict and the same words from both,
+  except where the reference's replay crashes outright on a schema made
+  impossible (`TypeError: unhashable type`), which is its fault to fix.
+- `--model-fixture FILE` answers models offline, as the reference's does.
+- Not yet: replaying an agent run's own trace (`kosika agent`), answers
+  with evidence, verified answers; journals and approvals.
+- Next: approvals, so a tool that changes the world can run.
+
+### The native engine reaches MCP servers, and agents call their tools
+
+- The owner said to go on, and that once this work on Kosika is done the
+  next focus is Kosi, as a modern assistant "like Siri but better in every
+  aspect". He also pointed to his own MCP server, urlscan-mcp (15 tools for
+  urlscan.io); it is a candidate real server, not yet tried, since it
+  reaches the internet and some of its tools need his API key.
+- `run` now takes `--mcp-server`, `--mcp-manifest` and `--mcp-source` as
+  the reference does. The manifest is read and its schema hashes checked;
+  it must pin the tool, with exactly the schemas the program's records
+  make; the server is started, its protocol, name, version and advertised
+  tools held to the manifest; then the tool is called. All of this is
+  `native/mcp.go`, newline-delimited JSON-RPC over the server's standard
+  input and output, as `kosika/mcp_stdio.py` speaks it.
+- An agent's model is now offered the agent's tools, described as the
+  reference describes them. Each tool it asks for is called and its answer
+  given back; arguments that do not fit, or a tool that only looks and
+  fails, are told to the model as `{"error": ...}`; the step, tool and
+  model-call limits are the agent's. This is the reference's `AgentLoop`
+  for a workflow step, without approvals: an agent that may change the
+  world is still refused before the run.
+- Held by `tests/test_conformance.py`: the example MCP server gives both
+  engines the same result, a manifest that pins nothing is refused by both
+  with the same words, and a stand-in model that calls the disk tool and
+  then answers receives the same requests from both engines, in both wire
+  formats, turn for turn.
+- Tried with `qwen2.5:7b`: the agent called the disk tool on the example
+  server and answered "The disk is 42.0% full." In the reference's run the
+  model sent arguments the tool does not take, and was told so, as the
+  native engine would have told it.
+- Next: traces of a run; then approvals, so that a tool that changes the
+  world can run; then the remaining declarations (memories, `system`
+  tools, imports, swarms).
+
+### The native engine asks real models
+
+- The owner asked that his other projects be recorded in Kosika so that
+  it remembers them; they are now under "Projects that may use Kosika" at
+  the top of this plan. He then said to focus on Kosika's development, and
+  the native engine was given real models, as recommended to him.
+- `kosika-native run FILE --input IN.json --model NAME` runs a workflow
+  and asks a real model server: the OpenAI-compatible `/chat/completions`
+  shape or Ollama's own `/api/chat`, with the reference's flags, its
+  default of a local Ollama server, its cap of 1,024 output tokens, and
+  its words: the same system and user messages, the same JSON schema in
+  them, the same retry messages. A model server that fails stops the run
+  ("Workflow stopped (provider)"), as the reference's controlled provider
+  stops it, and is not handed to a fallback. A test's scripted answers
+  now go through the same path, as JSON text, as the reference's do.
+- Tried with this machine's Ollama: `qwen2.5:3b` on `model_answer.kos`
+  and on an agent, and `qwen2.5:7b` on all four thinking steps. On the
+  thinking steps both engines gave the same result, to the `40.0`.
+- `tests/test_conformance.py` now holds `run` to the reference with a
+  stand-in model server in both wire formats: both engines must print the
+  same result and send the same requests, word for word. They do.
+- Found on the way: the time in "Model did not answer within N seconds"
+  was written wrong (6 for 60); fixed. A 7b model loading for the first
+  time took longer than the default 60 seconds; `--model-timeout` says
+  how long to wait, as in the reference.
+- Not yet: an agent calling its tools (an agent with tools is refused
+  before the run, since no tool can be reached), traces, journals and
+  approvals, and real tools (MCP servers, `system` tools).
+- Next: real tools, starting with MCP servers, so that an agent can call
+  its tools; then traces.
+
+### The native engine asks agents
+
+- Asked whether Kosika could serve his other projects (DEEP, Ananta,
+  Synapse, Parlour, Deadline), the owner was told, from their READMEs:
+  Ananta fits best (a debating panel with bounded rounds is what agents,
+  budgets and checks are for), DEEP's reasoning layer fits, Synapse is
+  already a Kosika front end, Deadline only a little, Parlour not. He
+  said to go on with the native engine first.
+- The native engine now runs `ask AGENT(...)` steps. In a test the
+  agent's model answers from the script, and a scripted answer calls no
+  tool, so the agent's turn is that one answer, taken as the reference's
+  `call_agent` takes it: an answer in the wrong shape is asked for once
+  more, the answer is held to the model's output record, and a `did`
+  field is written by the engine from what ran (here, nothing). Before
+  the run, every tool the agent may choose must be one the test answers,
+  and none may change the world without an approval, as the reference
+  requires.
+- The suite: `cases/agents.kos`, `failing/agents.kos` (five ways), and two
+  refusals. Both engines pass all 64 programs.
+- Measured by mutation: 1,000 mutants of the agent programs and 2,912 of
+  the 112 files both engines can now read; all the same. Of the
+  repository's 132 Kosika files, what still stops the native engine:
+  swarms (8), memories (6), system tools (4), imports and exports (3),
+  `verify` (1) and `with evidence` (1).
+- Next: an agent calling its tools when a real model chooses them, with
+  real models; then memories, system tools, imports and swarms.
+
+### The native engine thinks: general models and thinking steps
+
+- The owner said to go on. The native engine now reads general models
+  (`model assistant`, and `default model NAME`) and the four thinking
+  steps, `classify`, `extract`, `summarize` and `decide`. As the
+  reference's `lower_thinking` does (`native/thinking.go`), each step is
+  made an ordinary model call against a model made for it, which gives the
+  answers of the declared model it names or chooses, and the records these
+  need are added from those the language supplies. What each step
+  promises beyond its record (a label among the choices, a confidence from
+  0 through 1) is held, and an answer that breaks it is asked for again
+  under `retry`, as the reference does.
+- Refused as the reference refuses them, without a path, since the
+  reference finds them as it lowers: a thinking step with no model, or
+  with several and none the default, or naming several models without
+  voting; and a program that declares a built-in record differently.
+- Not yet: `with evidence`, `vote`, `verify`, `escalate`, asking an agent,
+  and any real model. Each is refused by name.
+- The suite: `cases/thinking.kos`, `failing/thinking.kos`, and five
+  refusals. Both engines pass all 60 programs.
+- Measured by mutation: 1,000 mutants of the thinking programs, and 3,224
+  of the 104 files both engines can now read (up from 87); every one gave
+  the same output from both.
+- Next: asking an agent; then `verify`, `vote`, `escalate` and `with
+  evidence`; then reaching real models and tools.
+
+### The native engine asks models, as a test scripts them
+
+- The native engine now reads models with the records they take and give
+  (`deployment` and `parameters` too, checked as the reference checks
+  them), and runs `use_model` steps from a test that scripts the model's
+  answers. An answer is completed as the reference completes it (a field
+  the model left out reads as null where null is allowed), held to the
+  output record, and on refusal asked for again up to `retry N` times;
+  the last refusal is the step's failure, and a fallback may take it.
+  Model calls count against the workflow's budget.
+- Not yet: general models (`model NAME` with no records, whose records
+  the language supplies), asking an agent, thinking steps, `verify`,
+  `vote`, `escalate`, and any real model. Each is refused by name.
+- Found by comparing every example the engine can now read (87 files):
+  a nested function calling a function value it captures was refused as
+  an unknown name. Fixed, and held by a new case in `cases/records.kos`.
+- The suite: `cases/models.kos`, `failing/models.kos`, and five refusals
+  (a model whose output is not a record, a temperature out of range, a
+  wrong input field, `retry` on a function step, `retry 9`). Both engines
+  pass all 53 programs.
+- Measured by mutation: 1,000 mutants of the model programs and 3,567 of
+  every example both engines read (all but `discrete_maths.kos`, whose
+  matrices the native engine cannot work out yet); every one gave the
+  same output from both.
+- Next: general models and thinking steps (`classify`, `extract`,
+  `summarize`, `decide`); then asking an agent; then `verify`, `vote`
+  and `escalate`.
+
+### The native engine runs fallbacks and match steps
+
+- Asked for the big plan, the owner was given it from this document and
+  the vision, and said to go on. The native engine now runs a step with a
+  fallback (`x = call otherwise other`) and a step that chooses its call
+  (`x = match subject { case ... }`), with a value standing in for a call
+  after `otherwise` or in a case.
+- The checker does what the reference does: it checks the program without
+  the fallbacks and then with each fallback in its call's place, and the
+  program each branch of a match would make. A value beside a call is
+  made a call of a function that gives it (`native/sugar.go`, as
+  `lower_values`), and a fault in it is reported in the writer's words:
+  "Step 'said' in workflow 'main': the value after `otherwise` ...".
+- At run time a failure of the work hands the step to its fallback; a
+  spent budget or a missing approval does not, as in the reference.
+- The suite: `cases/steps.kos`, `failing/steps.kos`, and eight refusals
+  (a match without `case _`, a value listed twice, branches of different
+  types, a subject that is a record, a fallback of another type, a
+  fallback beside a tool that changes the world, a wrong value after
+  `otherwise`, a match choosing a tool that changes the world). Both
+  engines pass all 46 programs.
+- Measured by mutation: 1,000 mutants of the two new programs and 1,970
+  of all the suite's programs; every one gave the same output from both.
+- Next: models, with tests that script their answers; then asking an
+  agent, thinking steps, and `verify`, `vote`, `retry`, `escalate`.
+
+### The native engine runs workflows, and the tools a test scripts
+
+- Asked to go on, the owner agreed to workflows next. The native engine now
+  reads tools, agents and workflows; checks them with the reference's
+  rules and messages; and runs a workflow from a test: steps in order,
+  each calling a function, running another workflow, or using a tool
+  through an agent, with the last step's result checked against the
+  record the workflow gives. A test may script what a tool answers
+  (`answers TOOL: [...]`), and the answers are held to the tool's record
+  as the reference holds them, message for message.
+- A tool is reached only through scripted answers. One no test answers
+  fails as the reference fails it ("Mock MCP operation is not
+  allowlisted"), and one that changes the world fails for want of a
+  recorded approval, before any step runs. Models, asking an agent,
+  thinking steps, `otherwise`, `verify`, `vote`, `retry`, `escalate`,
+  `match` steps, `parallel`, `system` tools, memories, boards, swarms and
+  imports are refused by name.
+- Fixed on the way: the checker now looks at record methods first, where
+  the reference does; and a failed expectation now writes text outside
+  ASCII as `é`, as the reference's JSON does (a new failing case
+  holds that).
+- The suite: `cases/workflows.kos` (four tests), `failing/workflows.kos`
+  (nine ways a workflow test fails), and ten more refusals, among them a
+  capability violation, an execute tool without approval, a workflow
+  whose last step gives the wrong record, and scripting a tool that
+  changes the world. Both engines pass all 36 programs.
+- Measured as before, by mutation: 1,300 mutants of the workflow programs
+  (the suite's two and a wider one written for it), and 1,300 more of the
+  earlier programs to see nothing went back. All gave the same output
+  from both engines except two, where the reference itself crashes: a
+  test's scripted answers are never type-checked, and an answer such as
+  `-[1]` stops the reference with a Python error. The native engine
+  reports the test as failed instead. Not closed; it is the reference's
+  fault to fix, not the native engine's to copy.
+- Next: `otherwise` and `match` steps; then models, with tests that
+  script their answers.
+
+### The native engine checks a program before it runs it
+
+- The native engine had no checker, and ran programs the reference rightly
+  refused. Now it has one, in `native/check.go` and `native/types.go`, some
+  1,800 lines of Go. It is a port of `kosika/checker.py` and the test
+  checker in `kosika/testing.py`, rule for rule and message for message:
+  types, optionals and what a test proves about them, matches, loops, try,
+  records and their methods, maps, the built-in methods and their
+  `field:` arguments, recursion and depth, and the "did you mean" hint,
+  which is difflib's own measure written again.
+- The reference checks nested functions after lowering them; the native
+  engine checks them where they stand and names them as the reference does
+  (`outer/inner`). Two of the reference's quirks are kept because the suite
+  must agree with it: a nested function that captures anything must have
+  its arguments named, and one inside a function with an unannotated `let`
+  is refused as the file is read (the capture's type is `Any`).
+- A name used but never declared is refused as the file is read, with the
+  file's path, as the reference does. A program the checker refuses prints
+  `Check failed: ` and the reason, and ends with exit code 2.
+- `conformance/refused/`: 18 programs that must be refused, one fault each,
+  with the line each engine must print. Both engines pass all 24 programs.
+- Measured: a scratch harness mutated the suite's programs, the benchmark
+  solutions and a program written to touch every rule above (a type
+  swapped, a name misspelt, a literal changed, and so on) and ran each
+  mutant through both engines. Of 3,623 that both could read, at least
+  1,777 were refused by the checker; every one gave the same message from
+  both engines, word for word, and every program both ran gave the same
+  report. (Two differences were found and closed on the way: nested calls
+  with unnamed arguments, and "No tests found".)
+- Not claimed. The harness reaches only what its mutations reach; a rule no
+  mutant touched is held only by reading. Workflows, agents, tools and
+  models are still refused by name. One difference at run time was seen
+  and not closed: the reference cannot work out a function written as a
+  value inside a test (`Workflow contains an unsupported expression`); the
+  native engine can. The checker's message for a function call's
+  arguments says "tool arguments", as the reference's does.
+- Next: workflows and tools in the native engine; then models.
+
+### Kosika runs without Python: a native engine and a conformance suite
+
+- The owner asked for Kosika to be "a strong and independent programming
+  language, without the assistance of python". The first plan put to him
+  was to write Kosika in Kosika: lexer, parser, then a compiler. He then
+  shared the advice of two outside agents, kilocode and omp. Both said:
+  a native runtime first, held to a conformance suite; self-hosting later,
+  only if useful. They were right, and he was told so. Self-hosting
+  reaches "no Python" at its last step; a native engine reaches it early.
+- He asked for both Go and Rust. Agreed: Go first, because Go is on his
+  machine and builds one program file; Rust after, against the finished
+  suite, which is work an outside agent can be given with the suite as
+  judge. Two engines passing one suite is also the proof that the suite,
+  not an engine, says what Kosika means.
+- `conformance/`: programs with what `test` must print for each. Five
+  that pass (numbers, text, lists, choices, records and functions; 31
+  tests) and one whose nine tests fail on purpose, so that what a failure
+  says is held too. `python -m kosika.conformance write` lets the
+  reference say what it prints; a person reads it before it becomes law.
+- `native/`: a Go engine for the core of the language, which reaches
+  nothing outside the program. Lexer, parser, runner and about 80 built-in
+  methods, in some 3,100 lines. It builds to one 4 MB file.
+- Measured. Its lexer gives the reference's tokens on 78 of 78 Kosika
+  files, 67,316 tokens. It passes 31 of 31 conformance tests. On the
+  failing program both engines print the same report, word for word.
+  `tests/test_conformance.py` holds both engines to this, and skips the
+  native half, saying so, where Go is not installed.
+- Not claimed. Kosika is not independent of Python: the app, the agents,
+  models, tools, workflows, traces and the checker are all still Python
+  only. The native engine has no checker, and on its first day ran a
+  program the reference rightly refused (a list of mixed kinds); the suite
+  has no case that would catch that. Six programs are a beginning: a rule
+  no case uses is held to nothing. Known differences not yet closed: the
+  reference counts any Unicode digit as a digit and decodes `\N{name}` in
+  a string; the native lexer does neither.
+- A lexer written in Kosika itself was drafted the same day, before the
+  plan changed. It needs two primitives the language lacks, a character's
+  number and back. It is kept as a future conformance program, not as the
+  road.
+- Next: refusal cases in the suite and a checker in the native engine;
+  then workflows and tools; then models.
+
+### Kosi follows the talk, and may put a question to a stronger mind
+
+- The owner said Kosi did not feel smart, and showed three answers: a
+  thin one, then two that spoke of his stretch reminder when he had asked
+  about quantum projects. Reading how each was made showed the fault was
+  mostly Kosi's, not the model's. Every message went to the model alone,
+  with no word of the talk before it; the reminders were in every prompt,
+  so they were all the model could seize on; and answers were held to
+  three sentences and 160 tokens.
+- Now Kosi keeps the last eight lines said, in a memory of its own, and
+  gives them to the model; the model is told what pointing words mean,
+  told not to bring up reminders unasked, and allowed up to six sentences.
+  The same three messages, the same model, a reminder set as his was:
+  each was answered properly. A plain "thanks" is answered by code.
+- He then agreed, asked plainly, that open questions may go to omp. A new
+  outside operation, `answer`, puts a question to an outside agent in an
+  empty folder: no file is shown, so no folder need be granted. Kosi asks
+  omp by name for questions of five words or more, sending the question
+  and the earlier questions and answers only. His name, reminders and
+  remembered facts are kept out of it, and a test holds that. omp is told
+  to say LOCAL when a question turns on something only Kosi knows; then,
+  or when omp cannot be asked, Kosi's own model answers. An answer from
+  omp ends "(answered by omp)".
+- Tried on a scratch copy: three open questions answered by omp in 14 to
+  22 seconds each, against 31 to 41 for the local model, and with plainly
+  more substance. "What is the number of my locker" came back as LOCAL
+  and was answered here, which cost that question two waits, 44 seconds.
+- The first wording of the LOCAL rule was too wide and sent every
+  question back, the quantum one among them; nothing showed it but the
+  missing "(answered by omp)". It was narrowed and tried on four
+  questions.
+- Not claimed: that "five words" is the right line; it is a guess. That
+  the answers are right; nothing checks them. A question the person
+  words with a private fact in it carries that fact to omp, as any
+  question they choose to ask does.
+- A leak found while writing this down, and closed: the talk a later
+  question took along held every earlier answer, among them one Kosi's
+  own model had given from a remembered fact. Now only turns omp itself
+  answered go with a later question.
+- The owner asked whether Kosika can make a model smarter. Said to him:
+  not its numbers, which only training changes; but several models
+  arranged in Kosika can score above the one inside, as the researcher
+  does. Agreed as next: one shared "mind" in Kosika that agents ask as
+  they would a model, measured against the bare model on fixed questions,
+  using the local model only.
+
+### The coder in JavaScript and TypeScript, and a Skills section in the app
+
+- The owner's order for the coder was Kosika first, then JavaScript and
+  TypeScript. Node is on his machine and runs TypeScript itself, and its
+  own test runner needs no library, so nothing was installed.
+- Written in Kosika, in the coder, not in the engine: what a `.js` or
+  `.ts` file defines is read from its lines (functions, classes,
+  constants, types, interfaces, and each `test("...")`). A plan that drops
+  what a file had is sent back; so is a test put in a source file, a
+  task that asks for a test and writes no test file, an import of a name
+  the other planned file does not export, and an import that calls a file
+  by a name Node will not find (`./calc` for `calc.ts`).
+- After a change to JavaScript or TypeScript only, `node --test` runs the
+  test files that were written, or all of them if none was. Node calls
+  "no tests found" a success; the coder says "No tests were found to run".
+  The word "test" alone now looks at the folder to choose pytest or Node.
+- Skills are picked by language: `script.md` and `script-tests.md` for
+  JavaScript and TypeScript, and the two Python skills now only for
+  Python. Before, a task in any language picked the Python advice.
+- Measured strictly, with a test file added afterwards that the coder
+  never saw. With omp: 6 of 6, about 40 seconds each. The local model
+  alone: 1 of 6 in 50 minutes. Its misses are listed in CODER.md.
+- The same day the coder was run alone on the portfolio task, at the
+  owner's wish, for comparison with omp's 3.5 minutes: in 22 minutes it
+  wrote no file, said it had, and Kosika reported that none was written.
+- Studio has a Skills section, asked for by the owner: every skill by the
+  folder whose agents it serves, with its words, its file patterns and
+  how many rules; a box that shows which skills a request would pick and
+  why, with no model asked; and an editor to change a skill or write a
+  new one. Save is the person's own yes. A note Kosika cannot read is
+  shown with the reason and is never saved, because one unreadable note
+  stops every skill beside that agent.
+- Not claimed: a skill cannot be deleted or renamed from the app. Found
+  and not yet put right: when the local model writes nothing in a
+  JavaScript project, the coder still runs pytest; a test file that
+  defines its own copy of the function it tests passes the plan check;
+  `node --check` does not catch a TypeScript syntax error, so only the
+  test run does. The Python six have not been re-measured since skills
+  are picked by language.
+
+### Skills reach the outside agent, and a skill for motion
+
+- The owner proposed a skill that explains motion on a web page, scroll
+  and cursor effects, for the coder to use on a portfolio. A skill until
+  now reached only the coder's own local model; the outside agents, which
+  do the writing, never saw one.
+- Now the skills that fit a task are added to what the outside agent is
+  asked, and its work is held to their checks afterwards: `check_files`
+  takes what was asked for, picks the skills, and reports a file that
+  breaks a rule. Tested end to end with a stand-in: a stylesheet that
+  ignored a skill's rule was sent back with the rule quoted, before any
+  person was asked.
+- Two draft skills beside the coder, `motion.md` for stylesheets and
+  `motion-script.md` for scripts: what moves on scroll, what follows the
+  cursor, what keeps it smooth, what keeps it kind. Their checks: both
+  files must speak of `prefers-reduced-motion`, the stylesheet of
+  `transition`, the script of `IntersectionObserver`. They are picked by
+  words of motion, not by "website", so a task that asks for no motion is
+  not held to them. The words are a draft for the owner to change.
+- Tried in a scratch folder. First the coder was asked for a portfolio
+  site with nothing there: omp wrote three files, about 400 lines, shown
+  as one list, in 3.5 minutes. Then, with the motion skills picked, it was
+  asked to add scroll and cursor motion: 6 minutes. Looked at afterwards:
+  every section and its text still there, no error on load, 16 elements
+  set to rise into view, a reading bar and a cursor glow, motion switched
+  off for people who ask for less, cursor effects only for a real pointer.
+- A fault found by the first of those runs: when an outside agent's
+  scratch copy could not be deleted at once, the run failed and its work
+  was lost. Deleting it is now allowed to fail.
+- Said plainly to the owner, who had taken the page for Kosika's own work:
+  omp wrote it. The coder ran the job: handed it over in a copy, took back
+  the files, checked them, asked before writing.
+- Not claimed: whether the motion is tasteful, which a picture cannot
+  show and only the owner can judge. Kosika checks nothing about HTML, CSS
+  or JavaScript beyond a skill's `contains` rules; a page that loads is
+  not a page that is right. The phone layout looked cut off in a capture
+  and was not settled.
+
+### Other local models, measured
+
+- The owner asked which models should be installed, and about DeepSeek
+  and other open models. This laptop has 4 cores, 15 GB and no separate
+  graphics card, so only models of about 7B and under are practical.
+  Three were downloaded with his yes and put on the scoreboards.
+- Researcher, twelve evals twice each: qwen2.5:7b 24 of 24; gemma3:4b 18
+  of 24, and it answered 3 of the 4 questions whose right answer is "I
+  will not guess"; deepseek-r1:7b 8 of 24, most often failing to give a
+  quote that is in the lines.
+- Coder, six tasks, local only: qwen2.5-coder:7b 0 of 6. It never asked
+  for a tool, so no plan was made; the coder said "No file was written"
+  each time, which is the honest report.
+- Kept as before: qwen2.5:7b, qwen2.5:3b, nomic-embed-text. Removing the
+  three new ones is the owner's to say.
+- Ollama is now asked to keep a model loaded for 30 minutes after an
+  answer (`keep_alive`), which saves the reload on the next question.
+- Not claimed: the times of each model were not kept. Two runs of twelve
+  questions is a small sample. The models were tried only as they come,
+  with no prompt written for them.
 
 ## Standard coding-agent procedure
 

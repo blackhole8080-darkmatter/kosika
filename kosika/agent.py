@@ -28,6 +28,7 @@ from .schema import (
     SchemaValidationError,
     schema_for_record,
     schema_for_tool_input,
+    schema_for_type,
     validate,
 )
 from .skills import SkillDefinition, SkillRouter, SkillSelection
@@ -90,7 +91,7 @@ PlanApprover = Callable[[list[tuple[ToolDecl, dict[str, Any]]]], None]
 #: the plan, in words for the model; an empty list means nothing is.
 PlanReviewer = Callable[[list[tuple[ToolDecl, dict[str, Any]]]], list[str]]
 #: How many times a plan found wanting goes back to the model.
-PLAN_RETRIES = 1
+PLAN_RETRIES = 2
 
 
 def _canonical(value: Any) -> bytes:
@@ -175,6 +176,8 @@ def describe_tool(tool: ToolDecl) -> str:
             "write": "Write `text` to the file at `path`, replacing it." + asks,
             "create": "Create a new text file at `path` holding `text`. It "
             "never replaces an existing file." + asks,
+            "write_all": "Write every file in `files`, each to its `path` with "
+            "its `text`, replacing what is there." + asks,
         }.get(operation, f"File operation {operation}.")
     if source == "system:shell":
         return (
@@ -392,7 +395,7 @@ class AgentLoop:
             raise AgentLoopError("Structured agent output must be JSON text")
         try:
             value = strict_json(content)
-            validate(value, schema_for_record(program, model.output))
+            validate(value, schema_for_type(program, model.output))
         except (TypeError, ValueError, SchemaValidationError) as exc:
             raise AgentLoopError(f"Invalid structured agent output: {exc}") from exc
         if not isinstance(value, dict):
@@ -413,12 +416,19 @@ class AgentLoop:
         prepared_input = self._prepare_input(self.program, model, input_value)
         limits = self._limits_for(agent)
         selection = self._skills_for(task)
+        config = self._config_for(agent, model, limits)
+        # A virtual model decides what evidence the model is given, so a plan
+        # approved under one profile's sources and instructions is not an
+        # approval of another's.
+        virtual_identity = getattr(self.provider, "plan_identity", "")
+        if virtual_identity:
+            config = {**config, "virtual_model": virtual_identity}
         return plan_hash(
             agent.name,
             task,
             self._bindings_for(agent),
             selection.selected,
-            self._config_for(agent, model, limits),
+            config,
             input_value=prepared_input[0] if prepared_input is not None else None,
         )
 
@@ -617,7 +627,7 @@ class AgentLoop:
             else None
         )
         output_schema = (
-            schema_for_record(self.program, model.output)
+            schema_for_type(self.program, model.output)
             if model is not None and prepared_input is not None
             else None
         )
@@ -1137,6 +1147,7 @@ class AgentLoop:
     def _bindings_for(self, agent: AgentDecl) -> tuple[ToolBinding, ...]:
         tools = {tool.name: tool for tool in self.program.tools}
         records = {record.name for record in self.program.records}
+        choices = {choice.name for choice in self.program.choices}
         bindings: list[ToolBinding] = []
         for name in agent.can:
             declaration = tools.get(name)
@@ -1144,9 +1155,10 @@ class AgentLoop:
                 raise AgentLoopError(
                     f"Agent {agent.name!r} references unknown tool {name!r}"
                 )
-            if declaration.output not in records:
+            if declaration.output not in records and declaration.output not in choices:
                 raise AgentLoopError(
-                    f"Tool {name!r} returns unknown record {declaration.output!r}"
+                    f"Tool {name!r} returns unknown record or choice "
+                    f"{declaration.output!r}"
                 )
             bindings.append(
                 ToolBinding(
@@ -1157,7 +1169,7 @@ class AgentLoop:
                             schema_for_tool_input(self.program, declaration.input),
                         )
                     ),
-                    output_schema=schema_for_record(self.program, declaration.output),
+                    output_schema=schema_for_type(self.program, declaration.output),
                 )
             )
         return tuple(bindings)

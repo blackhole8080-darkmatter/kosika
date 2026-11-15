@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 
 from kosika.checker import CheckError, check
-from kosika.design import build_design_from_program
 from kosika.mindmap import build_mindmap
 from kosika.modules import load_program
 from kosika.parser import parse
@@ -62,7 +61,6 @@ class FunctionValueTests(unittest.TestCase):
         graph = build_mindmap(program)
         node_ids = {node["id"] for node in graph["nodes"]}
         self.assertTrue(all(edge["target"] in node_ids for edge in graph["edges"]))
-        build_design_from_program(program, design_id="closures", name="Closures")
 
     def test_closures_keep_independent_captures_including_callbacks(self) -> None:
         source = SOURCE.replace(

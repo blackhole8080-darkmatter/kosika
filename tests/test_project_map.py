@@ -28,10 +28,13 @@ class MapTests(unittest.TestCase):
         )
         self.assertEqual(view["changes"], [])
         self.assertEqual(view["outside"], [])
-        self.assertEqual([m["name"] for m in view["models"]], ["reader", "strong"])
+        self.assertEqual(
+            [m["name"] for m in view["models"]],
+            ["reader", "strong", "judge", "thinker"],
+        )
         self.assertEqual(view["thinking"], ["summarize"])
         self.assertEqual(view["given"][0]["fields"], [{"name": "text", "type": "Text"}])
-        self.assertEqual(view["budget"], [["model_calls", 3], ["seconds", 240]])
+        self.assertEqual(view["budget"], [["model_calls", 9], ["seconds", 900]])
 
     def test_starting_a_program_is_a_change_that_kosika_cannot_see_inside(self) -> None:
         view = map_of(EXAMPLES / "agents" / "workbench" / "main.kos")
@@ -95,6 +98,18 @@ class MapTests(unittest.TestCase):
                 "a stronger model (strong) is asked if needed",
                 "if it fails: uses a value written in the program",
             ],
+        )
+
+    def test_a_model_that_answers_with_a_choice_says_what_it_may_answer(self) -> None:
+        view = map_of(
+            Path(__file__).resolve().parent.parent
+            / "conformance"
+            / "cases"
+            / "choice_outputs.kos"
+        )
+        self.assertEqual(
+            [model["does"] for model in view["models"]],
+            ["answers with one of: accepted, refused"],
         )
 
     def test_purpose_is_never_guessed(self) -> None:

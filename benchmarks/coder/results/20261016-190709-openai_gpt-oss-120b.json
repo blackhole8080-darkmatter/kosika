@@ -1,0 +1,70 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "results": [
+    {
+      "id": "py-lru-cache",
+      "passed": true,
+      "state": "done",
+      "seconds": 19.2,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote lru.py, test_lru.py, one whole file at a time.\nWrote: lru.py, test_lru.py\nThe tests for lru pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "lru.py",
+        "test_calc.py",
+        "test_lru.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-6i4waez5\\py"
+    },
+    {
+      "id": "py-expression-parser",
+      "passed": true,
+      "state": "done",
+      "seconds": 22.9,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc_parser.py, test_calc_parser.py, one whole file at a time.\nWrote: calc_parser.py, test_calc_parser.py\nThe tests for calc_parser pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "calc_parser.py",
+        "test_calc.py",
+        "test_calc_parser.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-o1r7a5yl\\py"
+    },
+    {
+      "id": "kosika-agent",
+      "passed": true,
+      "state": "done",
+      "seconds": 19.1,
+      "approvals": 4,
+      "failures": [],
+      "error": "",
+      "said": "My first try failed its tests, so I read what they printed and put it right.\nWrote triage/main.kos, one whole file at a time.\nWrote: triage/main.kos\nThe tests for triage/main.kos pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "triage\\main.kos"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-z8k3as4b\\agents"
+    },
+    {
+      "id": "motion-portfolio",
+      "passed": true,
+      "state": "done",
+      "seconds": 51.1,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-vt4p47xg\\site"
+    }
+  ]
+}

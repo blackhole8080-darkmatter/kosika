@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from kosika import cli
-from kosika.explain import build_explanation, to_explanation_text
 from kosika.extensions import load_extension_manifest
 from kosika.mindmap import build_mindmap, to_mermaid, to_text
 from kosika.parser import parse
@@ -65,31 +64,7 @@ class ExtensionMindmapTests(unittest.TestCase):
         self.assertIn("rollback: disable", rendered)
         self.assertIn("extension: kosika.example.cognitive-design", to_mermaid(mindmap))
 
-    def test_focused_explanation_retains_extension_context(self) -> None:
-        explanation = build_explanation(
-            self.program,
-            workflows=("main",),
-            diagnostics=("Review extension permissions",),
-            extension_manifests=(self.extension,),
-        )
-        self.assertEqual(
-            explanation["selection"]["extensions"],
-            ["kosika.example.cognitive-design"],
-        )
-        self.assertEqual(
-            explanation["mindmap"]["extensions"][0]["id"],
-            "kosika.example.cognitive-design",
-        )
-        selected_kinds = {node["kind"] for node in explanation["mindmap"]["nodes"]}
-        self.assertIn("extension_contribution", selected_kinds)
-        text = to_explanation_text(explanation)
-        self.assertIn("Extension kosika.example.cognitive-design", text)
-        self.assertIn("Contributions: cognitive:memory_inspector", text)
-        self.assertIn("Permissions: memory:read, design:render", text)
-        self.assertIn("Rollback: disable", text)
-        self.assertIn("Review extension permissions", text)
-
-    def test_cli_mindmap_and_explain_accept_extension_manifest(self) -> None:
+    def test_cli_mindmap_accepts_extension_manifest(self) -> None:
         output = io.StringIO()
         with (
             patch.object(
@@ -111,33 +86,6 @@ class ExtensionMindmapTests(unittest.TestCase):
         mindmap = json.loads(output.getvalue())
         self.assertEqual(len(mindmap["extensions"]), 1)
         self.assertEqual(mindmap["summary"]["extension_count"], 1)
-
-        output = io.StringIO()
-        with (
-            patch.object(
-                sys,
-                "argv",
-                [
-                    "kosika",
-                    "explain",
-                    str(SOURCE),
-                    "--workflow",
-                    "main",
-                    "--extension-manifest",
-                    str(EXTENSION),
-                    "--format",
-                    "json",
-                ],
-            ),
-            contextlib.redirect_stdout(output),
-        ):
-            self.assertEqual(cli.main(), 0)
-        explanation = json.loads(output.getvalue())
-        self.assertEqual(
-            explanation["selection"]["extensions"],
-            ["kosika.example.cognitive-design"],
-        )
-        self.assertEqual(len(explanation["mindmap"]["extensions"]), 1)
 
 
 if __name__ == "__main__":

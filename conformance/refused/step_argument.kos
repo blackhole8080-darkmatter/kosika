@@ -1,0 +1,12 @@
+// Refused: a step's argument of the wrong type.
+
+record Ask { text: Text }
+record Said { text: Text }
+
+fn shout(text: Text) -> Said {
+  return {text: text.upper()}
+}
+
+workflow main(ask: Ask) -> Said {
+  said = shout(text: ask)
+}

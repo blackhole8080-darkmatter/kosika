@@ -1,0 +1,5 @@
+// Refused: a method text does not have; what it does have is listed.
+
+fn shout(word: Text) -> Text {
+  return word.uppercase()
+}

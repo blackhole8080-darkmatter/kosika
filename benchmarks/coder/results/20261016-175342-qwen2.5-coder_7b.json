@@ -1,0 +1,76 @@
+{
+  "model": "qwen2.5-coder:7b",
+  "url": null,
+  "results": [
+    {
+      "id": "py-lru-cache",
+      "passed": false,
+      "state": "done",
+      "seconds": 203.1,
+      "approvals": 4,
+      "failures": [
+        "python -m pytest: Could not find platform independent libraries <prefix>"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote test_lru.py, lru.py, one whole file at a time.\nWrote: test_lru.py, lru.py\nThe tests failed.\n.F\n================================== FAILURES ===================================\n__________________________ test_update_existing_key ___________________________\n\n    def test_update_existing_key():\n        cache = LRUCache(2)\n        cache.put(1, 1)\n        cache.put(2, 2)\n        cache.put(1, 3)  # evicts key 2\n        assert cache.get(1) == 3\n>       assert cache.get(2) == -1\nE       assert 2 == -1\nE        +  where 2 = get(2)\nE        +    where get = <lru.LRUCache object at 0x0000025BDE10A4E0>.get\n\ntest_lru.py:19: AssertionError\n=========================== short test summary info ===========================\nFAILED test_lru.",
+      "files": [
+        "calc.py",
+        "lru.py",
+        "test_calc.py",
+        "test_lru.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-88oshnb3\\py"
+    },
+    {
+      "id": "py-expression-parser",
+      "passed": false,
+      "state": "done",
+      "seconds": 379.9,
+      "approvals": 4,
+      "failures": [
+        "python -m pytest: Could not find platform independent libraries <prefix>",
+        "python -c import calc_parser as m, inspect\nsrc=inspect.getsource(m); assert 'eval(' not in src.replace('def evaluate(','') and 'exec(' not in src\ne=m.evaluate\nassert e('1 + 2 * 3')==7 and e('(1 + 2) * 3')==9 and e('-4 + 10 / 4')==-1.5 and e('2*(3+(4-1))*-1')==-12\nfor bad in ['1 +', '(2', '3 4', '']:\n    try:\n        e(bad)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(bad): AssertionError"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote test_calc_parser.py, calc_parser.py, one whole file at a time.\nWrote: test_calc_parser.py, calc_parser.py\nThe tests failed.\n                values.append(float(token))\n            elif token == '(':\n                operators.append(token)\n            elif token == ')':\n                while operators and operators[-1] != '(':\n                    apply_operator(operators, values)\n                operators.pop()  # Remove '('\n            else:\n                while (operators and operators[-1] != '(' and\n                       greater_precedence(operators[-1], token)):\n                    apply_operator(operators, values)\n                operators.append(token)\n    \n        while operators:\n            apply_operator(oper",
+      "files": [
+        "calc.py",
+        "calc_parser.py",
+        "test_calc.py",
+        "test_calc_parser.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-afer6cv3\\py"
+    },
+    {
+      "id": "kosika-agent",
+      "passed": false,
+      "state": "done",
+      "seconds": 276.4,
+      "approvals": 4,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('triage/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]\ns=open('triage/main.kos', encoding='utf-8').read()\nassert 'classify' in s and 'learn' in s and 'memory' in s: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-yzpz1l3s\\agents\\triage\\main.kos: Expected '}' at 9:19, got 'f'"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote triage/main.kos, one whole file at a time.\nWrote: triage/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-yzpz1l3s\\agents\\triage\\main.kos: Expected '}' at 9:19, got 'f'\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "triage\\main.kos"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-yzpz1l3s\\agents"
+    },
+    {
+      "id": "motion-portfolio",
+      "passed": false,
+      "state": "out of time",
+      "seconds": 1200.0,
+      "approvals": 0,
+      "failures": [
+        "python -c import pathlib; h=pathlib.Path('index.html').read_text(encoding='utf-8'); c=pathlib.Path('styles.css').read_text(encoding='utf-8'); j=pathlib.Path('script.js').read_text(encoding='utf-8')\nassert '</html>' in h and h.count('<section')>=4 and 'styles.css' in h and 'script.js' in h and '<form' in h\nassert c.count('{')==c.count('}') and '@media' in c and ('@keyframes' in c or 'transition' in c) and len(c)>4000\nassert 'IntersectionObserver' in j and 'mousemove' in j and ('submit' in j) and len(j)>1200: FileNotFoundError: [Errno 2] No such file or directory: 'index.html'",
+        "node --check script.js: Node.js v26.4.0"
+      ],
+      "error": "",
+      "said": "",
+      "files": [],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-zzunyi8p\\site"
+    }
+  ]
+}

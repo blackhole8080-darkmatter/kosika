@@ -53,8 +53,8 @@ A checked entry point is loaded with `load_program(path)`, not by parsing the
 entry file in isolation when imports are present.
 
 ```ebnf
-program     = { import | export | record | function | model | tool | agent |
-                workflow } ;
+program     = { import | export | record | choice | function | model | tool |
+                agent | workflow } ;
 import      = "import" string ;
 export      = "export" "[" [ identifier { [","] identifier } ] "]" ;
 ```
@@ -73,6 +73,28 @@ Imports have these semantics:
 - The graph is limited to 64 files, nesting depth 16, and 256 KiB per file.
 - Loading declarations never grants model providers, tool executors, MCP
   servers, files, sockets, or any other host authority.
+- An import path that begins `std/` names a module of the standard
+  library, which every engine carries and which any program may import:
+  `import "std/text.kos"`. It is not read from the program's folder. Its
+  modules are ordinary Kosika and follow every rule above; a name they
+  declare, exported or not, conflicts with the same name in the program,
+  so their private names begin `std_` or `Std`.
+
+The standard library:
+
+| Module | Exports |
+| --- | --- |
+| `std/text.kos` | `words_of(text)`, `chunks(text, size, over)`, `keywords(text, count)`, `likeness(a, b)`, `sentences(text)`, `shorten(text, most)`, `clean_answer(text)` |
+| `std/stats.kos` | `median(xs)`, `variance(xs)`, `deviation(xs)`, `percentile(xs, p)`, `normalized(xs)`, `zscores(xs)`, `correlation(xs, ys)` |
+| `std/search.kos` | `Hit {index, score, text}`, `rank(question, texts, count)`, `best(question, texts)`: texts ranked by the words they share with a question, rare words counting for more (BM25), with no model |
+| `std/paths.kos` | `Link {from, to, cost}`, `Route {found, places, cost}`, `shortest(start, goal, links, estimates)`, `hops(start, goal, links)`: the cheapest way through a network of links, by A* search, `hops` counting links instead of distance; `estimates` says what each place still costs to the goal and must never overestimate, and an empty table is Dijkstra's |
+| `std/db.kos` | `column(columns, name)`, `cell(row, columns, name)`, `as_number(text)`, `grid_rows(columns, rows)`: reading a database answer's grid of text by column name, since a grid cannot say which cell is a number and which is absent |
+| `std/evidence.kos` | `plain_quote(quote)`, `plain_word(word)`, `found_in(lines, quote)`, `hit_source(hit)`, `hit_text(hit)`, `search_words(text, skip_first)`, `says_in(answer, question, line)`: a quote is proved only by a line that holds it, and a question is reduced to the words worth searching for |
+| `std/nn.kos` | `Layer {weights, biases}`, `Net {layers}`, `net(sizes, seed)`, `predict(n, x)`, `train(n, xs, ys, rate, rounds)`, `loss(n, xs, ys)`: a small neural network, tanh hidden layers and a sigmoid output, learned by gradient descent on the processor |
+| `std/learn.kos` | `Classifier {w1, b1, w2, b2, classes}`, `classifier(inputs, hidden, classes, seed)`, `probabilities(m, x)`, `guess(m, x)`, `step(m, x, classes, rate)`, `train(m, x, classes, rate, rounds)`, `accuracy(m, x, classes)`, `texts_to_rows(texts, vocabulary)`: a classifier learned a whole batch at a time with the built-in batch maths, its backward pass written out in Kosika |
+| `std/layers.kos` | `Layer {kind, w, b}`, `Network {layers}`, `dense(inputs, outputs, seed)`, `tanh_layer()`, `relu_layer()`, `sigmoid_layer()`, `network(layers)`, `scores`, `probabilities`, `guess`, `loss`, `learn(n, x, classes, rate)`, `fit(n, x, classes, rate, rounds)`, `accuracy`: a network of any depth said by its layers; each kind of layer carries its own backward rule, so no learning step is written by hand |
+
+Each module's first lines say what each export does.
 
 `parse(source)` is supported for single-file programs without imports.
 `load_program(path)` resolves imports, lowers named nested functions, and
@@ -136,10 +158,114 @@ name or the element type of an unannotated array literal.
 Equality is structural JSON equality. Booleans are distinct from numbers;
 integer `1` and floating-point `1.0` are equal.
 
+### Enums
+
+```kosika
+enum Size { small, medium, large }
+
+record Cup { size: Size  price: Number }
+
+fn price(size: Size) -> Number {
+  return match size {
+    case "small" { 2 }
+    case "medium" { 3 }
+    case "large" { 4 }
+  }
+}
+```
+
+- `enum NAME { value, value, ... }` declares a type whose value is one of the
+  names listed, kept as text. It needs at least one value, each once, and a
+  name no record or primitive type has.
+- `Size.small` is a value of the enum; a name it does not list is refused.
+- A value of an enum may be joined to text with `+` and written into
+  `f"..."`. It is compared only with values of the same enum.
+- A `match` on an enum, expression or workflow step, is matched by the text
+  of its values; a pattern that is not a value is refused, and a match that
+  names every value needs no `case _`.
+- A value coming in from outside (a workflow's input, a tool's or a model's
+  answer) must be one of the values: its JSON schema is
+  `{"type": "string", "enum": [...]}`, so a model is told the values too.
+- Enums may be exported and imported like records.
+
+### Choices
+
+```kosika
+choice Filing {
+  filed(invoice: Invoice)
+  refused(reason: Text)
+  pending
+}
+
+fn describe(filing: Filing) -> Text {
+  return match filing {
+    case filed(invoice) { "filed " + invoice.id }
+    case refused(reason) { "refused: " + reason }
+    case pending { "waiting" }
+  }
+}
+```
+
+- `choice NAME { alternative(field: Type, ...) ... }` declares a type whose
+  value is exactly one of its alternatives, carrying that alternative's
+  fields. An alternative needs no parentheses when it carries nothing.
+- A name listed by a choice is written where a value is expected:
+  `filed(invoice)` or `pending`. Alternatives are used unqualified, so their
+  names MUST be unique across the program and MUST NOT be the name of a
+  record, function, enum, shape or type.
+- A `match` on a choice names alternatives, not literals: a case binds the
+  alternative's fields in order, `case filed(invoice) { ... }`. Every
+  alternative MUST be named; a wildcard cannot stand for the rest. Naming one
+  twice is refused. The bound names have the fields' declared types inside
+  that arm.
+- The JSON value of a choice is an object whose `$case` names the
+  alternative, with the alternative's fields beside it:
+  `{"$case": "filed", "invoice": {...}}`. Its schema is `anyOf` one closed
+  object per alternative, so an outside value (a workflow input, a tool
+  result, or a model's answer) MUST name an alternative the program declares.
+  An unknown alternative, a missing field, or an extra field is refused
+  before the value reaches the program.
+- Choices may be exported and imported like records; exporting a choice also
+  makes its alternatives visible to the importing file.
+- Both engines parse, check, execute, trace and replay choices. The
+  conformance suite's `conformance/cases/unions.kos` holds them to the same
+  results, and `conformance/refused/choice_not_exhaustive.kos` to the same
+  refusal.
+
+### Shapes
+
+```kosika
+shape Priced {
+  fn price(self) -> Number
+  fn label(self, currency: Text) -> Text
+}
+
+fn total(items: Priced[]) -> Number {
+  var sum = 0
+  for item in items { sum = sum + item.price() }
+  return sum
+}
+```
+
+- `shape NAME { fn name(self, parameters) -> Type ... }` declares a type that
+  every record is which has each of those functions (written inside the
+  record), taking the same parameters and giving the same type. No record
+  says which shapes it is; having the functions is enough.
+- A record may stand where its shape is expected: alone, in a list
+  (`Book[]` as `Priced[]`) or optional.
+- A value of a shape is used only through the shape's functions. Which
+  record it is, is told from its fields when the program runs, as for any
+  record's function.
+- A shape's JSON schema is `anyOf` the schemas of the records that are it,
+  so a value from outside is one of those records.
+- A shape needs at least one function, each once, and a name no record,
+  enum or primitive type has.
+
 ## Records and pure functions
 
 ```ebnf
-record   = "record" identifier "{" { identifier ":" type [","] } "}" ;
+record   = "record" identifier "{" { identifier ":" type [ "=" default ] [","] } "}" ;
+default  = number | "-" number | string | "true" | "false" | "null" | "[" "]" ;
 function = "fn" identifier "(" [ parameter { "," parameter } ] ")"
            "->" type [ "recurse" integer ]
            "{" { statement } { nested-function }
@@ -151,7 +277,16 @@ Supported functions:
 - Are pure language computation: they cannot call models, tools, agents, or
   workflows.
 - Use named arguments. Provided argument names and types MUST exactly match the
-  declaration.
+  declaration, except that a parameter declared with a default may be left
+  out: `fn greet(name: Text, loud: Bool = false) -> Text` is called as
+  `greet(name: "Ann")`, or, in order, `greet("Ann")`. A default MUST be
+  written out (a number, text, `true`, `false`, `null` or `[]`) and be a value
+  of the parameter's type; `null` only for an optional type. A record's
+  function and a nested function cannot have defaults yet.
+- A record may give its fields defaults too, `count: Number = 1`, and is
+  made by calling it like a function: `Item(name: "pen")` or `Item("pen")`
+  gives an `Item` with every field left out set to its default. A record
+  literal `{...}` still names every field.
 - Run their body in the order it is written: each `let`, `var`, loop,
   conditional, and assignment executes in turn, and a line may use only names
   declared above it.
@@ -199,9 +334,11 @@ The supported expression surface is:
 - `if condition { value } else { value }`. The condition MUST be `Bool` and
   both branches MUST have the same type.
 - `match value { case literal { value } ... case _ { value } }`. The subject
-  MUST be scalar, patterns MUST match its type, and branches MUST return one
-  type. A final wildcard is required unless all `Bool` values or the single
-  `Null` value are covered.
+  MUST be scalar or a declared choice, patterns MUST match its type, and
+  branches MUST return one type. A scalar match needs a final wildcard unless
+  all `Bool` values or the single `Null` value are covered. A choice is
+  matched by naming every alternative, binding its fields in order:
+  `case filed(invoice) { ... }`; a choice match cannot use a wildcard.
 - Lexical blocks with local bindings and an optional final value.
 - Bounded loops described below.
 
@@ -220,8 +357,14 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `length()` | `Number` of characters |
 | `Text` | `upper()`, `lower()`, `trim()` | `Text` |
 | `Text` | `contains(part: Text)`, `starts_with(prefix: Text)`, `ends_with(suffix: Text)` | `Bool` |
-| `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 512 parts fails the run |
+| `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 100,000 parts fails the run |
 | `Text[]` | `join(separator: Text)` | `Text` |
+| `Text` | `capitalize()`, `title()`, `reverse()` | `Text`: the first letter of the text, or of each word, upper case and the rest lower; the characters backwards |
+| `Text` | `count(part: Text)`, `repeat(times: Number)` | `Number` of times a non-empty part appears, not overlapping; `Text` repeated a whole number of times |
+| `Text` | `add_days(days: Number)`, `days_until(other: Text)`, `weekday()` | for a date written `YYYY-MM-DD`, as `now` gives one: the date that many whole days later, the whole days to another date, and its weekday's name; any other text fails the run |
+| `Number` | `clamp(low: Number, high: Number)` | the number, kept from `low` through `high`; `low` above `high` fails the run |
+| `Number` | `log()`, `exp()`, `to_fixed(digits: Number)` | the natural logarithm of a number above zero and `e` to a power, rounded to nine places; `Text` with 0 to 20 digits after the point |
+| `T[]` | `count(item: T)` | `Number` of items equal to `item` |
 | any array | `length()` | `Number` of elements |
 | any array | `set(key: Number, value: T)` | a new array with that position replaced |
 | `Number` | `to(end: Number)`, `until(end: Number)` | `Number[]` of whole numbers through, or up to, the end |
@@ -241,11 +384,46 @@ the receiver's type, and every method is pure and deterministic.
 | array of records | `group_by(field: "name")` | `T[]{}`, elements grouped under each value of a `Text` field |
 | `Number` | `sin()`, `cos()` | `Number`: the sine or cosine of an angle given in degrees, rounded to nine places so every computer gives the same result |
 | `Number` | `sqrt()` | `Number`, rounded to nine places; a negative number fails the run |
+| `Number` | `abs()` | `Number` without its sign |
+| `Number` | `power(exponent: Number)` | `Number`. A whole power of a whole number is exact; any other is rounded to nine places. The run fails for a whole exponent beyond 1000 either way, `0` to a negative power, a negative number to a power that is not whole, or a result too large to hold |
+| `Number` | `is_whole()` | `Bool`, true when there is nothing after the decimal point |
+| any array | `index_of(item: T)` | `Number?`: the position of the first element equal to `item`, counted from `0`, else `null` |
+| `Text` | `index_of(part: Text)` | `Number?`: where `part` first begins, counted from `0`, else `null`; `part` MUST be non-empty |
+| `Text` | `chars()` | `Text[]` of its characters, one each; over 100,000 fails the run |
+| `Text` | `lines()` | `Text[]` of its lines, without their line ends, however each ends; an empty text has none. A whole file may be read this way |
+| `Text` | `pad_left(width: Number, fill: Text)`, `pad_right(width: Number, fill: Text)` | `Text` made at least `width` long by adding `fill`, which MUST be one character, before or after; a text already that long is unchanged |
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
-| `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 512 parts fails the run |
+| `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
+| `Text` | `trim_start()`, `trim_end()` | `Text` without white space at its start, or at its end; the other end is untouched |
+| `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
+| `Number[]` | `dot(other)`, `norm()`, `mean()` | `Number` |
+| `Number` | `identity()`, `zeros(columns: Number)` | `Number[][]`: the identity matrix of that size, or a matrix of zeros with that many rows |
+| `Number[][]` | `rows()`, `columns()`, `trace()`, `determinant()` | `Number`; `trace` and `determinant` need a square matrix |
+| `Number[][]` | `transpose()`, `plus(other)`, `minus(other)`, `scaled(by: Number)`, `times(other)`, `power(exponent: Number)`, `inverse()` | `Number[][]` |
+| `Number[][]` | `apply(vector: Number[])`, `solve(right: Number[])` | `Number[]`: the matrix times a column vector, and the `x` with matrix times `x` equal to `right` |
+| `Number[][]` of 0s and 1s | `is_reflexive()`, `is_symmetric()`, `is_antisymmetric()`, `is_transitive()` | `Bool` |
+| `Number[][]` of 0s and 1s | `bool_times(other)`, `closure()` | `Number[][]`: the Boolean product, and the transitive closure |
+| `Number[][]` of pairs | `adjacency(nodes: Number)`, `directed_adjacency(nodes: Number)` | `Number[][]`: the adjacency matrix of the graph with those edges; nodes are numbered from 0 |
+| `Number[][]` | `degrees()`, `neighbours(node: Number)`, `shortest_path(start: Number, end: Number)` | `Number[]`; an empty path when there is none |
+| `Number[][]` | `components()` | `Number[][]`: the connected parts, each a sorted list of nodes |
+| `Number[][]` | `each_times(other)`, `plus_row(row: Number[])` | `Number[][]`: number by number with a matrix of the same shape; the row added to every row |
+| `Number[][]` | `tanh()`, `tanh_slope()`, `sigmoid()`, `relu()`, `relu_slope()`, `exp()`, `softmax()` | `Number[][]`: each number changed; `tanh_slope` is `1 - t²` of a tanh result, `relu_slope` 1 where above 0 else 0, `softmax` makes each row probabilities adding to 1; `exp` of a number above 700 fails the run |
+| `Number[][]` | `column_sums()`, `row_argmax()` | `Number[]`: each column added up; where each row's largest number is, from 0, the first on a tie |
+| `Number[][]` | `cross_entropy(classes: Number[])` | `Number`: the mean of `-log p[class]` over rows of probabilities, a class being a whole number from 0 |
+| `Number[]` | `one_hot(classes: Number)` | `Number[][]`: each class as a row of 0s with a 1 at the class |
+| `Number` | `noise(columns: Number, seed: Number)` | `Number[][]`: that many rows of numbers between -1 and 1 from the seed alone, the same on every engine |
+| `Text[]` | `top_words(count: Number)`, `bag_of_words(vocabulary: Text[])` | `Text[]`: the words found in the most texts, ties in alphabetical order; `Number[][]`: a row per text, 1 where it has the vocabulary's word |
+
+Matrix and vector methods MUST give exact integers when every number given is
+an integer and the operation stays within the integers (`inverse`, `solve`,
+`norm` and `mean` do not). Every other result MUST be rounded to nine decimal
+places. A row of a different length, shapes that do not fit, a matrix with no
+inverse, and a node outside the graph MUST fail the run with a message naming
+the shapes or the value. An implementation MAY use a numerical library for
+this arithmetic, and MUST give the same results without one.
 
 A `field:` argument MUST be a text literal naming a field of the element
 record. The checker resolves it, so a misspelled or wrongly typed field is a
@@ -376,7 +554,22 @@ A model declaration describes a typed call; it does not create a provider.
 The host MUST supply a binding for each model reachable from the selected
 workflow before execution. A direct `use_model` call sends the input record to
 that provider and accepts only a complete, strict JSON result matching the
-declared output record.
+declared output. The output MAY be a record or a declared `choice`; a choice
+answer MUST name exactly one alternative and carry exactly that alternative's
+fields, and the step's type is the choice. A model that answers with a choice
+cannot be asked `with evidence`, because the evidence field would sit beside
+an alternative rather than in a record.
+
+`output: NAME as text` declares a model that answers in plain text. NAME
+MUST be a record with exactly one field, of type Text, so a choice cannot be
+asked for as plain text. The model is asked
+for the text alone, not JSON; when the answer holds one fenced code block,
+the lines inside it are the text, and otherwise the whole answer, trimmed.
+That text is the field's value. A small model writes a whole file far
+better as itself than escaped inside a JSON string. The trace keeps the
+answer as the model gave it, marked `plain`, and replay reads it the same
+way. A test scripts such a model with its record, `answers writer:
+[{text: "..."}]`, and the model is taken to have said that field's text.
 
 ### General models and thinking steps
 
@@ -487,21 +680,33 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   that no `try` takes fails the workflow step, where the step's `otherwise`
   applies as for any failure.
 
-- A record value MAY be written where a step expects a call, in two
-  places: after `otherwise`, and as a branch of a step's `match`:
+- A step MAY be a plain value, worked out by code: `count = before + 1`,
+  `big = if count > 3 { true } else { false }`, `tally = {count: count}`.
+  A call followed by more of an expression on its line, as `shout =
+  base(m) + 1`, is a value too. Its type is, in this order: the type
+  written out, `typed: Tally = {count: n}`; the type of the value itself;
+  the parameter (of a function or a workflow) or tool input field it is
+  handed to whole by a later step, as `kept = keep(tally)` or `call
+  fuller(study, first)`, matched as the checker matches arguments; or, for the last step, the workflow's result
+  type. A record value MAY separate its fields with spaces instead of
+  commas, as a record's declaration does: `{text: t count: n}`. A value
+  whose type none of these tells is a check error (`check/value-step`)
+  that says to write the type out. A fault inside the value, as `n + "x"`
+  or an unknown name, is reported as that fault.
+- A value MAY also be written where a step expects a call, after
+  `otherwise` and as a branch of a step's `match`:
   `hits = execute hands.search(q) otherwise {matches: []}` and
   `case _ { {answer: "", quote: ""} }`. The value has the result type of
   the step's call (for a `match`, of its first branch that is a call) and
-  is checked against it. It MAY use the workflow's parameters and the
-  steps before its own; it MUST NOT use its own step or a later one. It
-  stands for a call of a generated function named
+  is checked against it.
+- Every such value MAY use the workflow's parameters and the steps before
+  its own; it MUST NOT use its own step or a later one. It stands for a
+  call of a generated function named `WORKFLOW$STEP$value`,
   `WORKFLOW$STEP$otherwise` or `WORKFLOW$STEP$caseN`, which takes the
   names the value uses as its parameters and returns the value, so traces
-  and replay treat it as any function step. A check error about such a
-  value names the step and where the value stands, not the generated
-  name. A
-  value with no call beside it to take a type from is a check error
-  (`check/value-step`).
+  and replay treat it as any function step. A check error about a value
+  beside a call names the step and where the value stands, not the
+  generated name.
 
 - A `record` MAY contain functions: `fn NAME(self, parameters) -> Type`. The
   first parameter MUST be written `self` and has the record's type. The
@@ -564,6 +769,30 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   that is not a model step MUST NOT have `escalate`. The model bound to
   NAME must be granted before the run starts.
 
+- A model step MAY be followed by `learn`, or `learn by EXPRESSION`, written
+  after any `escalate` and before any `otherwise`:
+  `reply = use_model voice(p.text) retry 1 learn by msg.text otherwise f(msg)`.
+  The step keeps every answer its model gave and the program accepted, with
+  the question it answered: the Text of `EXPRESSION` (which MUST be Text),
+  or else the text the model was given. Before asking the model, the step
+  answers from what it kept when:
+  - the same question was asked before, ignoring case and punctuation;
+  - nearly all the words of the question are those of one asked before;
+  - it is a `classify` or `decide` step with at least six kept answers, and
+    the ones whose questions are most like this one agree on one answer.
+    That answer's `confidence` is how much they agree.
+  Otherwise the model is asked, and its accepted answer is kept. A step that
+  learns MAY run with its model not granted: it answers what it has learned,
+  and anything else fails as an unreachable model fails, so its `otherwise`
+  runs. Lessons are kept only where the host keeps memory (`--memory FOLDER`,
+  or the agent's memory folder in Studio), one readable JSON file per step,
+  and they start again when the step's model declaration changes. Without a
+  memory folder the step is an ordinary model step. An answer given from a
+  lesson is recorded in the trace as the model's answer, with `learned`
+  saying how it was found, so the run replays the same. A step that is not
+  a model step, or whose answers carry `with evidence`, MUST NOT learn.
+  `kosika-native` does not run steps that learn yet.
+
 - A program MAY contain `eval "name" { ... }` blocks, written exactly like
   `test` blocks. An eval's models are not scripted: it MUST NOT give
   `answers` for a declared model, and MAY give them for read-only tools.
@@ -599,8 +828,12 @@ said = match kind.label {
 ```
 
 - The subject MUST be `Text`, `Number`, or `Bool`. Each `case` holds a text,
-  number, or `true`/`false` literal and exactly one call of any step kind.
-  The last case MUST be `case _`, and no value may appear twice.
+  number, or `true`/`false` literal and exactly one call of any step kind,
+  or a value (see above). The last case MUST be `case _`, and no value may
+  appear twice.
+- A step `match` whose cases are all values, with no call, is not a choice
+  of calls: it is a plain value step, an ordinary `match` expression, as
+  `size = match count { case 1 { "tiny" } case _ { "some" } }`.
 - Exactly one call is made. Every branch MUST return the same type, which is
   the step's type.
 - Every branch is authorized before the run starts, as if each were its own
@@ -662,10 +895,22 @@ workflow main(ticket: Ticket) -> Reply {
   under that key, and gives `MemorySaved {key: Text, entries: Number}`. The
   value MUST be the memory's record. A key has 1 to 200 characters and a
   memory holds at most 10,000 entries.
-- Both are workflow steps. A memory MUST be declared in the module that uses
-  it.
+- `recall NAME like text` gives `<Name>Like {matches: <Name>Match[], by:
+  Text}`, the entries nearest to the text, nearest first, at most 10, each
+  `<Name>Match {key: Text, value: Record, score: Number}`; of two as near,
+  the one kept first. An entry is read as its key and the text in its
+  record, field by field in name order. With an embedding model granted
+  (`--embed-model`), `score` is nearness of meaning, -1 to 1, rounded to
+  four places, and `by` is `"meaning"`; at most 400 entries not seen before
+  are sent to the model in one recall. Without one, as in a test, `score`
+  is the share of their words in common, 0 to 1, entries sharing none are
+  left out, and `by` is `"words"`. The two scales differ, so a program
+  that keeps a threshold reads `by`.
+- All three are workflow steps. A memory MUST be declared in the module
+  that uses it.
 - A memory is lowered to two read-only tools, `remember_NAME` and
-  `recall_NAME`, used through a generated agent named `memory`, so traces,
+  `recall_NAME`, and a third, `like_NAME`, only in a program that recalls
+  by likeness, used through a generated agent named `memory`, so traces,
   replay, limits, and the mind map treat it like any other tool. Replay uses
   what the trace recorded and never the store.
 - Declaring a memory grants nothing. Whoever runs the program names the
@@ -765,8 +1010,9 @@ agent reviewer {
 }
 ```
 
-Tools require `source`, `operation`, `access`, and an output record. Input is
-optional; an omitted input is an empty closed record. Supported access labels
+Tools require `source`, `operation`, `access`, and an output record or
+declared `choice`. Input is optional and is a record; an omitted input is an
+empty closed record. Supported access labels
 are `observe`, `analyze`, `prepare`, and `execute`. Only `execute` has special
 runtime approval semantics in `0.1.0`; the host remains responsible for making
 its bound operation match the declared effect class.
@@ -785,6 +1031,7 @@ Agent defaults and bounds:
 | `max_model_calls` | 64 | 1–1,000,000 |
 | `deadline_seconds` | none | greater than 0 and at most 86,400 |
 | `plan` | not set | `first` or `off` |
+| `check` | not set | the name of a function of the program |
 
 An agent plans first when it says `plan: first`, and does not when it says
 `plan: off`. When `plan` is not set, an agent plans first if it names a model,
@@ -799,6 +1046,13 @@ that list. The calls then run in order and stop at the first failure. An
 as that call's result. When the step is resumed after approval the model's
 earlier replies are replayed from the run's journal, not requested again.
 
+If the output record of an agent's model has a field `did` of type
+`Text[]`, the runtime MUST replace its value with the changes that ran in
+that step: one entry for each `execute` tool call whose result was not an
+error, in order, written as the tool name followed by the call's `path`
+argument when it has one. Replay MUST recompute the list from the recorded
+transcript and reject a trace whose `did` differs.
+
 A host MAY supply skills to a run. Before an `ask` step the runtime selects
 at most three: first the skills whose trigger words occur in the step's text
 arguments, then any the agent's model names when shown the list of skills. A
@@ -810,9 +1064,29 @@ can reach or what requires approval.
 
 Before a plan is offered for approval the runtime reviews each planned call
 that carries a text `path` and a text `text`. A plan with a problem is
-returned to the model once, as the result of each planned call, and nothing
-runs. If the next plan still has a problem, the approval request carries the
+returned to the model, as the result of each planned call, and nothing
+runs; this happens at most twice. If the plan after that still has a problem, the approval request carries the
 problems as `warnings`.
+
+The runtime's own review says that a file would be empty, is written twice,
+only repeats the request, or breaks a selected skill's check; and, for a
+path ending `.py`, that the text is not valid Python, uses a name it never
+defines or imports, or imports from another file of the plan or the folder
+a name that file does not define.
+
+An agent MAY add its own review with `check: NAME`. NAME MUST be a function
+of the program declared as `fn NAME(request: Text, files: R[]) -> Text[]`,
+where R is a record with exactly the fields `{path: Text, text: Text,
+before: Text, exists: Bool}` (`check/plan-check`). It is called only for an
+agent that plans first.
+The function is given the text the agent was asked with and one R for each
+planned call that carries a text `path` and a text `text`: `before` is the
+file as it is now, read with a `system "files"` tool of operation `read`
+that the agent can use and the host has bound, and `exists` is whether it
+could be read. Each non-empty text the function returns is a problem, added
+to the runtime's own. What was read for `before` is journaled, so a step
+resumed after approval gives the function the same files, not the files the
+plan has since written.
 
 Declarations are requests for authority, never authority themselves. The host
 MUST bind declared providers and tools explicitly. Bindings for undeclared
@@ -843,18 +1117,37 @@ tool run_tests {
 | `system "files"` | `search` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 | `system "files"` | `find` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 | `system "meaning"` | `near` | `{a: Text, b: Text}` | `{score: Number}` |
+| `system "agents"` | `ask` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
+| `system "files"` | `write_all` | `{files: R[], note: Text}` | `{count: Number}` |
+| `system "outside"` | `propose` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, said: Text, files: R[]}` |
+| `system "outside"` | `answer` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
+| `system "outside"` | `review` | `{agent: Text, text: Text, files: R[]}` | `{ok: Bool, agent: Text, said: Text}` |
+| `system "kosika"` | `check_files` | `{text: Text, files: R[]}` | `{problems: Text[]}` |
+| `system "services"` | `status` | none | `{services: Text[], paused: Text[], text: Text}` |
+| `system "services"` | `pause` | `{name: Text}` | `{name: Text, paused: Bool}` |
+| `system "services"` | `resume` | `{name: Text}` | `{name: Text, paused: Bool}` |
+| `system "linux"` | `status` | none | `{distro: Text, kernel: Text, uptime: Text, load: Text, memory: Text, disk: Text, upgrades: Text, top: Text[]}` |
+| `system "computer"` | `status` | none | `{name: Text, system: Text, cores: Number, memory: Text, disk: Text, uptime: Text}` |
+| `system "db"` | `query` | `{sql: Text, values: Text[]}` | `{columns: Text[], rows: Text[][], more: Bool}` |
+| `system "db"` | `rows` | `{sql: Text, values: Text[]}` | `{rows: R[], more: Bool}`, where every field of R is `Text`, `Number` or `Bool` |
+| `system "db"` | `run` | `{sql: Text, values: Text[]}` | `{changed: Number}` |
+| `system "web"` | `fetch` | `{url: Text}` | `{url: Text, title: Text, text: Text}` |
+| `system "web"` | `fetch_from` | `{url: Text, start: Number}` | `{url: Text, title: Text, text: Text, next: Number}` |
+| `system "log"` | `append` | `{path: Text, by: Text, entry: R}` | `{n: Number, hash: Text}` |
+| `system "log"` | `read` | `{path: Text}` | `{rows: R[], ok: Bool, problem: Text}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
   executes one therefore MUST state `require approval`.
 - Declaring a system tool grants nothing. The host binds files tools only when
-  it grants a folder, and shell tools only when it also allows shell. An
+  it grants a folder, shell tools only when it also allows shell, and db tools
+  only when it names a database file (`--database FILE`). An
   unbound system tool fails the run before its first step.
 - Every call needs its own approval for that exact tool and arguments, through
   the same session and ledger as any other `execute` tool.
 - A shell tool starts only the program named in `operation`, with `args`
   passed as a list and never interpreted by a shell, inside the granted
-  folder, for at most 60 seconds, with output cut at 64 KiB per stream.
+  folder, for at most 180 seconds, with output cut at 64 KiB per stream.
 - `search` gives the lines holding the query's words (a word is matched
   where a word begins, and a word of three letters or fewer must be the
   whole word) and `find` the lines
@@ -862,7 +1155,8 @@ tool run_tests {
   only read and MAY be declared `access: observe`. `find` gives at most
   12 lines, compares at most 4,000 lines of at least 12 characters, and
   is bound only when the host also grants an embedding model
-  (`--embed-model NAME`); otherwise it is unreachable like any ungranted
+  (`--embed-model NAME`, asked at `--embed-url`, else `--model-url`, else
+  the local Ollama); otherwise it is unreachable like any ungranted
   tool. The host keeps what the embedding model returns for each line
   outside the granted folder, so searching never writes to the folder. At
   most 400 lines not seen before are sent to the embedding model in one
@@ -872,11 +1166,212 @@ tool run_tests {
   `access: observe`. It needs no folder and is bound only when the host
   grants an embedding model. What score counts as near depends on the
   embedding model, so the program chooses its own threshold.
+- A `system "agents"` tool with operation `ask` hands `text` to another
+  agent in the same folder and gives back what it said. It MAY be
+  `access: observe`, because handing over grants nothing: the other agent
+  runs as if the person had opened it, with its own tools, the host's same
+  grants, and its own approvals, which the host shows as coming from that
+  agent. `agent` names the other agent by its folder; an empty `agent`
+  lets the host choose. `ok` is `false`, with the reason in `text`, when
+  there is no such agent, the agent named is the one asking, an approval
+  was refused, or the other agent did not finish. The other agent is not
+  given this tool, so a request is handed on once and no further. It is
+  bound only by a host that has a folder of agents (Studio and the Kosi
+  pill); elsewhere it is unreachable like any ungranted tool. The time
+  the other agent takes counts against the asking run's own deadline.
+- In the two rows above that have `R[]`, R is any record of the program
+  with exactly the fields `{path: Text, text: Text, before: Text, exists:
+  Bool}`: a file by its path, its whole new text, the file as it is now,
+  and whether it is there now.
+- A `system "files"` tool with operation `write_all` writes every file of
+  `files` to its `path` with its `text`, in order, and gives the number
+  written. Every path is checked before any file is written, so a list
+  with a path that is refused writes nothing. It MUST be `access:
+  execute`: one approval covers exactly that list.
+- A `system "outside"` tool with operation `propose` asks an outside
+  command-line agent installed on the machine to do `text` in a copy of
+  the granted folder, and gives back what it said and the files it changed
+  or added there. The granted folder is not touched, so the tool MAY be
+  `access: observe`; writing the files is a separate step. `agent` names
+  the outside agent; an empty `agent` takes the first one allowed and
+  installed. `ok` is `false`, with the reason in `said`, when none could
+  be asked. A file it deleted, a file that is not text, and a file over
+  1 MiB are not offered and are named in `said`. The host binds this tool
+  only for the outside agents its owner allowed, and only when the granted
+  folder is inside the one root the owner named for them; otherwise it is
+  unreachable like any ungranted tool. What an outside agent reads leaves
+  the machine. An outside agent that ends with an error gave no answer;
+  when no agent was named, the next one allowed is asked. `agent` may be
+  `not:NAME`, which means any allowed agent but that one. When the folder
+  holds `.kos` files, or `text` speaks of Kosika, the guide to writing
+  Kosika that ships with the language is added to what is asked.
+- A `system "outside"` tool with operation `answer` puts `text`, a
+  question, to an outside agent and gives back what it said as `text`.
+  The agent is started in an empty folder and shown no file, so a host
+  binds this tool whenever the owner has allowed an outside agent, with
+  no folder granted. The words of the question go to the company that
+  runs the agent. With `agent` empty, each allowed agent is tried in turn;
+  `ok` is false, with the reason in `text`, when none answered.
+- A `system "outside"` tool with operation `review` gives `files`, a
+  proposed change, to an outside agent to read: in a copy of the granted
+  folder each file is as it would be, and a folder `_before` holds each
+  changed file as it is now. `said` is what the agent found. Nothing it
+  edits is kept. It is bound and limited as `propose` is.
+- The `note` of `write_all` is for the person who is asked to approve: the
+  host shows it with the list of files. It changes nothing that is written.
+- A `system "kosika"` tool with operation `check_files` gives what the
+  engine itself finds wrong with files a program means to write, one text
+  each: for a path ending `.py`, text that is not valid Python, a name
+  used and never defined or imported, an import from another of the files
+  of a name it does not define; for a path ending `.kos`, a file that does
+  not check, or a test in it that fails. Kosika files are checked together,
+  so one may import another; a file that imports one not among `files` is
+  not judged. It reaches nothing, needs no grant, and MAY be `access:
+  observe`. The same reading is given to an agent's plan before approval.
+  `text` is what was asked for. A host that has skills for the program
+  selects those whose trigger words occur in `text` and also reports each
+  file that breaks one of their checks.
+- When a host has skills for a program, the skills whose trigger words
+  occur in the `text` of a `propose` call are added, as words, to what the
+  outside agent is asked.
+- A `system "db"` tool reaches the one database file the host names
+  (`--database FILE`, see `kosika/database.py`); without it the tool is not
+  bound. Every operation takes `sql`, one statement, and `values`, the values
+  bound to its `?` placeholders in order; nothing else is ever part of the
+  statement. `query` and `rows` open the file read-only and MAY be `access:
+  observe`; neither creates the file, and a statement that would change the
+  database is refused. `query` gives rows back as a grid of text (`columns`,
+  then `rows`, one text per cell). `rows` gives the same answer as the
+  program's own records: each column is mapped by name onto the field of that
+  name in the row record the output declares, and a row that does not fit is
+  refused, naming the row and the column — a cell the field cannot hold, or an
+  absent value, because a field is never absent (say what to put there in the
+  statement, with `coalesce`). Only `Text`, `Number` and `Bool` fields can be a
+  row, so a grid that reads as text and a record that reads as a number are
+  both available and a program states which it means. `run` opens the file
+  read-write, creates it when it is not there, commits what it did, and gives
+  `changed`, the rows changed (0 when the database does not count them, as for
+  a table it created); it MUST be `access: execute`, so every call waits for
+  the person's yes. In a grid each cell is text: a number is written as Kosika
+  writes numbers, an absent value (`NULL`) is the empty text, and a blob is
+  `<N bytes>`. `more` is true when the row limit cut the answer short, in
+  either answer. At most 8 KiB of SQL, 100 values, 500 rows, 100 columns and
+  4,000 characters per cell are taken, and one statement is stopped after 5
+  seconds.  What a call returns is in the trace, so a replay needs no database:
+  a run records the tables the granted file had when it began, and a replay
+  puts the recorded statement back to SQLite against them with `explain`, which
+  reads a statement without running it. A recorded statement that binds other
+  values than were sent, or that changes the database under an operation that
+  only looks, is refused; so is one that is more than one statement, and one
+  SQLite cannot read at all. A statement naming a table or column the run did
+  not record is left alone, since a run may have made one. A `run` records the
+  approval it was given as well, so a replay can recompute that approval's hash
+  and refuse a statement or values that are not the ones the person approved.
+  A `store` (below) is what says which tables and columns the program means,
+  and it is checked against the file before the first step.
+  `kosika-native` does not read a `db` tool yet: it refuses the declaration by
+  name rather than checking it. It refuses a `store` the same way.
+- A `system "services"` tool reaches the owner's services (see
+  `kosika/services.py`), in the one services file the host names
+  (`--services FILE`); without it the tool is not bound. `status` takes no
+  input and MAY be `access: observe`: `services` are the names of the
+  services the file declares, in the order written; `paused` the sorted
+  names in the paused list beside it (`FILE.paused.txt`); `text` the status
+  the runner last wrote (`FILE.status.txt`), or `""`. `pause` and `resume`
+  change only the paused list, which the runner reads before each run, so
+  they MUST be `access: execute` and each needs the owner's yes. Naming a
+  service the file does not declare fails the step.
+- A `system "log"` tool keeps a Kosika log: typed, add-only JSON Lines in
+  the granted folder, where R is any record of the program. Line 1 is a
+  header, `{"kosika":"log","type":R,"fields":[...],"shape":S}`, S being the
+  first 16 hex digits of the SHA-256 of `R{field:Type,...}` as declared.
+  Each later line is a list: the entry's number from 1, when it was added
+  (UTC, `YYYY-MM-DDTHH:MM:SSZ`), `by`, the SHA-256 of the line before, then
+  R's fields in order. Records inside are written with sorted keys, whole
+  numbers without a decimal point, text as itself (U+2028 and U+2029
+  escaped). `append` checks the entry against R and refuses a log of another
+  record or shape, or one whose chain is broken; it only adds, so it MAY be
+  `access: observe`. `read` gives the entries checked and in order, and in
+  `problem` the first line that was changed, removed or is not an R, with
+  only the entries before it. Both engines write the same bytes.
+  `python -m kosika.klog show FILE` prints a log as a table, or with
+  `--named` as one named record per line.
+- A `system "web"` tool reads one page from a site the host allows
+  (`--allow-site HOST`) and MAY be `access: observe`. `fetch` gives the
+  first 20,000 characters of the page's text. `fetch_from` gives the
+  20,000 from character `start`, a whole number from 0, and `next`, where
+  the part after it begins, or -1 when this part ends the page, so a
+  program reads a long page, such as a paper, part by part. A page sent
+  gzip-packed, although nothing asked for that, is unpacked first; the
+  2 MiB limit is of the unpacked page.
+- A `system "linux"` tool reads how the one Linux distribution the host
+  names (`--linux NAME`, under WSL) is doing, and a `system "computer"`
+  tool how this computer is doing (`--computer`). Both only look, by
+  commands fixed in the host that the program does not choose; both MAY
+  be `access: observe`. Without the grant they are not bound.
+  `kosika-native` does not reach them yet.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.
 - This is not an operating-system sandbox. An approved program runs with the
   authority of the person who approved it.
+
+### Stores: the tables a program means
+
+```ebnf
+store       = "store" identifier "at" string "{" { table } "}" ;
+table       = "table" identifier "{" [ column { [","] column } ] "}" ;
+column      = identifier ":" column-type ;
+column-type = "Text" | "Number" | "Bool" ;
+```
+
+A store writes down the tables and columns a program means to use in one
+database file, where a person and the checker can read them:
+
+```kosika
+store Ledger at "./notes.db" {
+  table notes {
+    id: Number
+    title: Text
+    done: Bool
+  }
+}
+```
+
+- The file is a quoted path beside the program: it MUST be relative, and two
+  stores MUST NOT name the same file. A store grants nothing and reaches
+  nothing; it does not create the file, and a program with no store still
+  reaches a granted database through its `db` tools.
+- A column is `Text`, `Number` or `Bool`, the same three a row record may
+  hold. Nothing is declared twice, a table declares at least one column, and a
+  column carries no default value: a store says what a column holds, not what
+  happens when nothing is given, which belongs where the column is created.
+- These words are checked with no file at all, by `kosika check`. Whether the
+  file agrees is a preflight, before the first step of a run: the file MUST be
+  the one the runner named with `--database`, and every declared table and
+  column MUST be there.
+  - A missing table or column is refused, naming the file, the table and the
+    column, and saying what the file does have.
+  - A column whose SQLite affinity is not what the declaration means is
+    refused the same way. `Text` is `TEXT`. `Bool` is `INTEGER`, since a
+    boolean is 0 or 1. `Number` may be `INTEGER`, `NUMERIC` or `REAL`, since
+    all three give back a number.
+  - A table or column the file has and the store does not mention is left
+    alone: a store says what a program means, not everything a file holds.
+- A run that declares a store and names no database is refused, rather than
+  run with its promise unchecked. So `kosika check` passes a program whose
+  tables are not there yet, and `kosika run` does not.
+- `kosika db init FILE --from PROGRAM` writes the tables the program declares,
+  printing what it will do first. A table that is not there is created, with
+  `Text` columns as `TEXT`, `Number` as `INTEGER` and `Bool` as `INTEGER`. A
+  table that is there is only read, so a missing column or one of another
+  affinity is a refusal and nothing is written. `kosika db inspect FILE` says
+  what is in a file — each table, its row count, each column's declared type
+  and affinity — and, given `--from PROGRAM`, whether the store agrees.
+- A store says nothing about keys, defaults, constraints or indexes, and
+  `kosika db init` writes none of them. A column that needs one is made by
+  hand, in a statement whose approval the trace holds. Migrations are not part
+  of the language, and nothing here changes a column that holds rows.
 
 ### Host component contracts
 
@@ -922,7 +1417,8 @@ step = "step" identifier "{"
        "let" identifier [ ":" type ] "=" call
        "return" identifier
        "}"
-     | identifier "=" call [ "otherwise" call ] ;          (* one-line step *)
+     | identifier [ ":" type ] "=" ( call [ "otherwise" call ]
+                                   | expression ) ;       (* one-line step *)
 
 call = identifier "(" named-arguments ")"                 (* function *)
      | "call" identifier "(" named-arguments ")"          (* workflow *)
@@ -1036,6 +1532,9 @@ Version 5 records:
 - Function call/return events, including function calls evaluated inside
   arguments and function bodies.
 - Model, agent, and tool input/output schemas and recorded outcomes.
+- The tables of the granted database, for a run that reaches one.
+- The approval each call that needed one was made under: who said yes, the
+  plan hash it was given for, and the action hash the approval ledger claimed.
 - Final result and cooperative execution counters.
 
 `replay(trace)` is **validated outcome replay**:
@@ -1046,12 +1545,22 @@ Version 5 records:
 - It validates recorded arguments and results against recorded schemas.
 - It validates model content against its recorded JSON result and validates
   agent transcripts.
+- It puts a recorded database statement back to SQLite, against the tables the
+  run recorded, and refuses a statement the tool could not have sent. That call
+  reads a statement, never runs one, and needs no database.
+- It recomputes the action hash of every call that records an approval, over
+  the step path, the tool and the arguments as recorded, and refuses a call
+  whose action hash is over other arguments: the statement and values an
+  approval covers cannot be edited after the yes without the replay saying so.
 - It returns the final recorded result only after those checks pass.
 
 Replay does not prove that a trace came from trusted source, that the program
 hash identifies approved code, or that events were not rewritten consistently.
-Traces are not signed or cryptographically chained in `0.1.0`. Authenticity
-and storage integrity are host responsibilities.
+A trace that records no approval for a call is judged on the call alone, as a
+trace made before that record is, and an approval hash recomputed from the same
+trace is tamper-evident rather than a signature. Traces are not signed or
+cryptographically chained in `0.1.0`. Authenticity and storage integrity are
+host responsibilities.
 
 ## Executable conformance examples
 
@@ -1063,6 +1572,7 @@ These examples are part of the supported contract:
 | `examples/typed_input_output.kos` | typed input, arithmetic, comparison; returns `{"score": 0.87, "accepted": true}` for `examples/typed_input.json` |
 | `examples/closures.kos` | nested closures, `ref`, higher-order calls; returns `{"value": 115}` |
 | `examples/recursion_match.kos` | bounded direct/mutual recursion and exhaustive match; returns factorial 120, parity `odd`, classification `zero` |
+| `examples/choices.kos` | a `choice` carried through a workflow, matched exhaustively, with its fields bound |
 | `examples/composed/main.kos` | explicit local modules plus a fixture-bound model; returns the first `reader` record in `responses.json` |
 
 Run the contract suite:
@@ -1112,8 +1622,8 @@ implemented by an explicit host policy rather than `.kos` syntax.
 Also unsupported:
 
 - Exceptions and `try`/`catch` (a step's `otherwise` is the only recovery
-  form), user-defined generics, unions other than `T?`, and implicit
-  numeric/text coercions other than `Text + Number`.
+  form), user-defined generics, unions other than a declared `choice` or
+  `T?`, and implicit numeric/text coercions other than `Text + Number`.
 - Import aliases, package registries, remote imports, and dynamic loading.
 - Language-level parallel workflow steps or executable multi-agent consensus.
 - A language guarantee that any live model endpoint is available.
@@ -1129,7 +1639,6 @@ explicitly promotes them into the supported contract.
 - **Kosika Core:** parser, checker, runtime, and trace validator.
 - **Kosika Bridge:** MCP and host capability adapters.
 - **Kosika Agent Loop:** bounded provider-neutral model/tool interaction.
-- **Kosika Design:** deterministic structural and observed-execution views.
 - **Kosipack:** planned package manager.
 
 The current implementation is Python-hosted. Cross-language local process

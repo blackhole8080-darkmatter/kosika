@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 /.cache/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 *.egg-info/
@@ -67,3 +68,7 @@ node_modules/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# What Studio keeps beside an example agent when you run it
+/examples/agents/*/memory/
+/examples/agents/*/runs/

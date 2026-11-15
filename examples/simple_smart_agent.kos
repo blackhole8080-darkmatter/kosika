@@ -1,0 +1,76 @@
+// Simple Smart Agent in Kosika
+// Demonstrating algorithmic capabilities
+
+record AgentInput {
+  query: Text
+}
+
+record AgentOutput {
+  answer: Text
+  confidence: Number
+}
+
+// Reasoning function
+fn classify_query(query: Text) -> Text {
+  if query.contains("plan") {
+    return "planning"
+  }
+  if query.contains("optimize") {
+    return "optimization"
+  }
+  return "general"
+}
+
+// Matrix operation workflow
+workflow compute_transpose(matrix: Number[][]) -> Number[][] {
+  step process {
+    let result = matrix.transpose()
+    return result
+  }
+}
+
+// Search simulation
+workflow simulate_search(start: Number, goal: Number) -> Number[] {
+  step find {
+    let path: Number[] = [start]
+    let current = start
+
+    while current < goal {
+      current = current + 1
+      path = path.append(current)
+    }
+
+    return path
+  }
+}
+
+// Main agent workflow
+workflow smart_agent(query: Text) -> AgentOutput {
+  step analyze {
+    let category = classify_query(query)
+    return category
+  }
+
+  step respond {
+    let category = analyze
+    let answer = ""
+
+    if category == "planning" {
+      let path = simulate_search(1, 5)
+      answer = "Planning path: " + path.join(" -> ")
+    } else if category == "optimization" {
+      let matrix: Number[][] = [[1, 2], [3, 4]]
+      let transposed = compute_transpose(matrix)
+      answer = "Optimization: matrix transposed"
+    } else {
+      answer = "General response for: " + query
+    }
+
+    let output: AgentOutput = {
+      answer: answer,
+      confidence: 0.85
+    }
+
+    return output
+  }
+}

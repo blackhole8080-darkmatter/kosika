@@ -204,42 +204,6 @@ class ProjectAnalysisTests(unittest.TestCase):
             self.assertEqual(report["schema"], "kosika.project-analysis/v1")
             self.assertIn("Project analysis written", output.getvalue())
 
-    def test_assistant_accepts_project_analysis_as_grounded_context(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.make_project(Path(directory) / "project")
-            kosika_source = Path(__file__).parents[1] / "examples" / "test_host.kos"
-            fixture = Path(directory) / "assistant.json"
-            fixture.write_text(
-                json.dumps(["Project-grounded answer."]), encoding="utf-8"
-            )
-            output = io.StringIO()
-            with (
-                patch.object(
-                    sys,
-                    "argv",
-                    [
-                        "kosika",
-                        "assistant",
-                        str(kosika_source),
-                        "--task",
-                        "What does this project do?",
-                        "--project",
-                        str(root),
-                        "--fixture",
-                        str(fixture),
-                        "--json",
-                    ],
-                ),
-                contextlib.redirect_stdout(output),
-            ):
-                self.assertEqual(cli.main(), 0)
-            response = json.loads(output.getvalue())
-        self.assertEqual(response["answer"], "Project-grounded answer.")
-        self.assertEqual(len(response["project_analyses"]), 1)
-        self.assertEqual(
-            response["project_analyses"][0]["schema"], "kosika.project-analysis/v1"
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

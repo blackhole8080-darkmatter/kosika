@@ -1,0 +1,6 @@
+// Refused: a list whose items are of different kinds has no one type.
+
+test "never runs" {
+  items = [1, "two", 3]
+  expect items.length() == 3
+}

@@ -1,0 +1,56 @@
+// The look of a Kosika agent's pointer, designed in Kosika: a vector arrow
+// with the agent's name on a tag, in a colour from Kosika's own palette
+// (Kosika Designs, std/designs_palette.kos). It is drawn as SVG, so it is
+// sharp at any size; pointer.py renders it at the screen's real resolution.
+//
+//   kosika run cursor.kos --input '{"p": {"name": "coder-1", "scale": 1.5, "colour": "pink", "state": "idle"}}'
+//
+// The colour is the one the agent's kit asks for (kit.kos): #rrggbb or one of
+// Kosika's named colours. With none, each agent gets a hue of the palette by
+// the letters of its name, so the same agent always has the same colour.
+// The state is "idle", "typing" or "press"; pointer.py draws all three.
+
+import "pointer_look.kos"
+import "mascots.kos"
+
+record Paint { name: Text scale: Number colour: Text state: Text }
+
+workflow main(p: Paint) -> Drawn {
+  drawn = pointer_drawn({name: tag_for(p.name), scale: p.scale}, colour_for(p.name, p.colour), p.state)
+}
+
+test "an agent keeps its colour, and the picture is as wide as its name" {
+  a = pointer_svg({name: "coder-1", scale: 1})
+  b = pointer_svg({name: "coder-1", scale: 2})
+  c = pointer_svg({name: "a-much-longer-agent-name", scale: 1})
+  expect a.colour == b.colour
+  expect b.width == a.width * 2 or b.width == a.width * 2 + 1 or b.width == a.width * 2 - 1
+  expect c.width > a.width
+  expect a.svg.starts_with("<svg") and a.svg.contains("coder-1")
+}
+
+test "names are written safely into the picture" {
+  d = pointer_svg({name: "<x&y>", scale: 1})
+  expect d.svg.contains("&lt;x&amp;y&gt;")
+  expect not d.svg.contains("<x&y>")
+}
+
+test "an agent's own colour is used, and a faint or broken one is not" {
+  expect colour_for("coder-1", "pink") == "#ff3ea5"
+  expect colour_for("coder-1", "#FF00AA") == "#ff00aa"
+  expect colour_for("coder-1", "#101010") == hue_for("coder-1")
+  expect colour_for("coder-1", "#zz00aa") == hue_for("coder-1")
+  expect colour_for("coder-1", "") == hue_for("coder-1")
+}
+
+test "typing is said on the tag, a press draws rings, and the tip stays put" {
+  w: Want = {name: "coder-1", scale: 1}
+  idle = pointer_drawn(w, "#ff3ea5", "idle")
+  typing = pointer_drawn(w, "#ff3ea5", "typing")
+  press = pointer_drawn(w, "#ff3ea5", "press")
+  expect typing.svg.contains("typing") and not idle.svg.contains("typing")
+  expect press.svg.contains("<circle") and not idle.svg.contains("<circle")
+  expect typing.width > idle.width
+  expect idle.tip == typing.tip and idle.tip == press.tip
+  expect idle.svg.contains("#ff3ea5")
+}

@@ -1,0 +1,5 @@
+PASS  a memory starts empty and keeps what is remembered
+PASS  each test has memories of its own
+PASS  a board carries messages in order, within one run
+PASS  a key must not be empty
+4 passed, 0 failed

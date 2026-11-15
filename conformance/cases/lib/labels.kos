@@ -1,0 +1,8 @@
+// Labels, for modules.kos. It imports shapes too: a file imported twice
+// is read once.
+
+import "shapes.kos"
+
+export [label]
+
+fn label(box: Box) -> Text { return f"{box.width} by {box.height}" }

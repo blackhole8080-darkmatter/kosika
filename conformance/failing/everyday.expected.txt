@@ -1,0 +1,17 @@
+FAIL  an empty part
+      line 12: count needs a part that is not empty
+FAIL  low above high
+      line 13: clamp needs low to be no more than high
+FAIL  log of zero
+      line 14: log needs a number above zero
+FAIL  too many digits
+      line 15: to_fixed needs a whole number of digits from 0 to 20
+FAIL  not a date
+      line 16: add_days needs a date written YYYY-MM-DD, got '15/10/2026'
+FAIL  no such day
+      line 17: weekday needs a date written YYYY-MM-DD, got '2026-02-30'
+FAIL  too large
+      line 18: exp gives a number too large
+FAIL  not whole
+      line 19: repeat needs a whole number that is not negative
+0 passed, 8 failed

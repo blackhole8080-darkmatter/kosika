@@ -1,0 +1,113 @@
+{
+  "manifestVersion": 1,
+  "server": {
+    "name": "kosika-phone",
+    "protocolVersion": "2025-11-25",
+    "source": "phone",
+    "version": "0.1.0",
+    "waitSeconds": 150
+  },
+  "tools": {
+    "phone_ask": {
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "sense": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "sense"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "simulated": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "status",
+          "note",
+          "result",
+          "simulated"
+        ],
+        "type": "object"
+      },
+      "schemaHash": "c5f437254b98345f889f9333722914a744c9bfbde9141dd7f474e606f66a90c0"
+    },
+    "phone_do": {
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "device": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "action",
+          "args"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "simulated": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "status",
+          "note",
+          "result",
+          "simulated"
+        ],
+        "type": "object"
+      },
+      "schemaHash": "2deb0fe99ecc5fb2006bc92262bc18c08a0364650897ec7efbd99c0cbac1dda4"
+    }
+  }
+}

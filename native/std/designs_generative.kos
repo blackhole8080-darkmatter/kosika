@@ -1,0 +1,293 @@
+// Kosika Designs: generative art that moves.
+//
+// A free model is the artist: from a prompt it picks the piece, the palette
+// and the mood. Kosika is the painter: it works out every point, line and
+// curve itself, here, and writes them as SVG with CSS that makes them move.
+// No image model is used, so the art is free, fast and checked.
+//
+//   bloom   seeds grown by the golden angle, as in a sunflower head
+//   flow    lines traced through a field of directions, like wind or water
+//   waves   layered waves drifting past each other
+//   tree    a tree that grows branch by branch, then sways
+//   orbits  bodies circling a centre, each at its own speed (Kepler: the
+//           time round grows as the distance to the power 1.5)
+//
+// Every name here starts with gen_ or Gen, because all Kosika modules share
+// one namespace.
+
+import "designs_palette.kos"
+
+export [GenRecipe, GenAsk, GenArt, GenFor, gen_pieces, gen_problems, gen_svg, gen_style, gen_page, gen_render, gen_make, gen_for, gen_backdrop]
+
+record GenRecipe { piece: Text palette: Text mood: Text seed: Number density: Number title: Text }
+record GenAsk { text: Text }
+record GenBrief { task: Text ask: Text }
+record GenArt { recipe: GenRecipe svg: Text page: Text problems: Text[] }
+
+model gen_artist {
+  input: GenBrief
+  output: GenRecipe
+  parameters: {
+    max_output_tokens: 2000
+  }
+}
+
+fn gen_pieces() -> Text[] { return ["bloom", "flow", "waves", "tree", "orbits"] }
+fn gen_moods() -> Text[] { return ["calm", "lively"] }
+
+fn gen_problems(r: GenRecipe) -> Text[] {
+  var out: Text[] = []
+  if not gen_pieces().contains(r.piece) { out = out.append(f"piece {r.piece} is not one of {gen_pieces().join(\", \")}") }
+  if not palette_names().contains(r.palette) { out = out.append(f"palette {r.palette} is not one of {palette_names().join(\", \")}") }
+  if not gen_moods().contains(r.mood) { out = out.append(f"mood {r.mood} is not calm or lively") }
+  if r.density < 0 or r.density > 1 { out = out.append("density must be from 0 to 1") }
+  if r.seed < 0 or r.seed > 100000 { out = out.append("seed must be from 0 to 100000") }
+  return out
+}
+
+// A number from 0 to 1 that looks random but is always the same for the
+// same seed and index, so a piece can be drawn again exactly.
+fn gen_noise(seed: Number, i: Number) -> Number {
+  let v = (i * 12.9898 + seed * 78.233).sin() * 43758.5453
+  return v - v.floor()
+}
+
+fn gen_n(x: Number) -> Text { return ((x * 10 + 0.5).floor() / 10).to_text() }
+
+// The piece's pace: calm pieces move more slowly.
+fn gen_pace(r: GenRecipe) -> Number { return if r.mood == "calm" { 1.6 } else { 0.75 } }
+
+// ---------------------------------------------------------------- bloom
+
+fn gen_bloom(r: GenRecipe) -> Text {
+  let count = (180 + r.density * 420).floor()
+  let spread = 200 / count.sqrt()
+  let pace = gen_pace(r)
+  var dots: Text[] = []
+  for k in 0 until count {
+    let angle = k * 137.50776
+    let rad = spread * k.sqrt()
+    let x = 400 + rad * angle.cos()
+    let y = 240 + rad * angle.sin()
+    let size = 1.6 + 4.2 * k / count
+    let hue = (k % 6).to_text()
+    dots = dots.append(f"<circle class=\"gen-d\" cx=\"{x.floor()}\" cy=\"{y.floor()}\" r=\"{(size * 10).floor() / 10}\" style=\"fill:var(--h{hue});animation-delay:{(k * 6 * pace).floor()}ms\"/>")
+  }
+  let turn = gen_n(160 * gen_pace(r))
+  return f"<g class=\"gen-turn\" style=\"animation-duration:{turn}s\">" + dots.join("") + "</g>"
+}
+
+// ---------------------------------------------------------------- flow
+
+fn gen_flow(r: GenRecipe) -> Text {
+  let lines = (40 + r.density * 80).floor()
+  let scale = 0.9 + gen_noise(r.seed, 1) * 1.4
+  var paths: Text[] = []
+  for k in 0 until lines {
+    var x = gen_noise(r.seed, k * 2 + 3) * 800
+    var y = gen_noise(r.seed, k * 2 + 4) * 480
+    var d = f"M{x.floor()} {y.floor()}"
+    for hop in 0 until 46 {
+      // The direction at a point comes from two slow waves crossing.
+      let a = ((x * scale * 0.35 + r.seed).sin() + (y * scale * 0.5 - r.seed * 0.3).cos()) * 70 + 15
+      x = x + 9 * a.cos()
+      y = y + 9 * a.sin()
+      d = d + f" L{x.floor()} {y.floor()}"
+    }
+    let hue = (k % 6).to_text()
+    let dur = gen_n((5 + gen_noise(r.seed, k + 99) * 6) * gen_pace(r))
+    let delay = gen_n(gen_noise(r.seed, k + 7) * 4)
+    paths = paths.append(f"<path class=\"gen-line\" pathLength=\"1\" d=\"{d}\" style=\"stroke:var(--h{hue});animation-duration:{dur}s;animation-delay:-{delay}s\"/>")
+  }
+  return paths.join("")
+}
+
+// ---------------------------------------------------------------- waves
+
+fn gen_waves(r: GenRecipe) -> Text {
+  let layers = (4 + r.density * 6).floor()
+  var bits: Text[] = []
+  for k in 0 until layers {
+    let base = 120 + k * 300 / layers
+    let amp = 14 + gen_noise(r.seed, k) * 30
+    let length = 160 + gen_noise(r.seed, k + 20) * 220
+    // Drawn two lengths wider than the picture, so sliding by one length
+    // loops without a seam.
+    var d = f"M-{gen_n(length)} 480 L-{gen_n(length)} {gen_n(base)}"
+    var x = 0 - length
+    while x <= 800 + length {
+      d = d + f" L{x.floor()} {(base + amp * (x * 360 / length).sin()).floor()}"
+      x = x + 8
+    }
+    d = d + f" L{gen_n(800 + length)} 480 Z"
+    let hue = (k % 6).to_text()
+    let dur = gen_n((9 + k * 2.5) * gen_pace(r))
+    let way = if k % 2 == 0 { "gen-slide" } else { "gen-slide back" }
+    bits = bits.append(f"<g class=\"{way}\" style=\"--len:{gen_n(length)}px;animation-duration:{dur}s\"><path class=\"gen-wave\" d=\"{d}\" style=\"fill:var(--h{hue})\"/></g>")
+  }
+  return bits.join("")
+}
+
+// ---------------------------------------------------------------- tree
+
+fn gen_tree(r: GenRecipe) -> Text {
+  let depth = (6 + r.density * 3).floor()
+  // Each branch is [x, y, angle, length, level], grown level by level
+  // from a queue, so no recursion is needed.
+  var queue: Number[][] = [[400, 470, -90, 92, 0]]
+  var branches: Text[] = []
+  var leaves: Text[] = []
+  let pace = gen_pace(r)
+  var i = 0
+  while i < queue.length() {
+    let b = queue[i]
+    let x2 = b[0] + b[3] * b[2].cos()
+    let y2 = b[1] + b[3] * b[2].sin()
+    let width = ((depth - b[4]) * 13 + 6).floor() / 10
+    let delay = (b[4] * 450 * pace).floor()
+    branches = branches.append(f"<path class=\"gen-branch\" pathLength=\"1\" d=\"M{b[0].floor()} {b[1].floor()} L{x2.floor()} {y2.floor()}\" style=\"stroke-width:{width};animation-delay:{delay}ms\"/>")
+    // The same noise as gen_noise, written out: a function call per branch
+    // would spend the engine's call budget.
+    let v = (i * 12.9898 + r.seed * 78.233).sin() * 43758.5453
+    let wobble = v - v.floor()
+    if b[4] + 1 < depth {
+      let bend = 18 + wobble * 16
+      let shrink = 0.68 + wobble * 0.12
+      queue = queue.append([x2, y2, b[2] - bend, b[3] * shrink, b[4] + 1])
+      queue = queue.append([x2, y2, b[2] + bend, b[3] * shrink, b[4] + 1])
+    } else {
+      let hue = (i % 6).to_text()
+      leaves = leaves.append(f"<circle class=\"gen-leaf\" cx=\"{x2.floor()}\" cy=\"{y2.floor()}\" r=\"{(30 + wobble * 30).floor() / 10}\" style=\"fill:var(--h{hue});animation-delay:{(depth * 450 * pace + wobble * 1000).floor()}ms\"/>")
+    }
+    i += 1
+  }
+  return f"<g class=\"gen-sway\" style=\"animation-duration:{gen_n(7 * pace)}s\">" + branches.join("") + leaves.join("") + "</g>"
+}
+
+// ---------------------------------------------------------------- orbits
+
+fn gen_orbits(r: GenRecipe) -> Text {
+  let bodies = (4 + r.density * 5).floor()
+  var bits: Text[] = ["<circle class=\"gen-sun\" cx=\"0\" cy=\"0\" r=\"20\"/>"]
+  for k in 0 until bodies {
+    let rad = 46 + k * 300 / bodies
+    // Kepler's third law: the time round grows as the distance to the 1.5.
+    let period = gen_n(4 * gen_pace(r) * (rad / 46) * (rad / 46).sqrt())
+    let start = gen_n(gen_noise(r.seed, k) * 360)
+    let hue = (k % 6).to_text()
+    let size = gen_n(4 + gen_noise(r.seed, k + 30) * 6)
+    bits = bits.append(f"<circle class=\"gen-ring\" cx=\"0\" cy=\"0\" r=\"{gen_n(rad)}\"/><g style=\"transform:rotate({start}deg)\"><g class=\"gen-spin\" style=\"animation-duration:{period}s\"><circle cx=\"{gen_n(rad)}\" cy=\"0\" r=\"{size}\" style=\"fill:var(--h{hue})\"/></g></g>")
+  }
+  return "<g transform=\"translate(400 240) scale(1 0.42)\">" + bits.join("") + "</g>"
+}
+
+// ---------------------------------------------------------------- the piece
+
+fn gen_svg(r: GenRecipe) -> Text {
+  let body = if r.piece == "bloom" { gen_bloom(r) } else if r.piece == "flow" { gen_flow(r) } else if r.piece == "waves" { gen_waves(r) } else if r.piece == "tree" { gen_tree(r) } else { gen_orbits(r) }
+  return f"<svg class=\"gen gen-{r.piece}\" viewBox=\"0 0 800 480\" preserveAspectRatio=\"xMidYMid slice\" role=\"img\" aria-label=\"{r.title}\">{body}</svg>"
+}
+
+fn gen_style() -> Text {
+  return ".gen{display:block;width:100%;height:auto;overflow:hidden}.gen-d{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .7s ease-out forwards}.gen-turn{transform-origin:400px 240px;animation:gen-turn 160s linear infinite}.gen-line{fill:none;stroke-width:1.4;stroke-linecap:round;stroke-dasharray:.4 .6;opacity:.85;animation:gen-run 8s linear infinite}.gen-slide{animation:gen-slide 12s linear infinite}.gen-slide.back{animation-direction:reverse}.gen-wave{opacity:.28}.gen-branch{fill:none;stroke:var(--soft);stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:gen-grow .6s ease-out forwards}.gen-leaf{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .6s ease-out forwards}.gen-sway{transform-origin:400px 470px;animation:gen-sway 7s ease-in-out infinite alternate}.gen-ring{fill:none;stroke:color-mix(in srgb,var(--line) 14%,transparent);stroke-width:2.2;stroke-dasharray:3 9}.gen-sun{fill:var(--gold);filter:drop-shadow(0 0 18px var(--gold))}.gen-spin{animation:gen-turn 10s linear infinite}@keyframes gen-pop{from{opacity:0;transform:scale(0)}to{opacity:.92;transform:scale(1)}}@keyframes gen-turn{to{transform:rotate(360deg)}}@keyframes gen-run{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes gen-slide{to{transform:translateX(var(--len))}}@keyframes gen-grow{to{stroke-dashoffset:0}}@keyframes gen-sway{from{transform:rotate(-1.6deg)}to{transform:rotate(1.6deg)}}@media (prefers-reduced-motion:reduce){.gen *{animation:none!important;opacity:1!important;stroke-dashoffset:0!important}}"
+}
+
+fn gen_page(r: GenRecipe, svg: Text) -> Text {
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{r.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{r.title}</title><style>{palettes_css()}body{{margin:0;font:15px system-ui,sans-serif;color:var(--ink);background:var(--bg)}}main{{max-width:980px;margin:0 auto;padding:28px 16px}}.lab{{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:var(--gold)}}h1{{margin:8px 0 4px;font-size:30px}}.how{{color:var(--soft);margin:0 0 16px}}.frame{{border-radius:18px;overflow:hidden;border:1px solid color-mix(in srgb,var(--line) 12%,transparent);background:var(--halo)}}{gen_style()}</style></head><body><main><div class=\"lab\">Kosika Designs &#183; generative</div><h1>{r.title}</h1><p class=\"how\">A {r.mood} {r.piece} in {r.palette}, seed {gen_n(r.seed)}. Every point and curve was worked out by Kosika; the artist only chose.</p><div class=\"frame\">{svg}</div></main></body></html>"
+}
+
+workflow gen_render(r: GenRecipe) -> GenArt {
+  svg = gen_svg(r)
+  out = {recipe: r, svg: svg, page: gen_page(r, svg), problems: gen_problems(r)}
+}
+
+// ---------------------------------------------------------------- behind a drawing
+//
+// Behind a Designs drawing Kosika chooses the piece itself, with no model:
+// one that echoes the kind of picture, in the drawing's own palette, calm
+// and sparse so it never competes with the cards. The seed comes from the
+// title, so the same drawing always gets the same backdrop.
+
+record GenFor { shape: Text palette: Text title: Text }
+
+fn gen_for(f: GenFor) -> GenRecipe {
+  let piece = if ["cycle", "orbit", "hub", "nested"].contains(f.shape) { "orbits" } else if ["tree", "mindmap", "containers"].contains(f.shape) { "tree" } else if ["flow", "sequence", "graph"].contains(f.shape) { "flow" } else if f.shape == "timeline" or f.shape == "layers" { "waves" } else { "bloom" }
+  let palette = if palette_names().contains(f.palette) { f.palette } else { "dark_matter" }
+  var seed = 7
+  for c in f.title.lower().chars() { seed = (seed * 31 + "abcdefghijklmnopqrstuvwxyz".index_of(c).or(13)) % 99991 }
+  return {piece: piece, palette: palette, mood: "calm", seed: seed, density: 0.45, title: f.title}
+}
+
+workflow gen_backdrop(f: GenFor) -> GenArt {
+  r   = gen_for(f)
+  svg = gen_svg(r)
+  out = {recipe: r, svg: svg, page: "", problems: gen_problems(r)}
+}
+
+// ---------------------------------------------------------------- the artist
+
+fn gen_task() -> Text {
+  return "You are an artist choosing a moving, abstract piece of generative art that suits what someone asked for. Give piece (one of bloom: seeds spiralling out by the golden angle, like a sunflower or a galaxy of points; flow: lines streaming through a field, like wind, water, thought or energy; waves: layered waves drifting, like sea, sound or calm; tree: a tree growing branch by branch, like growth, family, knowledge or nature; orbits: bodies circling a centre, like space, atoms, time or a system), palette (one of dark_matter, aurora, ocean, ember, forest, paper, print, clear, chosen for the mood: ocean for water, ember for fire and energy, forest for nature, aurora for night skies and dreams, dark_matter for space and thought), mood (calm or lively), seed (any whole number from 1 to 99999, to vary the piece), density (from 0 to 1: how full the piece is) and title (a short, evocative title of 2 to 5 words)."
+}
+
+fn gen_fallback() -> GenRecipe { return {piece: "bloom", palette: "dark_matter", mood: "calm", seed: 137, density: 0.6, title: "Golden Bloom"} }
+
+// What the artist chose, with anything out of range brought back in, so
+// a slip never stops the piece from being drawn.
+fn gen_fixed(r: GenRecipe) -> GenRecipe {
+  let piece = if gen_pieces().contains(r.piece) { r.piece } else { "bloom" }
+  let palette = if palette_names().contains(r.palette) { r.palette } else { "dark_matter" }
+  let mood = if gen_moods().contains(r.mood) { r.mood } else { "calm" }
+  let title = if r.title.trim().is_empty() { "Untitled" } else { r.title.trim().slice(0, r.title.trim().length().min(48)) }
+  return {piece: piece, palette: palette, mood: mood, seed: r.seed.max(0).min(100000).floor(), density: r.density.max(0).min(1), title: title}
+}
+
+workflow gen_make(ask: GenAsk) -> GenArt {
+  budget 2 model calls, 200 seconds
+  chosen = use_model gen_artist(gen_task(), ask.text) retry 1 otherwise gen_fallback()
+  r      = gen_fixed(chosen)
+  svg    = gen_svg(r)
+  out    = {recipe: r, svg: svg, page: gen_page(r, svg), problems: gen_problems(r)}
+}
+
+test "a bloom and orbits are drawn" {
+  base = gen_fallback()
+  expect gen_problems(base).is_empty()
+  expect gen_svg(base).contains("gen-d")
+  expect gen_svg({..base, piece: "orbits"}).contains("gen-spin")
+}
+
+test "flow and waves are drawn" {
+  base = gen_fallback()
+  expect gen_svg({..base, piece: "flow", density: 0.2}).contains("gen-line")
+  expect gen_svg({..base, piece: "waves"}).contains("gen-wave")
+}
+
+test "a tree is drawn" {
+  expect gen_svg({..gen_fallback(), piece: "tree", density: 0}).contains("gen-branch")
+}
+
+test "the same seed draws the same piece, and another seed another" {
+  base = {..gen_fallback(), piece: "flow", density: 0}
+  expect gen_flow(base) == gen_flow(base)
+  expect gen_flow(base) != gen_flow({..base, seed: 138})
+}
+
+test "a slip by the artist is brought back in range" {
+  wild: GenRecipe = {piece: "fractal", palette: "neon", mood: "angry", seed: -4, density: 3, title: ""}
+  expect gen_problems(wild).length() == 5
+  expect gen_problems(gen_fixed(wild)).is_empty()
+  expect gen_fixed(wild).title == "Untitled"
+}
+
+test "a drawing's backdrop echoes its kind and keeps its palette" {
+  expect gen_for({shape: "cycle", palette: "ocean", title: "The water cycle"}).piece == "orbits"
+  expect gen_for({shape: "mindmap", palette: "neon", title: "t"}).palette == "dark_matter"
+  expect gen_for({shape: "flow", palette: "ember", title: "Jet engine"}).seed == gen_for({shape: "flow", palette: "ember", title: "Jet engine"}).seed
+  expect gen_problems(gen_for({shape: "compare", palette: "aurora", title: "x"})).is_empty()
+}
+
+test "the golden angle places the seeds of a bloom" {
+  expect gen_bloom(gen_fallback()).contains("cx=\"400\" cy=\"240\"")
+  expect gen_noise(1, 2) >= 0 and gen_noise(1, 2) < 1
+}

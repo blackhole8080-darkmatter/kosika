@@ -1,0 +1,5 @@
+PASS  text
+PASS  numbers
+PASS  lists
+PASS  dates
+4 passed, 0 failed

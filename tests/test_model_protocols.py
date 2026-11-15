@@ -10,17 +10,17 @@ that changes either shape fails here rather than as an empty patch.
 
 from __future__ import annotations
 
-import contextlib
+import http.client
 import io
 import json
-import sys
-import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest import mock
 
-from kosika import cli
+from kosika import model as model_module
 from kosika.model import (
     MODEL_PROTOCOLS,
     ChatMessage,
@@ -28,7 +28,7 @@ from kosika.model import (
     ModelRequest,
     ModelTool,
     OpenAICompatibleProvider,
-    ScriptedModelProvider,
+    ollama_context,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -147,6 +147,48 @@ class OllamaRequestTests(unittest.TestCase):
         self.assertNotIn("max_tokens", capture.body)
         self.assertNotIn("temperature", capture.body)
 
+    def test_the_context_window_holds_the_request_and_its_answer(self) -> None:
+        # Ollama's own default is 4096 tokens, and it drops the start of a
+        # conversation that does not fit.
+        capture = Capture(ollama_reply())
+        self.complete(capture)
+        self.assertEqual(capture.body["options"]["num_ctx"], 8192)
+        long = ModelRequest(
+            messages=(ChatMessage(role="user", content="x" * 30_000),),
+            max_output_tokens=4000,
+        )
+        self.assertEqual(ollama_context(long), 16384)
+        huge = ModelRequest(messages=(ChatMessage(role="user", content="x" * 400_000),))
+        self.assertEqual(ollama_context(huge), 32768)
+
+    def test_a_window_too_large_for_the_computer_is_halved(self) -> None:
+        sent: list[int] = []
+
+        def transport(request: Any, timeout: float) -> bytes:
+            size = json.loads(request.data.decode("utf-8"))["options"]["num_ctx"]
+            sent.append(size)
+            if size > 16384:
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    500,
+                    "error",
+                    None,  # type: ignore[arg-type]
+                    io.BytesIO(
+                        b'{"error":"llama-server reported out-of-memory during '
+                        b'startup: failed to allocate buffer for kv cache"}'
+                    ),
+                )
+            return ollama_reply()
+
+        provider = OpenAICompatibleProvider(
+            OLLAMA_HOST, "m", protocol="ollama", transport=transport
+        )
+        huge = ModelRequest(messages=(ChatMessage(role="user", content="x" * 60_000),))
+        self.assertEqual(provider.complete(huge).content, "OK")
+        self.assertEqual(provider.complete(huge).content, "OK")
+        # Halved once, and remembered: the second request asks for less at once.
+        self.assertEqual(sent, [32768, 16384, 16384])
+
     def test_think_false_reaches_the_wire(self) -> None:
         capture = Capture(ollama_reply())
         self.complete(capture, think=False)
@@ -157,13 +199,13 @@ class OllamaRequestTests(unittest.TestCase):
         self.complete(capture)
         self.assertNotIn("think", capture.body)
 
-    def test_options_are_omitted_when_nothing_is_requested(self) -> None:
+    def test_only_the_context_window_is_sent_when_nothing_is_requested(self) -> None:
         capture = Capture(ollama_reply())
         provider = OpenAICompatibleProvider(
             OLLAMA_HOST, "qwen3:1.7b", protocol="ollama", transport=capture
         )
         provider.complete(ModelRequest(messages=()))
-        self.assertNotIn("options", capture.body)
+        self.assertEqual(capture.body["options"], {"num_ctx": 8192})
 
     def test_tools_are_offered_to_the_model(self) -> None:
         capture = Capture(ollama_reply())
@@ -280,6 +322,103 @@ class OllamaResponseTests(unittest.TestCase):
                     self.parse(payload)
 
 
+class RestartingServerTests(unittest.TestCase):
+    """A model server that is restarting is waited for, not given up on."""
+
+    def setUp(self) -> None:
+        answered = set(model_module._ANSWERED)
+        self.addCleanup(
+            lambda: (
+                model_module._ANSWERED.clear()
+                or model_module._ANSWERED.update(answered)
+            )
+        )
+
+    def tries(
+        self, url: str, failures: list[BaseException], *, answered_before: bool = True
+    ) -> tuple[list[float], Any]:
+        if answered_before:
+            model_module._ANSWERED.add(model_module._server_of(url))
+        slept: list[float] = []
+        calls = iter(failures)
+
+        def opener(request: Any, timeout: float) -> Any:
+            failure = next(calls, None)
+            if failure is not None:
+                raise failure
+            return io.BytesIO(b"ok")
+
+        provider = OpenAICompatibleProvider(url, "m", protocol="ollama")
+        request = urllib.request.Request(url, data=b"{}", method="POST")
+        with (
+            mock.patch("urllib.request.urlopen", opener),
+            mock.patch("time.sleep", slept.append),
+        ):
+            try:
+                return slept, provider._send(request)
+            except BaseException as exc:  # noqa: BLE001
+                return slept, exc
+
+    def test_a_refused_connection_is_tried_again(self) -> None:
+        refused = urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        slept, got = self.tries(
+            "https://models.example.com/api/chat", [refused, refused]
+        )
+        self.assertEqual(got, b"ok")
+        self.assertEqual(slept, [5, 10])
+
+    def test_a_dropped_answer_is_tried_again_only_on_this_computer(self) -> None:
+        dropped = http.client.RemoteDisconnected("closed")
+        slept, got = self.tries("http://localhost:11434/api/chat", [dropped])
+        self.assertEqual((slept, got), ([5], b"ok"))
+        slept, got = self.tries("https://models.example.com/api/chat", [dropped])
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, http.client.RemoteDisconnected)
+
+    def test_it_gives_up_after_about_five_minutes(self) -> None:
+        refused = urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        slept, got = self.tries("http://localhost:11434/api/chat", [refused] * 20)
+        self.assertIsInstance(got, urllib.error.URLError)
+        self.assertEqual(sum(slept), 315)
+
+    def test_a_busy_service_is_asked_again_later(self) -> None:
+        def busy(code: int) -> urllib.error.HTTPError:
+            return urllib.error.HTTPError(
+                "https://models.example.com/v1/chat",
+                code,
+                "busy",
+                None,
+                io.BytesIO(b""),  # type: ignore[arg-type]
+            )
+
+        slept, got = self.tries(
+            "https://models.example.com/v1/chat",
+            [busy(503), busy(429)],
+            answered_before=False,
+        )
+        self.assertEqual((slept, got), ([5, 15], b"ok"))
+        slept, got = self.tries(
+            "https://models.example.com/v1/chat", [busy(400)], answered_before=False
+        )
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, urllib.error.HTTPError)
+
+    def test_a_server_never_reached_is_reported_at_once(self) -> None:
+        refused = urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        slept, got = self.tries(
+            "http://localhost:9/api/chat", [refused], answered_before=False
+        )
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, urllib.error.URLError)
+
+    def test_other_failures_are_not_waited_on(self) -> None:
+        slept, got = self.tries(
+            "http://localhost:11434/api/chat", [urllib.error.URLError("offline")]
+        )
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, urllib.error.URLError)
+
+
 class OpenAiRegressionTests(unittest.TestCase):
     """The default protocol must behave exactly as it did before."""
 
@@ -334,138 +473,6 @@ class OpenAiRegressionTests(unittest.TestCase):
         response = provider.complete(ModelRequest(messages=()))
         self.assertEqual(response.tool_calls[0].name, "read")
         self.assertEqual(response.tool_calls[0].arguments, {"path": "/"})
-
-
-class CommandLineWiringTests(unittest.TestCase):
-    """The flags must reach the provider, not just exist on the parser."""
-
-    def run_cli(self, argv: list[str]) -> tuple[int, str]:
-        output = io.StringIO()
-        with (
-            patch.object(sys, "argv", ["kosika", *argv]),
-            contextlib.redirect_stdout(output),
-            contextlib.redirect_stderr(output),
-        ):
-            try:
-                code = cli.main()
-            except SystemExit as request:
-                code = int(request.code or 0)
-        return code, output.getvalue()
-
-    def patched(self, stack: contextlib.ExitStack) -> Any:
-        return stack.enter_context(
-            patch(
-                "kosika.model.OpenAICompatibleProvider",
-                return_value=ScriptedModelProvider([]),
-            )
-        )
-
-    def test_author_eval_passes_the_protocol_through(self) -> None:
-        with contextlib.ExitStack() as stack:
-            provider = self.patched(stack)
-            stack.enter_context(patch("kosika.cli.OpenAICompatibleProvider", provider))
-            code, output = self.run_cli(
-                [
-                    "author-eval",
-                    "--solver",
-                    "model",
-                    "--base-url",
-                    OLLAMA_HOST,
-                    "--model",
-                    "qwen3:1.7b",
-                    "--protocol",
-                    "ollama",
-                    "--limit",
-                    "1",
-                    "--format",
-                    "json",
-                ]
-            )
-        self.assertTrue(provider.called, output)
-        self.assertEqual(provider.call_args.kwargs["protocol"], "ollama")
-
-    def test_author_eval_defaults_to_the_openai_protocol(self) -> None:
-        with contextlib.ExitStack() as stack:
-            provider = self.patched(stack)
-            stack.enter_context(patch("kosika.cli.OpenAICompatibleProvider", provider))
-            code, output = self.run_cli(
-                [
-                    "author-eval",
-                    "--solver",
-                    "model",
-                    "--base-url",
-                    OPENAI_HOST,
-                    "--model",
-                    "local",
-                    "--limit",
-                    "1",
-                    "--format",
-                    "json",
-                ]
-            )
-        self.assertTrue(provider.called, output)
-        self.assertEqual(provider.call_args.kwargs["protocol"], "openai")
-
-    def test_author_passes_the_proposal_protocol_and_think_through(self) -> None:
-        with patch("kosika.cli.OpenAICompatibleProvider") as provider:
-            provider.return_value = ScriptedModelProvider([])
-            with tempfile.TemporaryDirectory() as directory:
-                code, output = self.run_cli(
-                    [
-                        "author",
-                        str(broken_program(directory)),
-                        "--intent",
-                        "Fix the broken record.",
-                        "--proposal-base-url",
-                        OLLAMA_HOST,
-                        "--proposal-model",
-                        "qwen3:1.7b",
-                        "--proposal-protocol",
-                        "ollama",
-                        "--proposal-think",
-                        "off",
-                    ]
-                )
-        self.assertTrue(provider.called, output)
-        self.assertEqual(provider.call_args.kwargs["protocol"], "ollama")
-        self.assertIs(provider.call_args.kwargs["think"], False)
-
-    def test_author_proposal_think_defaults_to_off(self) -> None:
-        with patch("kosika.cli.OpenAICompatibleProvider") as provider:
-            provider.return_value = ScriptedModelProvider([])
-            with tempfile.TemporaryDirectory() as directory:
-                code, output = self.run_cli(
-                    [
-                        "author",
-                        str(broken_program(directory)),
-                        "--intent",
-                        "Fix the broken record.",
-                        "--proposal-base-url",
-                        OLLAMA_HOST,
-                        "--proposal-model",
-                        "qwen3:1.7b",
-                    ]
-                )
-        self.assertTrue(provider.called, output)
-        self.assertIs(provider.call_args.kwargs["think"], False)
-
-    def test_a_clean_project_never_constructs_a_proposal_provider(self) -> None:
-        """A project that already checks needs no model, so none is built."""
-
-        with patch("kosika.cli.OpenAICompatibleProvider") as provider:
-            provider.return_value = ScriptedModelProvider([])
-            code, output = self.run_cli(
-                [
-                    str(EXAMPLES / "hello_world.kos"),
-                    "--intent",
-                    "Keep the greeting working.",
-                    "--proposal-base-url",
-                    OLLAMA_HOST,
-                    "--proposal-model",
-                    "qwen3:1.7b",
-                ]
-            )
-        self.assertFalse(provider.called, output)
 
 
 if __name__ == "__main__":

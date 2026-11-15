@@ -1,0 +1,1 @@
+Check failed: Step 'said' in workflow 'main': the value after `otherwise` record field 'text' expects 'Text', got 'Number'

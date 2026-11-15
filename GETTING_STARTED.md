@@ -41,7 +41,7 @@ kosika start
 
 That one command:
 
-- makes a folder called `KosikaAgents` in your home folder, with three
+- makes a folder called `KosikaAgents` in your home folder, with four
   starter agents in it, if you do not have one yet;
 - looks for a model already on your computer and uses it;
 - opens Kosika Studio.
@@ -104,17 +104,75 @@ Press **Save**, then run the tests again. One fails: it expected "Hello".
 That is the test doing its job. Change the word in the test too, or change
 your greeting back.
 
+## Kosika Studio as an app on your desktop
+
+Run this once:
+
+```
+kosika desktop
+```
+
+It puts **Kosika Studio** on your Desktop and in the Start menu, with its
+own icon. Open it like any other app: it opens in a window of its own, with
+no black console window, and it stops when you close that window. To take
+the shortcuts away again, run `kosika desktop --remove`.
+
+The app starts with nothing granted, exactly like `kosika start`. Name a
+folder after the command to choose where your agents live:
+`kosika desktop MY_AGENTS`.
+
+### Kosi, always on the screen
+
+```
+kosika desktop --kosi
+```
+
+This makes a second shortcut, "Kosi". Open it and a small grey pill stands
+against the right-hand edge of the screen, half way down. Hover over it to see its key combination (usually
+Ctrl+Alt+K). Click it or press the combination, type, and press Enter; the
+answer appears above the pill. Esc closes the line; right-click the pill to
+quit. It is the same assistant as in Studio, with the same reminders, and
+it announces a reminder when its time comes. To let Kosi pass work to your
+other agents ("ask the coder to ..."), right-click the pill and choose a
+folder for them; before any of them changes a file there, the pill shows
+what it wants to do with Allow and No. It only ever sees the one key
+combination, and it does not start with Windows unless you set that up
+yourself.
+
+## A stronger helper for the coder
+
+If you have another AI agent installed that runs from the command line
+(Kosika knows devin and omp), the coder can ask it first:
+
+```
+kosika outside --allow devin omp --within MY_PROJECTS
+```
+
+It is off until you do this. The outside agent works in a copy of the
+folder you granted and can only edit files there. What it would change
+comes back to the coder, is checked, and is shown to you as one list to
+allow or refuse. Two things to know: what it reads is sent to the company
+that runs it, and it is shown only folders inside the one you name after
+`--within`. `kosika outside` shows the setting and `kosika outside --off`
+turns it off.
+
 ## 7. Let an agent see a folder
 
-Agents can touch nothing until you grant it. To let them read one folder,
-stop Studio (Ctrl+C in the terminal) and start it with that folder named:
+Agents can touch nothing until you grant it. In Studio, open
+**Permissions** and press **Choose a folder**. Your computer's own folder
+window opens; pick one folder, such as your notes or one project, then
+press **Apply**. A whole drive or your whole user folder is refused.
 
-```
-kosika studio KosikaAgents --model qwen2.5:7b --model-protocol ollama --allow-folder MY_NOTES
-```
+Two switches sit beside it:
 
-Reading needs only that. Anything that would change a file still stops
-and asks you, showing exactly what it wants to do.
+- **Work in a session.** Agents then work in a copy of the folder. Nothing
+  reaches the real folder until you open the agent's Session tab and tick
+  the files to bring back. Turn this on for any agent that changes files.
+- **Let agents start programs.** Needed by agents that run things, such as
+  the coder running your tests.
+
+Reading needs only the folder. Anything that would change a file still
+shows you its whole plan first and waits for your yes.
 
 ## 8. Make your own
 

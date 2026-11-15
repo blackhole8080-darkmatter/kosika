@@ -1,0 +1,65 @@
+// std/search.kos: finding what answers a question among texts, with no
+// model: each text is scored by the words it shares with the question,
+// rare words counting for more (BM25, as search engines rank pages).
+//
+//   import "std/search.kos"
+//
+// rank(question, texts, count)   the best texts, best first, as Hits
+// best(question, texts)          the one best text, null when none fits
+//
+// A Hit says which text (its place in `texts`, from 0), how well it
+// answers, and the text itself.
+
+import "text.kos"
+
+export [Hit, rank, best]
+
+record Hit { index: Number score: Number text: Text }
+
+fn std_counts(words: Text[]) -> Number{} {
+  var counts: Number{} = {}
+  for word in words { counts = counts.set(word, counts.get(word).or(0) + 1) }
+  return counts
+}
+
+fn rank(question: Text, texts: Text[], count: Number) -> Hit[] {
+  let asked = words_of(question).unique()
+  let documents = for text in texts { words_of(text) }
+  if documents.is_empty() or asked.is_empty() { return [] }
+  var lengths = 0
+  for words in documents { lengths += words.length() }
+  let average = (lengths / documents.length()).max(1)
+  // How many texts hold each word asked about.
+  var holding: Number{} = {}
+  for word in asked {
+    var n = 0
+    for words in documents { if words.contains(word) { n += 1 } }
+    holding = holding.set(word, n)
+  }
+  var hits: Hit[] = []
+  var index = 0
+  for words in documents {
+    let counts = std_counts(words)
+    var score = 0
+    for word in asked {
+      let held = holding.get(word).or(0)
+      let found = counts.get(word).or(0)
+      if found > 0 {
+        let rarity = ((documents.length() - held + 0.5) / (held + 0.5) + 1).log()
+        let fit = found * 2.2 / (found + 1.2 * (0.25 + 0.75 * words.length() / average))
+        score += rarity * fit
+      }
+    }
+    if score > 0 {
+      hits = hits.append({index: index score: (score * 1000).round() / 1000 text: texts[index]})
+    }
+    index += 1
+  }
+  // Best first; of two as good, the earlier text.
+  let ordered = hits.sort_by("index").reverse().sort_by("score").reverse()
+  return ordered.take(count)
+}
+
+fn best(question: Text, texts: Text[]) -> Hit? {
+  return rank(question, texts, 1).first()
+}

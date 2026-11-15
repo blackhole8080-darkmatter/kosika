@@ -134,6 +134,20 @@ class LanguageTests(unittest.TestCase):
         labels = {node["label"] for node in build_mindmap(program)["nodes"]}
         self.assertIn("recall_people", labels)
 
+    def test_recall_like_adds_its_tool_only_where_it_is_used(self) -> None:
+        program = checked(
+            SOURCE.replace(
+                "workflow ",
+                "workflow nearest(a: Ask) -> PeopleLike {\n"
+                "  found = recall people like a.text\n}\n\nworkflow ",
+                1,
+            ).replace("record ", "record Ask { text: Text }\nrecord ", 1)
+        )
+        tools = {tool.name: tool for tool in program.tools}
+        self.assertEqual(sorted(tools), ["like_people", "recall_people", "remember_people"])
+        self.assertEqual(tools["like_people"].operation, "like")
+        self.assertIn("like_people", next(a for a in program.agents if a.name == "memory").can)
+
     def test_only_the_declared_record_can_be_remembered(self) -> None:
         wrong = SOURCE.replace(
             "saved  = remember note in people", "saved  = remember visit in people"

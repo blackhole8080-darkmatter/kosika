@@ -6,35 +6,34 @@ import getpass
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from .agent import AgentLoop, AgentLoopError, ApprovalRecord
 from .approval_ledger import ApprovalLedger
-from .assistant import AssistantError, KosikaAssistant
 from .ast import Program, ToolDecl
 from .checker import check
-from .city import CITY_NAME, CityError, build_city
-from .cityscape import render_cityscape_svg
 from .command_model import CommandModelProvider
+from .component_declaration import (
+    ComponentDeclarationError,
+    declaration_for_contract,
+)
 from .components import (
+    MAX_MESSAGE_BYTES,
     ComponentContractError,
     bind_component,
+    component_contract_to_dict,
     load_component_contract,
+    parse_component_contract,
     verify_component_artifact,
 )
 from .controls import ControlledProvider, ExecutionError, ModelLimits
-from .design import (
-    DESIGN_THEMES,
-    build_design_from_program,
-    load_design_manifest,
-    render_design,
-    write_design_manifest,
-)
 from .development import check_project, execute_development_json
 from .durable import (
     PLAN_TOOL,
@@ -44,12 +43,8 @@ from .durable import (
     inspect_journal,
 )
 from .editor_features import EditorFeatureError, build_editor_features
-from .event_stream_design import (
-    DesignError,
-    build_timeline_design,
-    publish_approval_event,
-    timeline_stage_summary,
-)
+from .environment import DECIDED as ENVIRONMENT_DECIDED
+from .environment import Environment, EnvironmentError_, find_environment
 from .events import (
     EVENT_BRIDGE_VERSION as BRIDGE_VERSION,
 )
@@ -61,14 +56,6 @@ from .events import (
     write_event_jsonl,
 )
 from .execution import ExecutionLimits
-from .explain import (
-    ExplainError,
-    build_explanation,
-    to_explanation_json,
-    to_explanation_mermaid,
-    to_explanation_outsider,
-    to_explanation_text,
-)
 from .extensions import (
     ExtensionManifestError,
     extension_manifest_digest,
@@ -79,7 +66,9 @@ from .language_adapters import (
     LanguageAdapterError,
     adapter_for_suffix,
 )
+from .lessons import Lessons
 from .manifest import (
+    ManifestError,
     MCPManifest,
     diff_manifests,
     format_manifest_diff,
@@ -90,7 +79,6 @@ from .manifest import (
 )
 from .mcp_stdio import MCPProtocolError, MCPStdioClient
 from .memory import bind_memory_tools
-from .metropolis import ENVIRONMENT_NAMES
 from .mindmap import build_mindmap, to_json, to_mermaid, to_text
 from .model import (
     MODEL_PROTOCOLS,
@@ -106,7 +94,6 @@ from .model_steps import strict_json
 from .modules import load_program
 from .network import (
     NetworkDirectory,
-    NetworkManifest,
     load_network_manifest,
     new_network_manifest,
     render_directory,
@@ -115,7 +102,7 @@ from .network import (
 )
 from .project_analysis import ProjectAnalysisError, analyze_python_project
 from .runtime import MockMCP, replay, run
-from .schema import schema_for_record, schema_for_tool_input, schemas_equal
+from .schema import schema_for_tool_input, schema_for_type, schemas_equal
 from .skills import (
     SKILLS_FOLDER,
     SkillCatalog,
@@ -123,6 +110,7 @@ from .skills import (
     SkillRouter,
     SkillRoutingError,
     load_skill_notes,
+    open_skill_text,
 )
 from .source_map import (
     SourceMapError,
@@ -131,14 +119,8 @@ from .source_map import (
 from .source_map import to_mermaid as render_source_map_mermaid
 from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
-from .system_tools import bind_system_tools
-from .unified_mindmap import (
-    UnifiedMindmapError,
-    build_unified_mindmap,
-)
-from .unified_mindmap import to_mermaid as render_unified_mermaid
-from .unified_mindmap import to_text as render_unified_text
-from .world import WorldError, load_world_manifest
+from .system_tools import bind_system_tools, system_kind
+from .tracing import start as start_tracing
 
 
 def command_metavar(subparsers: Any) -> str:
@@ -310,6 +292,13 @@ def _run_agent_command(
         parser.error("--resume requires --journal")
     if args.journal is not None and not args.binding_id:
         parser.error("--binding-id is required with --journal")
+    if args.models is not None and (
+        args.model or args.model_fixture is not None or args.virtual_model is not None
+    ):
+        parser.error(
+            "Use --models on its own, without --model, --model-fixture, "
+            "or --virtual-model"
+        )
 
     program = load_program(args.source)
     check(program)
@@ -328,7 +317,9 @@ def _run_agent_command(
     )
     if args.model_fixture is not None and not model_name and declared_model is not None:
         model_name = declared_model.name
-    if not model_name:
+    if args.models is not None and declared_model is None:
+        parser.error("--models requires an agent that declares a model")
+    if not model_name and args.models is None:
         parser.error(
             "--model is required unless the selected agent references a model "
             "with a deployment (or set KOSIKA_MODEL), or --model-fixture is used"
@@ -395,22 +386,46 @@ def _run_agent_command(
                     declaration.operation,
                     arguments,
                     input_schema=input_schema,
-                    output_schema=schema_for_record(program, declaration.output),
+                    output_schema=schema_for_type(program, declaration.output),
                 )
             if tool_fixture is not None:
                 return _agent_tool_fixture_result(tool_fixture, declaration)
             return MockMCP().call(declaration.source, declaration.operation)
 
         try:
-            provider = (
-                _agent_model_fixture(args.model_fixture, model_name)
-                if args.model_fixture is not None
-                else OpenAICompatibleProvider(
+            provider: Any
+            if args.models is not None:
+                # The agent's declared model is answered by whatever route the
+                # person named: an endpoint, or a command such as the Langflow
+                # bridge. A command is given no tools, so such an agent cannot
+                # declare any.
+                try:
+                    agent_routes = _model_route_bindings(
+                        args.models, program, "openai", 300.0
+                    )
+                except ValueError as exc:
+                    print(f"Agent models failed safely: {exc}", file=sys.stderr)
+                    return 2
+                if agent_decl.model not in agent_routes:
+                    print(
+                        f"Agent models failed safely: {args.models} names no "
+                        f"route for the agent's model {agent_decl.model!r}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                provider = agent_routes[agent_decl.model]
+            elif args.model_fixture is not None:
+                provider = _agent_model_fixture(args.model_fixture, model_name)
+            else:
+                provider = OpenAICompatibleProvider(
                     args.model_url,
                     model_name,
                     api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
                 )
-            )
+            if args.virtual_model is not None:
+                from .virtual_model import VirtualModelProvider
+
+                provider = VirtualModelProvider(provider, args.virtual_model)
         except (OSError, TypeError, ValueError) as exc:
             print(f"Agent fixture failed safely: {exc}", file=sys.stderr)
             return 2
@@ -544,7 +559,11 @@ def _meaning(args: argparse.Namespace) -> Any:
         return None
     from .embeddings import Meaning, default_store, ollama_embedder
 
-    url = getattr(args, "model_url", None) or DEFAULT_LOCAL_MODEL_URL
+    url = (
+        getattr(args, "embed_url", None)
+        or getattr(args, "model_url", None)
+        or DEFAULT_LOCAL_MODEL_URL
+    )
     # Embeddings are asked of Ollama's own address, without the /v1 that
     # its OpenAI-compatible chat address ends in.
     base = url.rstrip("/")
@@ -803,6 +822,62 @@ def _ask_approval(
     )
 
 
+def _ask_approval_in(
+    folder: Path, request: dict[str, Any], wait_seconds: float
+) -> ApprovalRecord | None:
+    """Ask in a folder and wait for the answer there (see kosika.ask_folder)."""
+
+    from .ask_folder import wait_for_answer
+
+    yes, by = wait_for_answer(
+        folder,
+        request,
+        wait_seconds=wait_seconds,
+        tell=lambda line: print(line, file=sys.stderr, flush=True),
+    )
+    if not yes:
+        print("Refused, or no answer came. Nothing was run.", file=sys.stderr)
+        return None
+    return ApprovalRecord(
+        plan_hash=request["plan_hash"],
+        action_hash=request["action_hash"],
+        approved_by=by or "someone who could write to the folder",
+        reason=f"approved in {folder}",
+    )
+
+
+def _environment_model_bindings(
+    environment: Environment, program: Program
+) -> dict[str, ModelProvider]:
+    """The models an environment names, for the models a program declares.
+
+    A model named in the environment that this program does not declare is
+    left out: one environment serves every program of a project.
+    """
+
+    if environment.fixture is not None:
+        return _model_fixture_bindings(environment.fixture)
+    declared = {model.name for model in program.models if model.provider is None}
+    bindings: dict[str, ModelProvider] = {}
+    for name, route in environment.models.items():
+        if name not in declared:
+            continue
+        url = route.url or (
+            DEFAULT_LOCAL_MODEL_URL.removesuffix("/v1")
+            if route.protocol == "ollama"
+            else DEFAULT_LOCAL_MODEL_URL
+        )
+        bindings[name] = OpenAICompatibleProvider(
+            url,
+            route.model,
+            api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+            protocol=route.protocol,
+            timeout=60.0,
+        )
+        print(f"{name}: model {route.model!r} at {url}", file=sys.stderr)
+    return bindings
+
+
 def _missing_model_hint(program: Program, message: str) -> str:
     if "has no authorized host binding" not in message or not program.models:
         return ""
@@ -813,211 +888,18 @@ def _missing_model_hint(program: Program, message: str) -> str:
     )
 
 
-def _author_proposal_provider(args: argparse.Namespace) -> ModelProvider | None:
-    """Build the provider that proposes patches.
+def _no_folder(given: Path) -> str:
+    """Why a folder named on the command line cannot be used, with the place
+    that was actually looked in, since a short name is read from where the
+    command was run."""
 
-    The proposal model and the program's own run-time models are separate
-    authorities, so they have separate flags: wiring a live proposal endpoint
-    must not silently become authority to execute the declared models. No
-    proposal authority at all is allowed, because a project that already checks
-    needs no model; if a diagnostic then needs one, the loop reports
-    `authoring/no-provider` rather than claiming a repair.
-    """
-
-    live = (args.proposal_base_url, args.proposal_model)
-    if args.proposal_fixture is not None:
-        if any(live):
-            raise ValueError(
-                "Use either --proposal-fixture or a live proposal model, not both"
-            )
-        payload = strict_json(args.proposal_fixture.read_text(encoding="utf-8"))
-        responses: Any = payload
-        if isinstance(payload, dict):
-            responses = payload.get("responses")
-        if (
-            not isinstance(responses, list)
-            or not responses
-            or any(not isinstance(item, str) or not item.strip() for item in responses)
-        ):
-            raise ValueError(
-                "Authoring fixture must be a nonempty JSON list of response strings"
-            )
-        return ScriptedModelProvider(
-            [ModelResponse(content=response) for response in responses]
-        )
-    if any(live) and not all(live):
-        raise ValueError(
-            "A live proposal model requires --proposal-base-url and --proposal-model"
-        )
-    if not all(live):
-        return None
-    proposal_think = {"auto": None, "on": True, "off": False}[args.proposal_think]
-    return OpenAICompatibleProvider(
-        args.proposal_base_url,
-        args.proposal_model,
-        api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
-        think=proposal_think,
-        protocol=args.proposal_protocol,
+    looked = given.resolve()
+    if given.is_absolute():
+        return f"{given} is not a folder"
+    return (
+        f"{given} is not a folder. I looked for {looked}. "
+        "If it is somewhere else, give its full path."
     )
-
-
-def _run_author_command(args: argparse.Namespace) -> int:
-    from .authoring import AuthoringLimits, author
-    from .repair import RepairStrategy
-
-    try:
-        provider = _author_proposal_provider(args)
-        inputs: Any = {}
-        if args.input is not None:
-            try:
-                inputs = strict_json(args.input)
-            except ValueError as exc:
-                raise ValueError(f"--input must be valid JSON: {exc}") from exc
-        if not isinstance(inputs, dict):
-            raise ValueError("--input must be a JSON object of workflow inputs")
-        execute = not args.no_run
-        response = author(
-            args.source,
-            intent=args.intent,
-            provider=provider,
-            root=args.root,
-            limits=AuthoringLimits(
-                max_attempts=args.attempts,
-                max_output_tokens=args.max_tokens,
-                strategy=RepairStrategy(args.strategy),
-            ),
-            model=args.proposal_model,
-            workflow=args.workflow,
-            inputs=inputs,
-            trace_path=args.trace,
-            execute=execute,
-            model_bindings=_model_fixture_bindings(args.model_fixture)
-            if execute and args.model_fixture is not None
-            else None,
-        )
-    except (OSError, TypeError, ValueError) as exc:
-        print(f"Authoring failed safely: {exc}", file=sys.stderr)
-        return 2
-
-    if args.format == "json":
-        print(json.dumps(response, indent=2, sort_keys=True))
-        return 0 if response["ok"] else 1
-
-    print(
-        f"status      : {response['status']}\n"
-        f"attempts    : {len(response['attempts'])} of {response['limits']['max_attempts']}\n"
-        f"model calls : {response['usage']['model_calls']} "
-        f"(prompt {response['usage']['prompt_tokens']}, "
-        f"completion {response['usage']['completion_tokens']})"
-    )
-    for attempt in response["attempts"]:
-        print(
-            f"  attempt {attempt['index'] + 1}: {attempt['path'] or '-'} "
-            f"[{attempt['code'] or '-'}] applied={attempt['applied']}"
-            + (f" error={attempt['error']}" if attempt["error"] else "")
-        )
-    for path in response["proposals"]:
-        # The proposal is printed, never written: applying it stays a host
-        # decision, so the CLI cannot turn model output into a mutation.
-        print(f"proposed    : {path} (not written to disk)")
-    if response["execution"] is not None:
-        observed = response["execution"]["result"].get("value")
-        if response["execution"]["ok"]:
-            print(f"run         : {json.dumps(observed, sort_keys=True)}")
-        else:
-            print(f"run failed  : {response['execution']['error']['message']}")
-    if response["error"] is not None:
-        print(f"error       : {response['error']['message']}", file=sys.stderr)
-    return 0 if response["ok"] else 1
-
-
-def _run_authoring_evaluation(args: argparse.Namespace) -> int:
-    """Measure the authoring loop over the repair corpus."""
-
-    from .authoring_evaluation import (
-        EvaluationLimits,
-        evaluate_authoring,
-        identity_provider_factory,
-        live_provider_factory,
-        reference_provider_factory,
-        to_text,
-        validate,
-    )
-    from .corpus import build_corpus
-    from .repair import RepairStrategy
-
-    try:
-        cases = build_corpus(Path(__file__).resolve().parent.parent)
-        limits = EvaluationLimits(
-            max_attempts=args.attempts,
-            max_output_tokens=args.max_tokens,
-            strategy=RepairStrategy(args.strategy),
-            limit=args.limit,
-            measure_behavior=not args.no_behavior,
-        ).validated()
-    except ValueError as exc:
-        print(f"Authoring evaluation setup failed: {exc}", file=sys.stderr)
-        return 2
-
-    think = {"auto": None, "on": True, "off": False}[args.think]
-    if args.solver == "model":
-        if not args.model or not args.base_url:
-            print("model evaluator requires --model and --base-url", file=sys.stderr)
-            return 2
-        factory = live_provider_factory(
-            base_url=args.base_url,
-            model=args.model,
-            api_key=args.api_key or os.environ.get("KOSIKA_API_KEY"),
-            timeout=float(args.model_timeout),
-            think=think,
-            protocol=args.protocol,
-        )
-        name = f"model:{args.model}"
-    elif args.solver == "identity":
-        factory = identity_provider_factory()
-        name = "identity"
-    else:
-        factory = reference_provider_factory(args.attempts)
-        name = "reference"
-
-    seen: list = []
-
-    def progress(result) -> None:
-        mark = "ok  " if result.solved else "FAIL"
-        detail = (
-            "" if result.solved else f"  {', '.join(result.remaining_codes) or '-'}"
-        )
-        print(
-            f"[{len(seen) + 1}/{limits.limit or len(cases)}] {mark} {result.code or '-'}"
-            f" {result.attempts} attempt(s) {result.seconds:.2f}s{detail}",
-            file=sys.stderr,
-            flush=True,
-        )
-        seen.append(result)
-
-    evaluation = evaluate_authoring(
-        cases,
-        factory,
-        name=name,
-        limits=limits,
-        on_result=progress,
-    )
-    verdict = validate(evaluation)
-
-    if args.format == "json":
-        payload = evaluation.to_dict()
-        payload["validation"] = verdict
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0 if verdict["ok"] else 1
-
-    print(to_text(evaluation, top=args.slowest))
-    print(
-        f"expressible  : {verdict['expressible_cases']} case(s) "
-        f"({verdict['unexpressible_cases']} not quotable as a patch)"
-    )
-    for problem in verdict["problems"]:
-        print(f"PROBLEM {problem}", file=sys.stderr)
-    return 0 if verdict["ok"] else 1
 
 
 def _timeline_event(
@@ -1057,27 +939,7 @@ def _timeline_event(
 def _cli_approval_event(sequence: int) -> dict[str, Any]:
     """One normalized approval-pause event using the shared lifecycle identity."""
 
-    event = publish_approval_event(sequence)
-    event["event_id"] = f"kosika-cli-{sequence:04d}-kosika_approval_pending"
-    return validate_event(event)
-
-
-def _publish_timeline(
-    args: argparse.Namespace, events: Sequence[Mapping[str, Any]]
-) -> None:
-    """Write the deterministic timeline design when --design is supplied."""
-
-    if args.design is None:
-        return
-    manifest = build_timeline_design(events, args.design_id, args.design_name)
-    args.design.parent.mkdir(parents=True, exist_ok=True)
-    write_design_manifest(manifest, args.design)
-    summary = timeline_stage_summary(manifest)
-    print(
-        "Timeline design: "
-        f"{args.design} (stage {summary['first_stage']}, "
-        f"{summary['event_count']} event(s))"
-    )
+    return _timeline_event(sequence, "kosika_approval_pending", "pending")
 
 
 def _publish_run_events(
@@ -1098,6 +960,44 @@ def _publish_run_events(
     normalized = normalize_events(raw_events)
     write_event_jsonl(args.event_trace, normalized)
     return normalized
+
+
+def lesson_census(trace: Path) -> dict[str, Any] | None:
+    """Count model answers by whether they came from kept lessons or a live model.
+
+    Reads a completed trace and returns counts of ``model_return`` events:
+    total, answered from lessons (broken down by ``how``: same / close /
+    examples), and answered by a live model. Returns None when the trace has
+    no model steps.
+    """
+    total = 0
+    from_lessons = 0
+    how_counts: dict[str, int] = {}
+    live_model = 0
+    try:
+        events = read_jsonl(trace)
+    except (OSError, ValueError):
+        return None
+    for event in events:
+        if not isinstance(event, dict) or event.get("event") != "model_return":
+            continue
+        total += 1
+        learned = event.get("learned")
+        if isinstance(learned, dict):
+            from_lessons += 1
+            how = learned.get("how", "unknown")
+            how_counts[how] = how_counts.get(how, 0) + 1
+        else:
+            live_model += 1
+    if total == 0:
+        return None
+    return {
+        "total": total,
+        "from_lessons": from_lessons,
+        "live_model": live_model,
+        "lesson_ratio": round(from_lessons / total, 4),
+        "how": how_counts,
+    }
 
 
 def _run_model_benchmark(args: argparse.Namespace, cases: list) -> int:
@@ -1354,181 +1254,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Summary output format. Ignored when writing JSONL.",
     )
 
-    author_parser = subparsers.add_parser(
-        "author",
-        help=("Run the bounded authoring loop: check, propose, repair, run, inspect."),
-    )
-    author_parser.add_argument("source", type=Path, help="Entry .kos file.")
-    author_parser.add_argument(
-        "--intent",
-        required=True,
-        help="What the host wants the loop to achieve. Recorded, never executed.",
-    )
-    author_parser.add_argument(
-        "--root",
-        type=Path,
-        help="Project root. Defaults to the entry file's directory.",
-    )
-    author_parser.add_argument(
-        "--proposal-fixture",
-        type=Path,
-        help="JSON list of canned patch responses, for a hermetic run.",
-    )
-    author_parser.add_argument(
-        "--proposal-base-url",
-        help="OpenAI-compatible base URL for the proposing model.",
-    )
-    author_parser.add_argument(
-        "--proposal-model", help="Model name used to propose patches."
-    )
-    author_parser.add_argument(
-        "--proposal-protocol",
-        choices=("openai", "ollama"),
-        default="openai",
-        help=(
-            "Proposing model wire format. 'ollama' targets Ollama's native "
-            "/api/chat and disables the reasoning trace, which a patch needs."
-        ),
-    )
-    author_parser.add_argument(
-        "--proposal-think",
-        choices=("auto", "on", "off"),
-        default="off",
-        help=(
-            "Reasoning mode for the proposing model. Defaults to 'off' because "
-            "a machine-readable patch cannot be read out of a reasoning trace."
-        ),
-    )
-    author_parser.add_argument(
-        "--attempts",
-        type=int,
-        default=2,
-        help="Maximum proposing attempts. Each attempt is at most one model call.",
-    )
-    author_parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=2048,
-        help="Output token budget per proposal call.",
-    )
-    author_parser.add_argument(
-        "--strategy",
-        choices=("contextual", "full"),
-        default="contextual",
-        help="What the proposing model is shown.",
-    )
-    author_parser.add_argument(
-        "--workflow", default="main", help="Workflow executed after a clean check."
-    )
-    author_parser.add_argument(
-        "--input", help="JSON object of workflow inputs for the run."
-    )
-    author_parser.add_argument(
-        "--trace", type=Path, help="Write the run trace here and inspect it."
-    )
-    author_parser.add_argument(
-        "--model-fixture",
-        type=Path,
-        help="JSON map of declared model name to outputs, for the run step.",
-    )
-    author_parser.add_argument(
-        "--no-run",
-        action="store_true",
-        help="Check and propose only. Nothing is executed.",
-    )
-    author_parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        help="Loop report format.",
-    )
-
-    author_eval_parser = subparsers.add_parser(
-        "author-eval",
-        help="Measure the bounded authoring loop over the repair corpus.",
-    )
-    author_eval_parser.add_argument(
-        "--solver",
-        choices=("reference", "identity", "model"),
-        default="reference",
-        help=(
-            "reference replays the corpus's own repair (the ceiling), identity "
-            "grants no proposing model (the floor), model scores a live model."
-        ),
-    )
-    author_eval_parser.add_argument(
-        "--attempts",
-        type=int,
-        default=2,
-        help="Authoring attempts per case. Each attempt is at most one model call.",
-    )
-    author_eval_parser.add_argument(
-        "--limit",
-        type=int,
-        help="Evaluate only the first N corpus cases.",
-    )
-    author_eval_parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=2048,
-        help="Output token budget per proposal call.",
-    )
-    author_eval_parser.add_argument(
-        "--strategy",
-        choices=("contextual", "full"),
-        default="contextual",
-        help="What the proposing model is shown.",
-    )
-    author_eval_parser.add_argument(
-        "--base-url", help="OpenAI-compatible base URL for the model evaluator."
-    )
-    author_eval_parser.add_argument(
-        "--protocol",
-        choices=("openai", "ollama"),
-        default="openai",
-        help=(
-            "Model wire format. 'ollama' targets Ollama's native /api/chat, "
-            "which honours --think; its OpenAI-compatible shim accepts the "
-            "field and ignores it."
-        ),
-    )
-    author_eval_parser.add_argument(
-        "--model", help="Model name for the model evaluator."
-    )
-    author_eval_parser.add_argument(
-        "--api-key",
-        help="API key for the model evaluator. Defaults to KOSIKA_API_KEY.",
-    )
-    author_eval_parser.add_argument(
-        "--model-timeout",
-        type=float,
-        default=600.0,
-        help="Per-call model timeout in seconds.",
-    )
-    author_eval_parser.add_argument(
-        "--think",
-        choices=("auto", "on", "off"),
-        default="auto",
-        help="Reasoning mode. 'off' is usually required for patch output.",
-    )
-    author_eval_parser.add_argument(
-        "--no-behavior",
-        action="store_true",
-        help="Skip running programs to compare repaired behavior.",
-    )
-    author_eval_parser.add_argument(
-        "--slowest",
-        type=int,
-        default=0,
-        help="List the N slowest cases after the summary.",
-    )
-    author_eval_parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        help="Report format.",
-    )
-
     coverage_parser = subparsers.add_parser(
         "diagnostics-coverage",
         help="Report whether every error raise site is claimed by a diagnostic code.",
@@ -1608,32 +1333,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Write the representation to a file instead of stdout.",
     )
-
-    audience_map_parser = subparsers.add_parser(
-        "audience-map",
-        help="Build an evidence-labelled map for different readers.",
-    )
-    audience_map_parser.add_argument("source", type=Path)
-    audience_map_parser.add_argument(
-        "--audience",
-        choices=("outsider", "overview", "operator", "reviewer", "maintainer"),
-        default="outsider",
-    )
-    audience_map_parser.add_argument(
-        "--purpose",
-        action="append",
-        default=[],
-        help="Human-authored purpose context, labelled unverified.",
-    )
-    audience_map_parser.add_argument("--trace", type=Path)
-    audience_map_parser.add_argument(
-        "--component-contract", action="append", type=Path, default=[]
-    )
-    audience_map_parser.add_argument("--root", type=Path)
-    audience_map_parser.add_argument(
-        "--format", choices=("json", "mermaid", "text"), default="text"
-    )
-    audience_map_parser.add_argument("--output", type=Path)
 
     spec_eval_parser = subparsers.add_parser(
         "spec-eval",
@@ -1749,117 +1448,6 @@ def build_parser() -> argparse.ArgumentParser:
     swarm_parser.add_argument("--format", choices=("json", "text"), default="text")
     swarm_parser.add_argument("--output", type=Path)
 
-    unified_parser = subparsers.add_parser(
-        "unified",
-        help="Combine a checked Kosika mindmap with an optional external source map.",
-    )
-    unified_parser.add_argument("source", type=Path)
-    unified_parser.add_argument("--project", type=Path)
-    unified_parser.add_argument(
-        "--format", choices=("json", "mermaid", "text"), default="json"
-    )
-    unified_parser.add_argument("--output", type=Path)
-
-    explain_parser = subparsers.add_parser(
-        "explain",
-        help="Explain selected code and optionally validate a trace offline.",
-    )
-    explain_parser.add_argument("source", type=Path)
-    explain_parser.add_argument(
-        "--extension-manifest",
-        action="append",
-        type=Path,
-        default=[],
-        help="Extension manifest to include; may be repeated.",
-    )
-    explain_parser.add_argument(
-        "--workflow",
-        action="append",
-        default=[],
-        help="Workflow to explain; may be repeated. Defaults to the whole program.",
-    )
-    explain_parser.add_argument(
-        "--record",
-        action="append",
-        default=[],
-        help="Record contract to explain; may be repeated.",
-    )
-    explain_parser.add_argument(
-        "--diagnostic",
-        action="append",
-        default=[],
-        help="Diagnostic to include; may be repeated.",
-    )
-    explain_parser.add_argument(
-        "--trace",
-        type=Path,
-        help="Completed JSONL trace to validate and summarize offline.",
-    )
-    explain_parser.add_argument(
-        "--format",
-        choices=("text", "json", "mermaid", "outsider"),
-        default="text",
-        help="Explanation representation to print.",
-    )
-    explain_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Write the representation to a file instead of stdout.",
-    )
-
-    assistant_parser = subparsers.add_parser(
-        "assistant",
-        help="Explain checked Kosika code with a fixture or optional local model.",
-    )
-    assistant_parser.add_argument("source", type=Path)
-    assistant_parser.add_argument("--task", required=True)
-    assistant_parser.add_argument(
-        "--source-file",
-        action="append",
-        type=Path,
-        default=[],
-        help="Read-only Python source file to include as grounded assistant context; repeatable.",
-    )
-    assistant_parser.add_argument(
-        "--project",
-        action="append",
-        type=Path,
-        default=[],
-        help="Bounded project root to analyze for grounded assistant context; repeatable.",
-    )
-    assistant_parser.add_argument(
-        "--diagnostic",
-        action="append",
-        default=[],
-        help="Diagnostic to include as assistant context; may be repeated.",
-    )
-    assistant_parser.add_argument(
-        "--fixture",
-        type=Path,
-        help='Offline JSON list (or {"responses": [...]}) of answer strings.',
-    )
-    assistant_parser.add_argument(
-        "--model-url",
-        default=os.environ.get("KOSIKA_MODEL_URL", "http://localhost:11434/v1"),
-        help="OpenAI-compatible model URL, or KOSIKA_MODEL_URL.",
-    )
-    assistant_parser.add_argument(
-        "--model",
-        default=os.environ.get("KOSIKA_MODEL"),
-        help="Optional local model name, or KOSIKA_MODEL.",
-    )
-    assistant_parser.add_argument(
-        "--max-output-tokens",
-        type=int,
-        default=1024,
-        help="Maximum output tokens requested from a configured model.",
-    )
-    assistant_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Print answer, diagnostics, and mindmap as structured JSON.",
-    )
-
     skills_parser = subparsers.add_parser(
         "skills",
         help="List local skills or select relevant skills for a task.",
@@ -1888,9 +1476,24 @@ def build_parser() -> argparse.ArgumentParser:
     skills_parser.add_argument("--max-skills", type=int, default=6)
     skills_parser.add_argument("--format", choices=("text", "json"), default="text")
 
+    export_parser = subparsers.add_parser(
+        "skills-export",
+        help="Write a folder of skill notes as open SKILL.md skills, for other AI apps.",
+    )
+    export_parser.add_argument("notes", type=Path, help="Folder of skill notes (NAME.md).")
+    export_parser.add_argument("--out", type=Path, required=True, help="Folder to write NAME/SKILL.md into.")
+
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("source", type=Path)
     run_parser.add_argument("--workflow", default="main")
+    run_parser.add_argument(
+        "--env",
+        help=(
+            "An environment in the kosika.env beside the program: the models, "
+            "MCP servers, grants, budgets and the folder it keeps things in. "
+            "Given, they are taken from it and from nowhere else."
+        ),
+    )
     run_parser.add_argument("--trace", type=Path, default=Path("run_trace.jsonl"))
     run_parser.add_argument("--journal", type=Path)
     run_parser.add_argument(
@@ -1916,6 +1519,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.add_argument(
+        "--embed-url",
+        metavar="URL",
+        help=(
+            "Where the embedding model is asked, when not at --model-url or the "
+            "local Ollama."
+        ),
+    )
+    run_parser.add_argument(
         "--allow-shell",
         action="store_true",
         help="Also grant the program's system shell tools. Needs --allow-folder.",
@@ -1931,6 +1542,35 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--approved-by",
         help="Name recorded with approvals given through --approve.",
+    )
+    run_parser.add_argument(
+        "--mcp",
+        action="append",
+        default=[],
+        metavar="NAME=COMMAND",
+        help=(
+            "An MCP server the program's `source mcp \"NAME\"` tools may use, "
+            'such as fetch="uvx mcp-server-fetch". May be repeated. Kosika '
+            "starts the command itself, not through a shell; a tool that "
+            "changes things must be declared access: execute."
+        ),
+    )
+    run_parser.add_argument(
+        "--approve-in",
+        type=Path,
+        metavar="FOLDER",
+        help=(
+            "Ask for each approval in this folder instead of at the terminal, "
+            "and wait for an answer there (kosika answer FOLDER yes). Only "
+            "the person may be able to write to it."
+        ),
+    )
+    run_parser.add_argument(
+        "--approve-wait",
+        type=float,
+        default=600,
+        metavar="SECONDS",
+        help="How long --approve-in waits for an answer; no answer is a no.",
     )
     run_parser.add_argument("--max-requests", type=int, default=64)
     run_parser.add_argument("--max-tokens", type=int)
@@ -1984,21 +1624,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional normalized event JSONL for SSE replay and timeline views.",
     )
     run_parser.add_argument(
-        "--design",
-        type=Path,
-        help="Write a deterministic event-timeline design manifest from the run.",
-    )
-    run_parser.add_argument(
-        "--design-id",
-        default="event-timeline",
-        help="Design id recorded in the timeline manifest (with --design).",
-    )
-    run_parser.add_argument(
-        "--design-name",
-        default="Kosika run timeline",
-        help="Design name recorded in the timeline manifest (with --design).",
-    )
-    run_parser.add_argument(
         "--model-fixture",
         type=Path,
         help="Offline JSON model outputs grouped by declared model name.",
@@ -2034,6 +1659,45 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "A site the program's web tool may read, such as en.wikipedia.org. "
             "May be repeated. Without it, the web cannot be reached."
+        ),
+    )
+    run_parser.add_argument(
+        "--notify",
+        metavar="URL",
+        help=(
+            "The one address a notify tool sends notes to, such as "
+            "https://ntfy.sh/your-private-topic. Without it, nothing is sent."
+        ),
+    )
+    run_parser.add_argument(
+        "--linux",
+        metavar="NAME",
+        help=(
+            "The one Linux distribution under WSL, such as Ubuntu, that a linux "
+            "tool may look at. Without it, a linux tool reaches nothing."
+        ),
+    )
+    run_parser.add_argument(
+        "--computer",
+        action="store_true",
+        help="Let a computer tool look at how this computer is doing.",
+    )
+    run_parser.add_argument(
+        "--services",
+        metavar="FILE",
+        help=(
+            "The one services file a services tool reads and pauses services "
+            "in. Without it, a services tool reaches nothing."
+        ),
+    )
+    run_parser.add_argument(
+        "--database",
+        type=Path,
+        metavar="FILE",
+        help=(
+            "The one database file a db tool may reach. A query only reads it; "
+            "a run changes it, and needs your yes for each call. Without it, a "
+            "db tool reaches nothing."
         ),
     )
     run_parser.add_argument(
@@ -2077,9 +1741,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--kind",
         default="hello",
         help=(
-            "What to start from: hello (default), support (an agent with "
-            "memory), expense (a model reads, code decides), or notes (a model "
-            "extracts, code organises)."
+            "What to start from: hello (default), researcher (a model extracts "
+            "claims, code checks every quote), support (an agent with memory), "
+            "expense (a model reads, code decides), or notes (a model extracts, "
+            "code organises)."
         ),
     )
 
@@ -2112,6 +1777,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--model-fixture",
         type=Path,
         help="Offline JSON agent responses grouped by model identifier.",
+    )
+    agent_parser.add_argument(
+        "--models",
+        type=Path,
+        help=(
+            "JSON file giving each declared model its own route, such as the "
+            "command that runs a Langflow flow; the agent's model must be "
+            "named there, and an agent with a command route cannot call tools."
+        ),
     )
     agent_parser.add_argument(
         "--tool-fixture",
@@ -2191,6 +1865,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     agent_parser.add_argument("--mcp-source", default="local_stdio")
     agent_parser.add_argument(
+        "--virtual-model",
+        type=Path,
+        metavar="PROFILE",
+        help=(
+            "Answer through a virtual-model profile: the model is given the "
+            "profile's own sources and verified examples, and its tools are "
+            "unchanged."
+        ),
+    )
+    agent_parser.add_argument(
         "--approval-plan-hash",
         help="Plan hash approved for execute-capability tools.",
     )
@@ -2208,6 +1892,41 @@ def build_parser() -> argparse.ArgumentParser:
         default="cli-user",
         help="Approval actor recorded with --approval-plan-hash.",
     )
+
+    db_parser = subparsers.add_parser(
+        "db",
+        help=(
+            "Read a database file, and write the tables a program declares in "
+            "its stores."
+        ),
+    )
+    db_commands = db_parser.add_subparsers(dest="db_command", required=True)
+    db_init = db_commands.add_parser(
+        "init", help="Write the tables a program declares into a database file."
+    )
+    db_init.add_argument("file", type=Path)
+    db_init.add_argument(
+        "--from",
+        dest="from_program",
+        type=Path,
+        required=True,
+        help=(
+            "The program whose `store` declares the tables. A table that is "
+            "already there is only read: nothing it holds is ever changed."
+        ),
+    )
+    db_init.add_argument("--json", action="store_true")
+    db_inspect = db_commands.add_parser(
+        "inspect", help="Say what is in a database file."
+    )
+    db_inspect.add_argument("file", type=Path)
+    db_inspect.add_argument(
+        "--from",
+        dest="from_program",
+        type=Path,
+        help="A program whose `store` is compared with the file.",
+    )
+    db_inspect.add_argument("--json", action="store_true")
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
@@ -2296,6 +2015,11 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="Print the address; do not open it.",
         )
+        app_parser.add_argument(
+            "--until-closed",
+            action="store_true",
+            help="Open Studio in a window of its own and stop when it is closed.",
+        )
     chat_parser = subparsers.add_parser(
         "chat", help="Talk to a Kosika program, one message at a time."
     )
@@ -2360,6 +2084,57 @@ def build_parser() -> argparse.ArgumentParser:
             "only on yes. Without this, such actions always fail."
         ),
     )
+    serve_mcp_parser = subparsers.add_parser(
+        "serve-mcp",
+        help="Serve a program's workflows as MCP tools for any AI app; flags after -- are the run's grants.",
+    )
+    serve_mcp_parser.add_argument("source")
+    serve_mcp_parser.add_argument("--only", action="append", metavar="WORKFLOW", help="Serve only this workflow (repeat for more).")
+    serve_mcp_parser.add_argument("run_flags", nargs=argparse.REMAINDER, help="-- then the flags of kosika run: --allow-folder, --allow-shell, --approve-in, --model ...")
+    connect_parser = subparsers.add_parser(
+        "connect",
+        help=(
+            "Start an MCP server once and print Kosika declarations for its "
+            'tools, ready to paste: kosika connect fetch="uvx mcp-server-fetch".'
+        ),
+    )
+    connect_parser.add_argument("grant", metavar="NAME=COMMAND")
+    connect_parser.add_argument(
+        "--out", type=Path, help="Write the declarations to this .kos file instead."
+    )
+
+    answer_parser = subparsers.add_parser(
+        "answer",
+        help=(
+            "See and answer what a run started with --approve-in is waiting "
+            "for: kosika answer FOLDER [ID] yes|no."
+        ),
+    )
+    answer_parser.add_argument("folder", type=Path)
+    answer_parser.add_argument(
+        "words",
+        nargs="*",
+        help="Nothing to list the asks; yes or no; or an ask's id and yes or no.",
+    )
+    answer_parser.add_argument("--by", help="Name recorded with the answer.")
+    answer_parser.add_argument(
+        "--serve",
+        action="store_true",
+        help=(
+            "Serve a page with a yes and a no button for each ask, to open on "
+            "a phone on the same network. Its address carries a key."
+        ),
+    )
+    answer_parser.add_argument("--port", type=int, default=8795)
+    answer_parser.add_argument(
+        "--relay",
+        metavar="SERVER",
+        help=(
+            "Send each ask as a push with Yes and No buttons through this ntfy "
+            "server (https://ntfy.sh or your own), to answer from anywhere."
+        ),
+    )
+
     story_parser = subparsers.add_parser(
         "story", help="Tell what happened in a run, in plain words, from its trace."
     )
@@ -2390,7 +2165,11 @@ def build_parser() -> argparse.ArgumentParser:
     test_parser = subparsers.add_parser(
         "test", help="Run the tests written in a Kosika program."
     )
-    test_parser.add_argument("source", type=Path)
+    test_parser.add_argument(
+        "source",
+        type=Path,
+        help="A .kos file, or a folder containing main.kos.",
+    )
     test_parser.add_argument("--only", help="Run only the test with this name.")
     test_parser.add_argument("--json", action="store_true")
     measure_parser = subparsers.add_parser(
@@ -2416,6 +2195,67 @@ def build_parser() -> argparse.ArgumentParser:
     )
     start_parser.add_argument("--port", type=int, default=0)
     start_parser.add_argument("--no-browser", action="store_true")
+    start_parser.add_argument(
+        "--until-closed",
+        action="store_true",
+        help="Stop when the Studio window is closed, as the desktop app does.",
+    )
+    desktop_parser = subparsers.add_parser(
+        "desktop",
+        help=(
+            "Put Kosika Studio on the Desktop and in the Start menu, as an "
+            "app that opens in its own window. Grants nothing."
+        ),
+    )
+    desktop_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        help="Where your agents live. Default: KosikaAgents in your home folder.",
+    )
+    desktop_parser.add_argument(
+        "--remove", action="store_true", help="Take the shortcuts away again."
+    )
+    desktop_parser.add_argument(
+        "--kosi",
+        action="store_true",
+        help=(
+            "Make (or with --remove, take away) the shortcut for Kosi, the "
+            "assistant as a small pill that stays on the screen."
+        ),
+    )
+    outside_parser = subparsers.add_parser(
+        "outside",
+        help=(
+            "Say which outside command-line agents (devin, omp, cline, kilo, letta) Kosika's agents "
+            "may ask for help, and the one folder they may be shown."
+        ),
+    )
+    outside_parser.add_argument(
+        "--allow", nargs="+", metavar="NAME", help="The agents that may be asked."
+    )
+    outside_parser.add_argument(
+        "--within",
+        type=Path,
+        metavar="FOLDER",
+        help="They are shown only granted folders inside this one.",
+    )
+    outside_parser.add_argument(
+        "--off", action="store_true", help="Allow none. This is how it starts."
+    )
+    pill_parser = subparsers.add_parser(
+        "pill",
+        help=(
+            "Show Kosi, the assistant, as a small pill that stays on the "
+            "screen. Click it or press Ctrl+Alt+K to ask."
+        ),
+    )
+    pill_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        help="Where your agents live. Default: KosikaAgents in your home folder.",
+    )
     motion_parser = subparsers.add_parser(
         "motion",
         help=(
@@ -2458,6 +2298,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     measure_parser.add_argument("--only", help="Run only the eval with this name.")
     measure_parser.add_argument("--json", action="store_true")
+    learn_eval_parser = subparsers.add_parser(
+        "learn-eval",
+        help=(
+            "Run a program's tasks once with scripted model answers, then "
+            "again from what it learned, and report both."
+        ),
+    )
+    learn_eval_parser.add_argument("source", type=Path)
+    learn_eval_parser.add_argument(
+        "--tasks", type=Path, required=True, help="The JSON task file to run."
+    )
+    learn_eval_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="A new folder to keep the traces, the memory and the report in.",
+    )
+    learn_eval_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format.",
+    )
     journal_parser = subparsers.add_parser(
         "journal",
         help="Inspect a durable Kosika workflow or direct-agent journal.",
@@ -2503,87 +2366,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", choices=("text", "json"), default="text"
     )
 
-    design_parser = subparsers.add_parser(
-        "design",
-        help="Generate and render deterministic agent-workflow vector designs.",
-    )
-
-    city_parser = subparsers.add_parser(
-        "city",
-        help="Build and render the agent city across every program under a root.",
-    )
-    city_parser.add_argument("root", type=Path)
-    city_parser.add_argument(
-        "--format", choices=("text", "json", "svg", "live"), default="text"
-    )
-    city_parser.add_argument("--theme", choices=("lab", "day"), default="lab")
-    city_parser.add_argument(
-        "--environment",
-        choices=ENVIRONMENT_NAMES,
-        default="metropolitan",
-        help="Live-world environment preset.",
-    )
-    city_parser.add_argument(
-        "--world",
-        type=Path,
-        default=None,
-        help="Validated world manifest controlling live-world presentation.",
-    )
-    city_parser.add_argument("--output", type=Path, default=None)
-    city_parser.add_argument(
-        "--name",
-        default=None,
-        help=f"City name to render (default: {CITY_NAME}).",
-    )
-    city_parser.add_argument(
-        "--serve",
-        action="store_true",
-        help="Serve the live city and drive it from real executions under root.",
-    )
-    city_parser.add_argument("--host", default="127.0.0.1")
-    city_parser.add_argument("--port", type=int, default=8787)
-    city_parser.add_argument(
-        "--trace",
-        type=Path,
-        default=None,
-        help=(
-            "Run the city once and write one replayable trace per resident "
-            "into this directory, without serving. Use with: kosika replay <trace>"
-        ),
-    )
-    design_subparsers = design_parser.add_subparsers(
-        dest="design_command", required=True
-    )
-    design_generate_parser = design_subparsers.add_parser(
-        "generate", help="Generate a design manifest from a Kosika source file."
-    )
-    design_generate_parser.add_argument("source", type=Path)
-    design_generate_parser.add_argument("--output", type=Path, required=True)
-    design_generate_parser.add_argument("--id", required=True)
-    design_generate_parser.add_argument("--name", required=True)
-    design_generate_parser.add_argument("--network", type=Path)
-    design_validate_parser = design_subparsers.add_parser(
-        "validate", help="Validate a design manifest."
-    )
-    design_validate_parser.add_argument("path", type=Path)
-    design_show_parser = design_subparsers.add_parser(
-        "show", help="Render a design manifest as text, JSON, Mermaid, or SVG."
-    )
-    design_show_parser.add_argument("path", type=Path)
-    design_show_parser.add_argument(
-        "--format", choices=("text", "json", "mermaid", "svg"), default="text"
-    )
-    design_show_parser.add_argument(
-        "--view", choices=("workflow", "network", "mindmap"), default="workflow"
-    )
-    design_show_parser.add_argument(
-        "--theme",
-        choices=DESIGN_THEMES,
-        default="lab",
-        help="SVG presentation theme. Never affects the design digest.",
-    )
-    design_show_parser.add_argument("--output", type=Path)
-
     manifest_parser = subparsers.add_parser("manifest")
     manifest_subparsers = manifest_parser.add_subparsers(
         dest="manifest_command", required=True
@@ -2628,9 +2410,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the structured diff as JSON instead of a human-readable summary.",
     )
 
+    virtual_model_parser = subparsers.add_parser(
+        "virtual-model",
+        help="Review and keep the verified examples of a virtual-model profile.",
+    )
+    virtual_model_commands = virtual_model_parser.add_subparsers(
+        dest="virtual_model_command", required=True
+    )
+    virtual_model_add = virtual_model_commands.add_parser(
+        "add-example",
+        help=(
+            "Check one proposed example against the profile's own sources, "
+            "show it, and save it only if you say yes."
+        ),
+    )
+    virtual_model_add.add_argument("profile", type=Path)
+    virtual_model_add.add_argument("candidate", type=Path)
     component_parser = subparsers.add_parser(
         "component",
-        help="Validate a pinned cross-language component contract.",
+        help="Validate, describe, or declare a pinned cross-language component contract.",
     )
     component_subparsers = component_parser.add_subparsers(
         dest="component_command", required=True
@@ -2644,6 +2442,45 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Print the validated component identity as JSON.",
+    )
+    component_describe_parser = component_subparsers.add_parser(
+        "describe",
+        help="Generate a contract from a Python component's --describe output.",
+        description=(
+            "Run the script's own --describe in a bounded subprocess, then "
+            "validate the contract and re-hash the pinned artifact. The "
+            "script is executed, but no tool call is served."
+        ),
+    )
+    component_describe_parser.add_argument("source", type=Path)
+    component_describe_parser.add_argument(
+        "--tool",
+        help="Tool name when the artifact defines more than one.",
+    )
+    component_describe_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write the contract here instead of standard output.",
+    )
+    component_describe_parser.add_argument(
+        "--python",
+        type=Path,
+        help="Interpreter used to run the artifact (default: this Python).",
+    )
+    component_declaration_parser = component_subparsers.add_parser(
+        "declaration",
+        help="Write Kosika declarations for a pinned component contract.",
+        description=(
+            "Read a validated contract and emit the Kosika enums, records and "
+            "tool declaration its schemas describe. Shapes only: the host still "
+            "grants the manifest, its effects and capabilities."
+        ),
+    )
+    component_declaration_parser.add_argument("manifest", type=Path)
+    component_declaration_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write the declarations here instead of standard output.",
     )
 
     extension_parser = subparsers.add_parser(
@@ -2670,7 +2507,248 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_component_describe(args: argparse.Namespace) -> int:
+    source = args.source
+    if not source.is_file():
+        print(f"Component describe failed: not a file: {source}", file=sys.stderr)
+        return 2
+    python = str(args.python) if args.python is not None else sys.executable
+    command = [python, str(source.absolute()), "--describe"]
+    if args.tool:
+        command.extend(["--tool", args.tool])
+    environment = dict(os.environ)
+    package_root = str(Path(__file__).resolve().parent.parent)
+    existing = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = (
+        package_root + os.pathsep + existing if existing else package_root
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=source.parent,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"Component describe failed: {exc}", file=sys.stderr)
+        return 2
+    if completed.returncode != 0:
+        detail = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or f"exit status {completed.returncode}"
+        )
+        print(f"Component describe failed: {detail}", file=sys.stderr)
+        return 2
+    if len(completed.stdout.encode("utf-8")) > MAX_MESSAGE_BYTES:
+        print(
+            "Component describe failed: contract exceeds 1 MiB",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        contract = parse_component_contract(strict_json(completed.stdout))
+        if contract.implementation.artifact != source.name:
+            raise ComponentContractError(
+                "The generated contract pins "
+                f"{contract.implementation.artifact!r}, not {source.name!r}"
+            )
+        artifact = verify_component_artifact(contract, source.parent)
+    except (ComponentContractError, ValueError) as exc:
+        print(f"Component describe failed: {exc}", file=sys.stderr)
+        return 2
+    text = json.dumps(component_contract_to_dict(contract), indent=2) + "\n"
+    if args.output is not None:
+        try:
+            args.output.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            print(f"Component describe failed: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote component contract: {args.output}")
+        print(f"Component: {contract.component_id} {contract.version}")
+        print(f"Tool: {contract.tool_name} ({contract.operation})")
+        print(f"Artifact: {artifact.name} {contract.implementation.sha256}")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def _run_component_declaration(args: argparse.Namespace) -> int:
+    try:
+        contract = load_component_contract(args.manifest)
+        artifact = verify_component_artifact(contract, args.manifest.parent)
+        text = declaration_for_contract(contract)
+    except (ComponentContractError, ComponentDeclarationError, OSError) as exc:
+        print(f"Component declaration failed: {exc}", file=sys.stderr)
+        return 2
+    if args.output is not None:
+        try:
+            args.output.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            print(f"Component declaration failed: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote Kosika declarations: {args.output}")
+        print(f"Tool: {contract.tool_name} ({contract.operation})")
+        print(f"Artifact: {artifact.name} {contract.implementation.sha256}")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def _outside_settings() -> tuple[tuple[str, ...], Path | None]:
+    """The outside agents the owner allowed, and the root they may see."""
+
+    from .outside import load_settings
+
+    return load_settings()
+
+
+def _db_command(args: argparse.Namespace) -> int:
+    """`kosika db inspect` says what is in a file; `kosika db init` writes the
+    tables a program's stores declare. Neither alters a column silently: a
+    table that is there is only read, and a column that disagrees is a refusal
+    naming it."""
+
+    from .database import (
+        DatabaseError,
+        apply_init,
+        describe,
+        named_file,
+        plan_init,
+        store_for,
+        store_problems,
+    )
+
+    try:
+        where = named_file(args.file)
+        program = load_program(args.from_program) if args.from_program else None
+        store = (
+            store_for(program, where, Path(args.from_program).resolve().parent)
+            if program is not None
+            else None
+        )
+    except (ValueError, OSError) as exc:
+        print(f"Database refused: {exc}", file=sys.stderr)
+        return 2
+    if args.db_command == "init":
+        if store is None:
+            print(
+                "Database refused: --from needs a program that declares a "
+                "store, since a store says which tables to write",
+                file=sys.stderr,
+            )
+            return 2
+        plan = plan_init(where, store)
+        written: list[str] = []
+        if not plan.problems:
+            try:
+                written = apply_init(plan)
+            except DatabaseError as exc:
+                print(f"Database refused: {exc}", file=sys.stderr)
+                return 2
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "database": str(where),
+                        "store": store.name,
+                        "creates": [
+                            {"table": name, "statement": statement}
+                            for name, statement in plan.creates
+                        ],
+                        "keeps": plan.keeps,
+                        "problems": plan.problems,
+                        "written": written,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 2 if plan.problems else 0
+        print(f"Plan for {where}:")
+        for name, statement in plan.creates:
+            print(f"  write table {name}: {statement}")
+        for name in plan.keeps:
+            print(f"  keep table {name}: it is there and agrees")
+        for problem in plan.problems:
+            print(f"  cannot: {problem}")
+        if plan.problems:
+            print(
+                "Nothing was written: a column that is there is never changed "
+                "by this command, so change the column, or the store",
+                file=sys.stderr,
+            )
+            return 2
+        if not written:
+            print("Nothing to write: every table the store declares is there.")
+            return 0
+        print(
+            f"Wrote {len(written)} table"
+            f"{'s' if len(written) != 1 else ''}: {', '.join(written)}"
+        )
+        return 0
+    if not where.is_file():
+        print(
+            f"Database refused: there is no database at {str(where)!r}",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        payload = describe(where)
+        problems = store_problems(where, store) if store is not None else []
+    except DatabaseError as exc:
+        print(f"Database refused: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    **payload,
+                    "store": (
+                        {"name": store.name, "problems": problems}
+                        if store is not None
+                        else None
+                    ),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2 if problems else 0
+    print(str(where))
+    for table in payload["tables"]:
+        print(f"  table {table['name']} ({table['rows']} rows)")
+        for column in table["columns"]:
+            print(
+                f"    {column['name']:20} {column['declared']:12} "
+                f"{column['affinity']}"
+            )
+    if store is None:
+        return 0
+    if problems:
+        print(f"store {store.name}: the database does not agree")
+        for problem in problems:
+            print(f"  {problem}")
+        return 2
+    print(f"store {store.name}: the database agrees")
+    return 0
+
+
 def main() -> int:
+    # Tracing, when RESPAN_API_KEY is set, begins before any model is asked
+    # anything; without the key this does nothing at all (kosika/tracing.py).
+    start_tracing()
+    # A console that cannot show a character (Windows' cp1252 and a test
+    # named with a typographic dash) shows a stand-in rather than crashing.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
     parser = build_parser()
     args = parser.parse_args()
     if args.command == "start":
@@ -2684,12 +2762,85 @@ def main() -> int:
             start_arguments += ["--port", str(args.port)]
         if args.no_browser:
             start_arguments.append("--no-browser")
+        if args.until_closed:
+            start_arguments.append("--until-closed")
         # From here it is an ordinary `kosika studio` with those choices.
         args = parser.parse_args(start_arguments)
-    if args.command == "author":
-        return _run_author_command(args)
-    if args.command == "author-eval":
-        return _run_authoring_evaluation(args)
+    if args.command == "outside":
+        from . import outside as outside_agents
+
+        try:
+            if args.off:
+                outside_agents.save_settings((), None)
+            elif args.allow:
+                outside_agents.save_settings(args.allow, args.within)
+        except outside_agents.OutsideError as exc:
+            print(f"Not done: {exc}", file=sys.stderr)
+            return 2
+        allowed, within = outside_agents.load_settings()
+        installed = outside_agents.installed()
+        print(
+            "Outside agents Kosika knows how to ask: "
+            + ", ".join(outside_agents.COMMANDS)
+        )
+        print("Installed here: " + (", ".join(installed) or "none"))
+        if allowed:
+            print("Allowed: " + ", ".join(allowed))
+            print(f"They are shown only folders inside: {within}")
+            print("What they read is sent to the company that runs each of them.")
+            print("They work in a copy; nothing changes until you approve it.")
+        else:
+            print("Allowed: none. No outside agent is ever asked.")
+            print("To allow some: kosika outside --allow devin omp --within FOLDER")
+        return 0
+    if args.command == "pill":
+        from .pill import main as pill_main
+
+        if args.folder is not None and not args.folder.is_dir():
+            print(f"Not started: {_no_folder(args.folder)}", file=sys.stderr)
+            return 2
+        return pill_main([str(args.folder)] if args.folder is not None else [])
+    if args.command == "desktop":
+        from .desktop_app import (
+            NAME,
+            PILL_MODULE,
+            PILL_NAME,
+            STUDIO_MODULE,
+            make_shortcuts,
+            remove_shortcuts,
+        )
+
+        app_name = PILL_NAME if args.kosi else NAME
+        try:
+            if args.remove:
+                gone = remove_shortcuts(app_name)
+                print(
+                    "Removed:\n  " + "\n  ".join(str(path) for path in gone)
+                    if gone
+                    else f"There was no {app_name} shortcut to remove."
+                )
+                return 0
+            if args.folder is not None and not args.folder.is_dir():
+                print(f"Not done: {_no_folder(args.folder)}", file=sys.stderr)
+                return 2
+            shortcuts = make_shortcuts(
+                args.folder, app_name, PILL_MODULE if args.kosi else STUDIO_MODULE
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"Not done: {exc}", file=sys.stderr)
+            return 2
+        print(f"{app_name} is now an app on this computer:")
+        for path in shortcuts:
+            print(f"  {path}")
+        if args.kosi:
+            print("Open it and a small pill appears at the bottom of the screen.")
+            print("Click it or press Ctrl+Alt+K to ask. Right-click to quit.")
+            print("To take it away again: kosika desktop --kosi --remove")
+        else:
+            print("Open it like any other app. It starts with nothing granted;")
+            print("choose a folder inside Studio, on the Permissions page.")
+            print("To take it away again: kosika desktop --remove")
+        return 0
     if args.command == "development":
         try:
             request_source = (
@@ -2703,60 +2854,6 @@ def main() -> int:
             return 2
         print(json.dumps(response, indent=2, sort_keys=True))
         return 0 if response["ok"] else 2
-
-    if args.command == "audience-map":
-        from .audience_maps import (
-            AudienceMapError,
-            build_audience_map,
-        )
-        from .audience_maps import (
-            to_mermaid as audience_map_to_mermaid,
-        )
-        from .audience_maps import (
-            to_text as audience_map_to_text,
-        )
-        from .audience_maps import (
-            verify as verify_audience_map,
-        )
-
-        try:
-            contracts = tuple(
-                load_component_contract(path) for path in args.component_contract
-            )
-            audience_map = build_audience_map(
-                args.source,
-                audience=args.audience,
-                root=args.root,
-                trace_path=args.trace,
-                contracts=contracts,
-                purpose=args.purpose,
-            )
-            verification = verify_audience_map(audience_map)
-            if not verification["ok"]:
-                raise AudienceMapError(
-                    "Audience map integrity check failed: "
-                    + "; ".join(verification["problems"])
-                )
-            rendered = {
-                "json": lambda item: (
-                    json.dumps(
-                        item.to_dict(), indent=2, sort_keys=True, ensure_ascii=False
-                    )
-                    + "\n"
-                ),
-                "mermaid": audience_map_to_mermaid,
-                "text": audience_map_to_text,
-            }[args.format](audience_map)
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                args.output.write_text(rendered, encoding="utf-8")
-                print(f"Audience map written: {args.output}")
-            else:
-                print(rendered, end="")
-        except (AudienceMapError, OSError, ValueError) as exc:
-            print(f"Audience map failed safely: {exc}", file=sys.stderr)
-            return 2
-        return 0
 
     if args.command == "new":
         from .starter import StarterError, create_starter
@@ -3108,6 +3205,21 @@ def main() -> int:
         except (OSError, SourceMapError, ValueError) as exc:
             print(f"Source map failed safely: {exc}", file=sys.stderr)
             return 2
+    if args.command == "skills-export":
+        try:
+            catalog = load_skill_notes(args.notes)
+            if not len(catalog):
+                print(f"No skill notes in {args.notes}", file=sys.stderr)
+                return 2
+            for skill in catalog:
+                folder = args.out / skill.skill_id
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / "SKILL.md").write_text(open_skill_text(skill), encoding="utf-8", newline="\n")
+                print(f"{skill.skill_id}/SKILL.md")
+            return 0
+        except (OSError, SkillCatalogError) as exc:
+            print(f"Skill export failed safely: {exc}", file=sys.stderr)
+            return 2
     if args.command == "skills":
         try:
             catalog = SkillCatalog.from_directories(args.skill_dir)
@@ -3143,137 +3255,64 @@ def main() -> int:
         except (SkillCatalogError, SkillRoutingError) as exc:
             print(f"Skill selection failed safely: {exc}", file=sys.stderr)
             return 2
-    if args.command == "city":
+    if args.command == "virtual-model":
+        from .virtual_model import (
+            accept_verified_example,
+            read_example_candidate,
+            review_example_candidate,
+        )
+
         try:
-            world = load_world_manifest(args.world) if args.world is not None else None
-            if args.trace is not None:
-                from .city_live import capture_trace
-
-                report = capture_trace(args.root, args.trace)
-                print(
-                    f"Captured {report['runs']} resident runs into {report['directory']}"
-                )
-                print(
-                    f"  replayable: {report['replayable']}"
-                    f"   awaiting approval: {report['awaiting_approval']}"
-                )
-                for entry in report["entries"]:
-                    if entry.get("replayable"):
-                        result = json.dumps(entry["replayed"], sort_keys=True)
-                        print(f"  [ok]   {entry['workflow']} -> {result[:96]}")
-                    else:
-                        print(
-                            f"  [held] {entry['workflow']} -> {entry.get('replay_error', '')}"
-                        )
-                if report["replayable"]:
-                    first = next(
-                        entry for entry in report["entries"] if entry.get("replayable")
-                    )
-                    print(f"Replay one with: kosika replay {first['trace']}")
-                return 0
-            if args.serve:
-                from .city_live import serve_city
-
-                name = world.name if world is not None else (args.name or CITY_NAME)
-                environment = (
-                    world.environment if world is not None else args.environment
-                )
-                labels = world.labels_by_domain if world is not None else None
-                print(f"{name} live world on http://{args.host}:{args.port}")
-                serve_city(
-                    args.root,
-                    host=args.host,
-                    port=args.port,
-                    name=name,
-                    environment=environment,
-                    world=world,
-                )
-                return 0
-            city = build_city(
-                args.root,
-                name=world.name if world is not None else args.name,
+            candidate = read_example_candidate(args.candidate)
+            example, digest, source_identity = review_example_candidate(
+                args.profile, candidate
             )
-            if world is not None:
-                world.validate_city(city)
-            environment = world.environment if world is not None else args.environment
-            labels = world.labels_by_domain if world is not None else None
-            if args.format == "json":
-                city_output = json.dumps(city.to_dict(), indent=2, sort_keys=True)
-            elif args.format == "svg":
-                city_output = render_cityscape_svg(city, theme=args.theme)
-            elif args.format == "live":
-                from .city_live import render_city_live
-
-                city_output = render_city_live(
-                    city,
-                    environment=environment,
-                    world_name=world.name if world is not None else None,
-                    world_labels=labels,
-                    world_kinds=(world.kinds_by_domain if world is not None else None),
-                    world_buildings=(
-                        world.building_ids_by_resident if world is not None else None
-                    ),
-                    world_camera=world.camera if world is not None else "isometric",
-                    render_style=world.render_style if world is not None else "city",
-                )
-            else:
-                city_output = city.to_text()
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                args.output.write_text(city_output, encoding="utf-8")
-                print(f"City written: {args.output}")
-            else:
-                print(city_output)
-            return 0
-        except (OSError, CityError, WorldError) as exc:
-            print(f"City failed safely: {exc}", file=sys.stderr)
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"Example not reviewed: {exc}", file=sys.stderr)
             return 2
-    if args.command == "design":
+        if not sys.stdin.isatty():
+            print(
+                "Example not reviewed: this needs an interactive terminal, so "
+                "you can read the example before it is saved.",
+                file=sys.stderr,
+            )
+            return 2
+        print("Proposed verified example:")
+        print(f"  task   : {example.task}")
+        print(f"  answer : {example.answer}")
+        for reference in example.evidence:
+            print(f"  source : {reference.source}:{reference.line}")
+            print(f"           {reference.quote}")
         try:
-            if args.design_command == "generate":
-                program = load_program(args.source)
-                check(program)
-                attached_network: NetworkManifest | None = None
-                if args.network is not None:
-                    attached_network = load_network_manifest(args.network)
-                design_manifest = build_design_from_program(
-                    program,
-                    args.id,
-                    args.name,
-                    network=attached_network,
-                )
-                write_design_manifest(design_manifest, args.output)
-                print(f"Generated design manifest: {args.output}")
-                print(
-                    f"Design contains {len(design_manifest.nodes)} node(s) and "
-                    f"{len(design_manifest.edges)} edge(s)"
-                )
-                return 0
-            design_manifest = load_design_manifest(args.path)
-            if args.design_command == "validate":
-                print(f"Valid design manifest: {args.path}")
-                print(
-                    f"Design contains {len(design_manifest.nodes)} node(s), "
-                    f"{len(design_manifest.edges)} edge(s), and "
-                    f"{len(design_manifest.views)} view(s)"
-                )
-                return 0
-            rendered = render_design(
-                design_manifest, args.format, args.view, getattr(args, "theme", "lab")
+            answer = input("Save this example to the profile? [y/N] ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Profile not changed.")
+            return 1
+        try:
+            kept = accept_verified_example(
+                args.profile,
+                candidate,
+                expected_profile_digest=digest,
+                expected_source_identity=source_identity,
             )
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                args.output.write_text(rendered + "\n", encoding="utf-8")
-                print(f"Rendered {args.format} design: {args.output}")
-            else:
-                print(rendered)
-            return 0
-        except (OSError, ValueError) as exc:
-            print(f"Design failed: {exc}", file=sys.stderr)
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"Example not saved: {exc}", file=sys.stderr)
             return 2
+        print(
+            f"Accepted and saved. The profile now has {kept} verified "
+            f"example{'' if kept == 1 else 's'}."
+        )
+        return 0
+
     if args.command == "agent":
         return _run_agent_command(args, parser)
     if args.command == "component":
+        if args.component_command == "describe":
+            return _run_component_describe(args)
+        if args.component_command == "declaration":
+            return _run_component_declaration(args)
         try:
             component_contract = load_component_contract(args.manifest)
             artifact = verify_component_artifact(
@@ -3406,12 +3445,10 @@ def main() -> int:
 
         root = args.folder
         if not root.is_dir():
-            print(f"App unavailable: {root} is not a folder", file=sys.stderr)
+            print(f"App unavailable: {_no_folder(root)}", file=sys.stderr)
             return 2
         if args.allow_folder is not None and not args.allow_folder.is_dir():
-            print(
-                f"App unavailable: {args.allow_folder} is not a folder", file=sys.stderr
-            )
+            print(f"App unavailable: {_no_folder(args.allow_folder)}", file=sys.stderr)
             return 2
         if args.allow_shell and args.allow_folder is None:
             print(
@@ -3475,6 +3512,8 @@ def main() -> int:
             meaning=_meaning(args),
             embed_label=args.embed_model or "",
             in_session=args.in_session,
+            outside=_outside_settings()[0],
+            outside_within=_outside_settings()[1],
         )
         try:
             server = make_server(studio, args.port)
@@ -3493,7 +3532,20 @@ def main() -> int:
         if not args.no_browser:
             # Studio opens as a window of its own when a browser that can do
             # that is installed, and as an ordinary tab otherwise.
-            if args.command != "studio" or not open_window(url):
+            window = None
+            if args.until_closed:
+                from .app import open_app_window
+                from .desktop_app import home as app_home
+
+                window = open_app_window(url, app_home() / "window")
+            if window is not None:
+                # The app ends when its window does.
+                def stop_with_window() -> None:
+                    window.wait()
+                    server.shutdown()
+
+                threading.Thread(target=stop_with_window, daemon=True).start()
+            elif args.command != "studio" or not open_window(url):
                 webbrowser.open(url)
         try:
             server.serve_forever()
@@ -3594,6 +3646,109 @@ def main() -> int:
             approve=ask_first if args.approve else None,
             approved_by=getpass.getuser(),
         )
+        return 0
+
+    if args.command == "serve-mcp":
+        from .mcp_program import ProgramServer, ProgramServerError
+
+        flags = list(args.run_flags)
+        # Written after the program (`serve-mcp plan.kos --only note -- ...`),
+        # --only lands in run_flags: argparse's REMAINDER takes everything
+        # after the source. Take each one back before the "--".
+        only = list(args.only or [])
+        while len(flags) >= 2 and flags[0] == "--only":
+            only.append(flags[1])
+            flags = flags[2:]
+        if flags and flags[0] == "--":
+            flags = flags[1:]
+        try:
+            server = ProgramServer(Path(args.source), flags, only or None)
+        except (ProgramServerError, OSError) as exc:
+            print(f"Not served: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:  # a program that does not check
+            print(f"Not served: {exc}", file=sys.stderr)
+            return 2
+        server.serve()
+        return 0
+    if args.command == "connect":
+        from .mcp_tools import MCPGrantError, MCPHub, declaration, parse_grant
+
+        try:
+            name, command = parse_grant(args.grant)
+            hub = MCPHub({name: command})
+            try:
+                tools = hub.tools(name)
+            finally:
+                hub.close()
+        except (MCPGrantError, MCPProtocolError, OSError) as exc:
+            print(f"Not connected: {exc}", file=sys.stderr)
+            return 2
+        quoted = " ".join(command)
+        from .mcp_tools import _camel, _snake
+
+        names = [
+            name_
+            for tool in tools
+            for name_ in (f"{_camel(tool['name'])}In", f"{_camel(tool['name'])}Out", _snake(tool["name"]))
+        ]
+        text = (
+            f"// Tools of the MCP server {name!r}, as `kosika connect` found them.\n"
+            f"// Run with: kosika run FILE.kos --mcp {name}=\"{quoted}\"\n"
+            "// A tool the server does not mark read-only is access: execute, so\n"
+            "// every call waits for a yes.\n\n"
+            + f"export [{', '.join(names)}]\n\n"
+            + "\n\n".join(declaration(name, tool) for tool in tools)
+            + "\n"
+        )
+        if args.out is not None:
+            args.out.write_text(text, encoding="utf-8")
+            print(f"{len(tools)} tool(s) of {name} declared in {args.out}")
+        else:
+            print(text, end="")
+        return 0
+
+    if args.command == "answer":
+        from .ask_folder import AskFolderError, answer, serve, waiting
+
+        if args.relay:
+            from .ask_relay import AskRelayError, Relay
+
+            if args.words or args.serve:
+                print("--relay answers from the phone; give only the folder.", file=sys.stderr)
+                return 2
+            try:
+                relay = Relay(args.folder, args.relay, args.by or getpass.getuser())
+            except AskRelayError as exc:
+                print(f"Relay not started: {exc}", file=sys.stderr)
+                return 2
+            try:
+                relay.run()
+            except KeyboardInterrupt:
+                pass
+            return 0
+        if args.serve:
+            if args.words:
+                print("--serve answers from the page; give only the folder.", file=sys.stderr)
+                return 2
+            serve(args.folder, args.by or getpass.getuser(), args.port)
+            return 0
+        if not args.words:
+            asks = waiting(args.folder)
+            if not asks:
+                print("Nothing is waiting.")
+            for ask in asks:
+                print(f"{ask['id']}  {ask.get('says', '')}")
+            return 0
+        if len(args.words) > 2:
+            print("Give at most an ask's id and yes or no.", file=sys.stderr)
+            return 2
+        ask_id = args.words[0] if len(args.words) == 2 else None
+        try:
+            print(answer(args.folder, ask_id, args.words[-1], args.by or getpass.getuser()))
+        except AskFolderError as exc:
+            print(f"Not answered: {exc}", file=sys.stderr)
+            return 2
         return 0
 
     if args.command == "story":
@@ -3712,12 +3867,46 @@ def main() -> int:
         )
         return 0
 
+    if args.command == "learn-eval":
+        from .learning_evaluation import (
+            LearningEvaluationError,
+            evaluate_learning,
+            report_to_text,
+        )
+
+        try:
+            learned = evaluate_learning(args.source, args.tasks, args.output)
+        except LearningEvaluationError as exc:
+            print(f"Learn evaluation rejected: {exc}", file=sys.stderr)
+            return 2
+        except FileExistsError as exc:
+            print(f"Learn evaluation refused: {exc}", file=sys.stderr)
+            return 2
+        except (ValueError, OSError) as exc:
+            print(f"Learn evaluation failed: {exc}", file=sys.stderr)
+            return 2
+        if args.format == "json":
+            print(json.dumps(learned, indent=2, sort_keys=True))
+        else:
+            print(report_to_text(learned))
+        passed = learned["cold_passed"] == learned["tasks"] == learned["warm_passed"]
+        return 0 if passed else 1
+
     if args.command == "test":
         from .testing import run_tests
         from .testing import to_text as tests_to_text
 
+        source = args.source
+        if source.is_dir():
+            source = source / "main.kos"
+            if not source.is_file():
+                print(
+                    f"Check failed: {args.source} is a folder without a main.kos file",
+                    file=sys.stderr,
+                )
+                return 2
         try:
-            results = run_tests(load_program(args.source), only=args.only)
+            results = run_tests(load_program(source), only=args.only)
         except (ValueError, OSError) as exc:
             print(f"Check failed: {exc}", file=sys.stderr)
             return 2
@@ -3864,6 +4053,8 @@ def main() -> int:
     if args.command == "analyze":
         return 0
 
+    if args.command == "db":
+        return _db_command(args)
     json_check = args.command == "check" and getattr(args, "format", None) == "json"
     if json_check:
         response = check_project(args.source)
@@ -3879,27 +4070,6 @@ def main() -> int:
         return 2
     if args.command == "check":
         print(f"OK: {args.source}")
-        return 0
-    if args.command == "unified":
-        try:
-            report = build_unified_mindmap(args.source, project=args.project)
-            rendered = (
-                json.dumps(report, indent=2, sort_keys=True)
-                if args.format == "json"
-                else (
-                    render_unified_mermaid(report)
-                    if args.format == "mermaid"
-                    else render_unified_text(report)
-                )
-            )
-            if args.output is not None:
-                args.output.write_text(rendered, encoding="utf-8")
-                print(f"Unified mindmap written: {args.output}")
-            else:
-                print(rendered, end="")
-        except (OSError, UnifiedMindmapError, ValueError) as exc:
-            print(f"Unified mindmap failed: {exc}", file=sys.stderr)
-            return 2
         return 0
     if args.command == "mindmap":
         try:
@@ -3921,77 +4091,6 @@ def main() -> int:
             print(f"Mindmap failed: {exc}", file=sys.stderr)
             return 2
         return 0
-    if args.command == "explain":
-        try:
-            extension_manifests = tuple(
-                load_extension_manifest(path) for path in args.extension_manifest
-            )
-            explanation = build_explanation(
-                program,
-                workflows=args.workflow,
-                records=args.record,
-                diagnostics=args.diagnostic,
-                trace_path=args.trace,
-                extension_manifests=extension_manifests,
-            )
-            rendered = {
-                "json": to_explanation_json,
-                "mermaid": to_explanation_mermaid,
-                "text": to_explanation_text,
-                "outsider": to_explanation_outsider,
-            }[args.format](explanation)
-            if args.output is not None:
-                args.output.write_text(rendered, encoding="utf-8")
-                print(f"Explanation written: {args.output}")
-            else:
-                print(rendered, end="")
-        except (ExplainError, OSError, ValueError) as exc:
-            print(f"Explain failed: {exc}", file=sys.stderr)
-            return 2
-        return 0
-    if args.command == "assistant":
-        try:
-            provider = _assistant_provider(args)
-            source_analyses = tuple(
-                analyze_source_file(path) for path in args.source_file
-            )
-            project_analyses = tuple(
-                analyze_python_project(path) for path in args.project
-            )
-            assistant_result = KosikaAssistant(
-                program,
-                provider,
-                max_output_tokens=args.max_output_tokens,
-            ).ask(
-                args.task,
-                diagnostics=args.diagnostic,
-                source_analyses=source_analyses,
-                project_analyses=project_analyses,
-            )
-            if args.json:
-                print(json.dumps(assistant_result.to_dict(), indent=2, sort_keys=True))
-            else:
-                print(assistant_result.answer)
-                print(f"Assistant mode: {assistant_result.mode}")
-                mindmap_summary = assistant_result.mindmap.get("summary", {})
-                if not isinstance(mindmap_summary, dict):
-                    mindmap_summary = {}
-                print(
-                    "Mindmap: "
-                    f"{mindmap_summary.get('node_count', 0)} nodes, "
-                    f"{mindmap_summary.get('edge_count', 0)} edges"
-                )
-        except (
-            AssistantError,
-            ModelProviderError,
-            OSError,
-            ProjectAnalysisError,
-            ValueError,
-        ) as exc:
-            print(f"Assistant failed safely: {exc}", file=sys.stderr)
-            return 2
-        return 0
-
     if args.component_manifest is None and (
         args.component_runtime is not None
         or args.allow_component_effect
@@ -4001,8 +4100,78 @@ def main() -> int:
             "--component-runtime and component grants require --component-manifest"
         )
 
+    environment: Environment | None = None
+    if getattr(args, "env", None):
+        decided = [
+            flag
+            for attribute, flag in ENVIRONMENT_DECIDED
+            if getattr(args, attribute, None) not in (None, False, [])
+        ]
+        if decided:
+            print(
+                f"Workflow failed: {decided[0]} cannot be used with --env; "
+                "name it in the environment",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            environment = find_environment(args.source, args.env)
+        except EnvironmentError_ as exc:
+            print(f"Workflow failed: {exc}", file=sys.stderr)
+            return 2
+        args.allow_folder = environment.allow_folder
+        args.allow_shell = environment.allow_shell
+        args.allow_site = list(environment.sites)
+        args.memory = environment.memory_folder()
+        args.max_model_calls = min(
+            args.max_model_calls,
+            int(environment.budget.get("model_calls", args.max_model_calls)),
+        )
+        args.max_tool_calls = min(
+            args.max_tool_calls,
+            int(environment.budget.get("tool_calls", args.max_tool_calls)),
+        )
+        if "seconds" in environment.budget:
+            args.deadline_seconds = (
+                float(environment.budget["seconds"])
+                if args.deadline_seconds is None
+                else min(args.deadline_seconds, float(environment.budget["seconds"]))
+            )
+        if args.trace == Path("run_trace.jsonl") and environment.keep is not None:
+            args.trace = environment.trace_path()
+
+    if program.stores and args.command == "run":
+        # A store is a promise about a file, so the file is asked whether it
+        # keeps it before the first step runs. Only the host knows the file,
+        # so this is a preflight rather than a check (see
+        # kosika.database.check_stores); `kosika check` still passes a program
+        # whose tables are not there yet, since no file is named there.
+        from .database import check_stores
+
+        try:
+            check_stores(
+                program,
+                getattr(args, "database", None),
+                Path(args.source).resolve().parent,
+            )
+        except ValueError as exc:
+            print(f"Workflow failed: {exc}", file=sys.stderr)
+            return 2
+
     mcp_commands: dict[str, Sequence[str]] | None = None
-    run_manifest: MCPManifest | None = None
+    run_manifest: MCPManifest | dict[str, MCPManifest] | None = None
+    if environment is not None and environment.mcp:
+        try:
+            mcp_commands = {
+                source: list(route.command) for source, route in environment.mcp.items()
+            }
+            run_manifest = {
+                source: load_manifest(route.manifest)
+                for source, route in environment.mcp.items()
+            }
+        except ManifestError as exc:
+            print(f"Workflow failed: {exc}", file=sys.stderr)
+            return 2
     if args.mcp_server is not None:
         if args.mcp_manifest is None:
             parser.error("--mcp-manifest is required when --mcp-server is used")
@@ -4013,12 +4182,18 @@ def main() -> int:
     bindings: dict[str, ControlledProvider] = {}
     telemetry_error = False
     component_tool_bindings: dict[str, Any] = {}
+    opened_hubs: list[Any] = []
     try:
         inputs = (
             strict_json(args.input.read_text(encoding="utf-8")) if args.input else {}
         )
         if not isinstance(inputs, dict):
             raise ValueError("Workflow input must be a JSON object")
+        if environment is not None and environment.keep is not None:
+            # A run keeps a journal of its own, named by what it runs, so
+            # one paused for an approval is found again when run again.
+            args.journal = environment.journal_path(args.source, args.workflow, inputs)
+            args.binding_id = environment.name
         if args.component_manifest is not None:
             component_contract = load_component_contract(args.component_manifest)
             component_binding = bind_component(
@@ -4040,12 +4215,32 @@ def main() -> int:
             allow_shell=args.allow_shell,
             sites=getattr(args, "allow_site", ()),
             meaning=_meaning(args),
+            notify=getattr(args, "notify", None),
+            services=getattr(args, "services", None),
+            linux=getattr(args, "linux", None),
+            computer=getattr(args, "computer", False),
+            database=getattr(args, "database", None),
         )
         system_bindings = {
             **system_bindings,
-            **bind_memory_tools(program, getattr(args, "memory", None)),
+            **bind_memory_tools(program, getattr(args, "memory", None), meaning=_meaning(args)),
         }
-        if args.approve and not args.journal:
+        # What the run records about the database it was given: the tables the
+        # file has, so that a replay can put a recorded statement back to
+        # SQLite with no database present (see kosika.database.sent_problem).
+        # Only a program that reaches a database is asked.
+        from .database import granted_tables
+
+        granted_database = getattr(args, "database", None)
+        database_tables = (
+            granted_tables(granted_database)
+            if granted_database is not None
+            and any(system_kind(tool) == "db" for tool in program.tools)
+            else None
+        )
+        if args.approve_in is not None and args.approve:
+            raise ValueError("Use --approve or --approve-in, not both")
+        if (args.approve or args.approve_in is not None) and not args.journal:
             # Approval needs a journal to remember what was approved between
             # the pause and the resume; an asked-for run keeps one for itself.
             approve_scratch = tempfile.TemporaryDirectory(prefix="kosika-approve-")
@@ -4079,9 +4274,21 @@ def main() -> int:
         )
         bindings = {
             name: ControlledProvider(provider, limits)
-            for name, provider in _workflow_model_bindings(args, program).items()
+            for name, provider in (
+                _environment_model_bindings(environment, program)
+                if environment is not None
+                else _workflow_model_bindings(args, program)
+            ).items()
         }
         host_tool_bindings = {**component_tool_bindings, **system_bindings}
+        if args.mcp:
+            from .mcp_tools import MCPHub, bind_mcp_tools, parse_grant
+
+            if environment is not None:
+                raise ValueError("--mcp cannot be used with --env; name it in the environment")
+            granted_hub = MCPHub(dict(parse_grant(grant) for grant in args.mcp))
+            opened_hubs.append(granted_hub)
+            host_tool_bindings.update(bind_mcp_tools(program, granted_hub))
         while True:
             # A fresh session per attempt: after an approval the journal
             # returns finished steps from its checkpoint and resumes at the
@@ -4099,11 +4306,14 @@ def main() -> int:
                     args.workflow,
                     args.trace,
                     skills=load_skill_notes(Path(args.source).parent / SKILLS_FOLDER),
+                    # Learning steps learn where the program remembers.
+                    lessons=Lessons(args.memory) if args.memory else None,
                     mcp_commands=mcp_commands,
                     manifest=run_manifest,
                     inputs=inputs,
                     model_bindings=bindings,
                     tool_bindings=host_tool_bindings or None,
+                    database_tables=database_tables,
                     session=session,
                     limits=ExecutionLimits(
                         max_function_calls=args.max_function_calls,
@@ -4118,31 +4328,26 @@ def main() -> int:
                 granted = (
                     _ask_approval(pending.request, args.approved_by)
                     if args.approve
+                    else _ask_approval_in(
+                        args.approve_in, pending.request, args.approve_wait
+                    )
+                    if args.approve_in is not None
                     else None
                 )
                 if granted is None:
                     raise
                 approvals.append(granted)
-        published_events: tuple[dict[str, Any], ...] | None = None
         if args.event_trace is not None:
-            published_events = _publish_run_events(args, args.trace)
-        if args.design is not None and published_events is not None:
-            _publish_timeline(args, published_events)
+            _publish_run_events(args, args.trace)
     except ApprovalPending as exc:
-        normalized = None
         if args.event_trace is not None:
             try:
-                normalized = write_event_jsonl(
+                write_event_jsonl(
                     args.event_trace,
                     [_cli_approval_event(1)],
                 )
             except (EventValidationError, OSError) as stream_exc:
                 print(f"Event stream write failed: {stream_exc}", file=sys.stderr)
-                return 2
-            try:
-                _publish_timeline(args, normalized)
-            except (DesignError, OSError) as design_exc:
-                print(f"Timeline design failed: {design_exc}", file=sys.stderr)
                 return 2
         print(json.dumps({"status": exc.code, **exc.request}, indent=2))
         return 3
@@ -4156,6 +4361,8 @@ def main() -> int:
         )
         return 2
     finally:
+        for hub in opened_hubs:
+            hub.close()
         if args.telemetry:
             try:
                 args.telemetry.write_text(
@@ -4173,8 +4380,26 @@ def main() -> int:
                 telemetry_error = True
     if telemetry_error:
         return 2
+    if environment is not None and args.journal is not None:
+        # The run is finished: there is nothing to begin again. Its
+        # approvals' ledger stays, so an approval is never used twice.
+        Path(args.journal).unlink(missing_ok=True)
+        Path(str(args.journal) + ".lock.sqlite").unlink(missing_ok=True)
     print(run_result)
     print(f"Trace: {args.trace}")
+    census = lesson_census(args.trace)
+    if census is not None:
+        print(
+            "Lesson census: "
+            f"{census['from_lessons']}/{census['total']} model answers from lessons "
+            f"({census['lesson_ratio']:.1%}); "
+            f"{census['live_model']} from live model. "
+            + (
+                "by how: " + ", ".join(f"{k}={v}" for k, v in sorted(census["how"].items()))
+                if census["how"]
+                else ""
+            )
+        )
     return 0
 
 

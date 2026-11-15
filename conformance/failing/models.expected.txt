@@ -1,0 +1,13 @@
+FAIL  an answer of the wrong shape
+      line 27: Invalid structured model output: $.count: expected number, got str
+FAIL  an answer with a field the record does not have
+      line 33: Invalid structured model output: $: unknown properties ['extra']
+FAIL  a model with no answer left
+      line 38: Scripted model provider has no response left
+FAIL  a model answer that is never asked for
+      line 42: 1 answer(s) for 'writer' were never asked for
+FAIL  the model calls a workflow may make
+      line 50: model calls budget exceeds 1
+FAIL  every retry refused
+      line 56: Invalid structured model output: $: missing required property 'text'
+0 passed, 6 failed

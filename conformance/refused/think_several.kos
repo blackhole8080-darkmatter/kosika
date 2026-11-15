@@ -1,0 +1,10 @@
+// Refused: naming several models is only for a step that votes.
+
+record Ticket { text: Text }
+
+model quick
+model careful
+
+workflow main(ticket: Ticket) -> Summary {
+  brief = summarize ticket.text using quick, careful
+}

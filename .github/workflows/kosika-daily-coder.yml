@@ -1,0 +1,115 @@
+# Kosika's development, every day, with the laptop off.
+#
+# A free GitHub machine checks Kosika out, runs the Kosika coder on the next
+# open request in examples/agents/coder/daily/todo.md with free models only
+# (the virtual model router: Groq, then OpenRouter's free models), checks
+# the change in both engines, and opens a pull request with it. Nothing
+# reaches studio until its owner merges the pull request.
+#
+# It needs the repository secret GROQ_API_KEY, and may use OPENROUTER_API_KEY
+# (Settings > Secrets and variables > Actions > New repository secret).
+# Without a key it stops at once and says so.
+
+name: Kosika daily coder
+
+on:
+  schedule:
+    - cron: "30 4 * * *"
+  # A new request pushed to the to-do list is taken at once, as is a change
+  # to this file (the coder's own branch included, before it is in studio).
+  push:
+    branches: [studio, claude/project-thread-01asp3]
+    paths: [.github/workflows/kosika-daily-coder.yml, examples/agents/coder/daily/todo.md]
+  workflow_dispatch:
+    inputs:
+      swarm:
+        description: "How many requests to work on at once"
+        default: "1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: kosika-daily-coder
+  cancel-in-progress: false
+
+jobs:
+  coder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+
+      - name: Free models are reachable
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::error::Add the repository secret GROQ_API_KEY: the coder has no free model to ask without it."
+            exit 1
+          fi
+          pip install --quiet pytest
+
+      - name: The coder takes the next request
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          git fetch origin studio
+          cd examples/agents/coder/daily
+          if [ "${{ github.event.inputs.swarm || '1' }}" != "1" ]; then
+            python daily.py --swarm "${{ github.event.inputs.swarm }}" | tee ../../../../coder.log
+          else
+            python daily.py | tee ../../../../coder.log
+          fi
+
+      - name: A pull request for each change that passed its checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "Kosika daily coder"
+          git config user.email "kosika-coder@users.noreply.github.com"
+          # The to-do list as the coder left it, marked, goes into each pull
+          # request; the checkout itself goes back to studio first.
+          cp examples/agents/coder/daily/todo.md "$RUNNER_TEMP/todo.md"
+          git checkout -q -- .
+          for place in ~/Aryan_Private/kosika-daily/*/; do
+            [ -f "$place/run.json" ] || continue
+            passed=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['passed'])" "$place/run.json")
+            title=$(head -1 "$place/report.md" | sed 's/^# //' | cut -c1-90)
+            branch="coder/$(basename "$place")"
+            git checkout -q -B "$branch" origin/studio
+            if [ "$passed" = "True" ] && git apply --index "$place/change.patch"; then
+              mkdir -p examples/agents/coder/daily
+              cp "$RUNNER_TEMP/todo.md" examples/agents/coder/daily/todo.md
+              git add examples/agents/coder/daily/todo.md
+              git commit -q -m "The Kosika coder: $title" -m "Made by the daily coder on free models; its checks passed. See the report in the pull request."
+              git push -q -f origin "$branch"
+              gh pr create --base studio --head "$branch" --title "Kosika coder: $title" --body-file "$place/report.md" || true
+            else
+              echo "Not passed, no pull request: $title"
+            fi
+          done
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kosika-daily-coder
+          path: |
+            ~/Aryan_Private/kosika-daily/
+            coder.log
+          if-no-files-found: ignore

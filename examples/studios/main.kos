@@ -1,0 +1,74 @@
+// Kosika Studios -- the pipeline.
+// One ask is routed to one vendor, with the render ready to launch.
+//
+//   kosika agent examples/studios/main.kos --input {"text": "sting: the mark"}
+//
+// The five vendored kits, and what routes to which:
+//
+//   sting:   HyperFrames            HTML in, deterministic MP4 out
+//   draw:    Claude Animation Base  p5.brush character work
+//   collage: gbro Collage B-roll    one spoken line, halftone paper collage
+//   film:    Lemo-Opuscar           a film whose every frame is code
+//   (a film that must never cut to the next slide runs through
+//   onetake first, then lands in whichever kit draws it)
+//
+// Routing is deterministic: the prefix decides the vendor; the brief's own
+// rules (lengths, gates) are checked before anything is launched, so a
+// mistake costs nothing.
+
+record Brief { think: Text }
+record Routed { kind: Text vendor: Text gate: Text next: Text }
+
+// Where the ask goes, and what stands in front of the render.
+fn route(ask: Text) -> Routed {
+  let said = ask.lower().trim()
+  if said.starts_with("collage:") {
+    return {kind: "broll", vendor: "gbro-collage-broll", gate: "metaphor, then still frame, then clip",
+      next: "external_integrations/skills/gbro_collage.kos"}
+  }
+  if said.starts_with("draw:") {
+    return {kind: "shot", vendor: "ClaudeAnimationBase", gate: "sheets at every shot boundary, then the clip",
+      next: "external_integrations/skills/claude_animation.kos"}
+  }
+  if said.starts_with("film:") {
+    return {kind: "film", vendor: "lemo-opuscar", gate: "every frame must be code",
+      next: "external_integrations/skills/opuscar_film.kos"}
+  }
+  if said.starts_with("onetake:") {
+    return {kind: "onetake", vendor: "onetake", gate: "every beat carried, 0.75 or above",
+      next: "external_integrations/skills/onetake_film.kos"}
+  }
+  return {kind: "mark", vendor: "hyperframes", gate: "the scene checks before the render is paid for",
+    next: "external_integrations/skills/hyperframes_video.kos"}
+}
+
+record Msg { text: Text }
+
+workflow main(msg: Msg) -> Routed {
+  budget 2 model calls, 300 seconds
+  dispatch = route(msg.text)
+}
+
+// ------------------------------------------------------------------ tests
+
+test "each prefix lands at its vendor" {
+  expect route("sting: the mark").vendor == "hyperframes"
+  expect route("draw: Clawd catches a butterfly").vendor == "ClaudeAnimationBase"
+  expect route("collage: pricing holds the room").vendor == "gbro-collage-broll"
+  expect route("film: a day in 51 styles").vendor == "lemo-opuscar"
+  expect route("onetake: the launch film").vendor == "onetake"
+}
+
+test "an ask without a prefix is a mark, and the mark has a gate" {
+  expect route("the kosika mark, warm").kind == "mark"
+  expect route("the kosika mark, warm").gate.length() > 0
+  expect route("the kosika mark, warm").next.contains("hyperframes_video")
+}
+
+test "the route names the skill that carries its rules" {
+  expect route("collage: everything ships").gate.starts_with("metaphor")
+  expect route("collage: everything ships").next.contains("gbro_collage")
+
+  expect route("film: the sea, all code").gate.starts_with("every frame")
+  expect route("film: the sea, all code").next.contains("opuscar_film")
+}

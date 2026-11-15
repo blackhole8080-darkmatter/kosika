@@ -1,0 +1,3 @@
+PASS  one value is exactly one alternative
+PASS  a workflow carries a nested choice in and out
+2 passed, 0 failed

@@ -1,0 +1,7 @@
+FAIL  when the fallback fails too, its failure is reported
+      line 54: the second way failed too, for x
+FAIL  a match subject that fails
+      line 59: Array index 5 is out of range
+FAIL  a spent budget is not something a fallback can answer
+      line 65: tool calls budget exceeds 1
+0 passed, 3 failed

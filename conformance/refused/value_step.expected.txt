@@ -1,0 +1,1 @@
+Check failed: Step 'draft' is a value whose type cannot be told; write it out, as `draft: Type = ...`, or check the names it uses are earlier steps or the workflow's inputs

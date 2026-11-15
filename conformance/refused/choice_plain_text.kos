@@ -1,0 +1,15 @@
+// requires: choice
+// Refused: a model that answers as text fills one Text field of a record,
+// so a choice cannot be asked for as plain text.
+
+record Ask { text: Text }
+
+choice Verdict {
+  accepted(note: Text)
+  refused(reason: Text)
+}
+
+model judge {
+  input: Ask
+  output: Verdict as text
+}

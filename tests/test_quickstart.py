@@ -34,7 +34,9 @@ class QuickstartTests(unittest.TestCase):
         cards = studio.App(self.folder).overview()["agents"]
         self.assertEqual(len(cards), len(STARTERS))
         self.assertFalse(any(card.get("error") for card in cards), cards)
-        self.assertIn("3 starter agents were made for you", "\n".join(lines))
+        self.assertIn(
+            f"{len(STARTERS)} starter agents were made for you", "\n".join(lines)
+        )
         self.assertEqual(arguments[:2], ["studio", str(self.folder)])
 
     def test_it_picks_an_installed_model_and_turns_on_search_by_meaning(self) -> None:
@@ -65,6 +67,7 @@ class QuickstartTests(unittest.TestCase):
         ):
             self.assertNotIn(grant, arguments)
         self.assertIn("Granted: nothing.", "\n".join(lines))
+        self.assertIn("open Permissions in Studio", "\n".join(lines))
         # The arguments are an ordinary studio command.
         parsed = build_parser().parse_args(arguments)
         self.assertEqual(parsed.command, "studio")

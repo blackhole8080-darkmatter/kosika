@@ -1,0 +1,8 @@
+// Refused: a record written without every one of its fields.
+
+record Point { x: Number y: Number }
+
+test "never runs" {
+  p: Point = {x: 1}
+  expect p.x == 1
+}

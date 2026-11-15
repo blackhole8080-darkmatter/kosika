@@ -25,6 +25,11 @@ class SupportedLanguageContractTests(unittest.TestCase):
             ),
             ("closures.kos", None, {"value": 115}),
             (
+                "choices.kos",
+                {"ticket": {"filing": {"$case": "refused", "reason": "no"}}},
+                {"text": "refused: no"},
+            ),
+            (
                 "recursion_match.kos",
                 None,
                 {

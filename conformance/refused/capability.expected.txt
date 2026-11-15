@@ -1,0 +1,1 @@
+Check failed: Capability violation: agent 'clerk' cannot use tool 'stock_of'

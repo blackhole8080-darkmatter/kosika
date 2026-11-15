@@ -1,0 +1,1723 @@
+"""Both engines are held to the conformance suite.
+
+The reference engine (Python) must print what the suite expects. The native
+engine (Go) must print the same, and must split every Kosika file in the
+repository into the same tokens. The native half is skipped on a machine
+without Go, and says so.
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from kosika import conformance
+from kosika.lexer import LexError, lex
+
+ROOT = Path(__file__).resolve().parents[1]
+NATIVE = ROOT / "native"
+
+
+class ReferenceTests(unittest.TestCase):
+    def test_the_suite_has_programs_and_each_has_its_expected_report(self) -> None:
+        programs = conformance.programs()
+        self.assertGreaterEqual(len(programs), 24)
+        for program in programs:
+            with self.subTest(program.name):
+                self.assertTrue(conformance.expected_path(program).is_file())
+
+    def test_every_case_asks_only_for_capabilities_the_reference_has(self) -> None:
+        for program in conformance.programs():
+            with self.subTest(program.name):
+                self.assertLessEqual(
+                    conformance.required(program), conformance.CAPABILITIES
+                )
+
+    def test_the_reference_engine_prints_what_is_expected(self) -> None:
+        for program in conformance.programs():
+            with self.subTest(program.name):
+                text, code = conformance.report(program)
+                wanted = conformance.expected_path(program).read_text(encoding="utf-8")
+                self.assertEqual(text, wanted)
+                # A case passes; a failing program fails, and is not refused;
+                # a refused one never runs.
+                self.assertEqual(code, conformance.EXIT_CODES[program.parent.name])
+
+    def test_a_passing_case_has_no_failure_and_a_failing_one_has_some(self) -> None:
+        for program in conformance.programs():
+            with self.subTest(program.name):
+                wanted = conformance.expected_path(program).read_text(encoding="utf-8")
+                if program.parent.name == "refused":
+                    # Refused by the checker, not on the way in: no path.
+                    self.assertTrue(wanted.startswith("Check failed: "))
+                    self.assertEqual(wanted.count("\n"), 1)
+                    self.assertNotIn(".kos", wanted)
+                    continue
+                self.assertIn(" passed, ", wanted)
+                if program.parent.name == "cases":
+                    self.assertNotIn("FAIL  ", wanted)
+                    self.assertTrue(wanted.rstrip().endswith(" passed, 0 failed"))
+                else:
+                    self.assertIn("FAIL  ", wanted)
+
+
+@unittest.skipUnless(
+    shutil.which("go"), "Go is not installed, so the native engine is not built"
+)
+class NativeTests(unittest.TestCase):
+    engine: Path
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls._dir.cleanup)
+        cls.engine = Path(cls._dir.name) / "kosika-native.exe"
+        built = subprocess.run(
+            ["go", "build", "-o", str(cls.engine), "."],
+            cwd=NATIVE,
+            capture_output=True,
+            text=True,
+        )
+        if built.returncode != 0:
+            raise AssertionError("the native engine does not build:\n" + built.stderr)
+
+    def run_engine(self, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run([str(self.engine), *arguments], capture_output=True)
+
+    def test_it_names_the_capabilities_it_reads(self) -> None:
+        ran = self.run_engine("capabilities")
+        self.assertEqual(ran.returncode, 0, ran.stderr.decode("utf-8", "replace"))
+        named = {
+            line for line in ran.stdout.decode("utf-8").splitlines() if line.strip()
+        }
+        self.assertEqual(named, set(conformance.CAPABILITIES))
+
+    def test_it_prints_what_the_suite_expects(self) -> None:
+        ran = self.run_engine("capabilities")
+        supported = {
+            line for line in ran.stdout.decode("utf-8").splitlines() if line.strip()
+        }
+        for program in conformance.programs():
+            with self.subTest(program.name):
+                missing = conformance.required(program) - supported
+                if missing:
+                    self.skipTest(
+                        "the native engine does not claim "
+                        + ", ".join(sorted(missing))
+                    )
+                ran = self.run_engine("test", str(program))
+                printed = ran.stdout.decode("utf-8").replace("\r\n", "\n")
+                wanted = conformance.expected_path(program).read_text(encoding="utf-8")
+                self.assertEqual(printed, wanted, ran.stderr.decode("utf-8", "replace"))
+                self.assertEqual(
+                    ran.returncode, conformance.EXIT_CODES[program.parent.name]
+                )
+
+    def test_a_choice_traces_replays_and_refuses_as_the_reference(self) -> None:
+        # A choice is checked at the boundary and written into a trace as
+        # the reference writes it; each engine replays the other's trace.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        program = ROOT / "conformance" / "cases" / "unions.kos"
+        good = {
+            "parcel": {
+                "status": {
+                    "$case": "delivered",
+                    "delivery": {"$case": "left_at", "place": "the desk"},
+                }
+            }
+        }
+        bad = {
+            "parcel": {"status": {"$case": "delivered"}},
+            "extra": {"parcel": {"status": {"$case": "lost", "reason": 4}}},
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "good.json").write_text(json.dumps(good), encoding="utf-8")
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program),
+                 "--input", str(folder / "good.json"),
+                 "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertEqual(reference.returncode, 0, reference.stderr)
+            native = self.run_engine(
+                "run", str(program), "--input", str(folder / "good.json"),
+                "--trace", str(folder / "native.jsonl"),
+            )
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+            self.assertEqual(
+                native.stdout.decode("utf-8").splitlines()[0],
+                reference.stdout.splitlines()[0],
+            )
+            self.assertEqual(events(folder / "native.jsonl"), events(folder / "reference.jsonl"))
+            for written, reader in (("native.jsonl", "reference"), ("reference.jsonl", "native")):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run([sys.executable, "-m", "kosika.cli", "replay", trace],
+                                   cwd=ROOT, capture_output=True, text=True)
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+            for name, value in bad.items():
+                (folder / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
+                reference = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", "run", str(program),
+                     "--input", str(folder / f"{name}.json")],
+                    cwd=ROOT, capture_output=True, text=True,
+                )
+                native = self.run_engine(
+                    "run", str(program), "--input", str(folder / f"{name}.json")
+                )
+                self.assertEqual(native.returncode, 2)
+                self.assertEqual(
+                    native.stderr.decode("utf-8").strip().splitlines()[-1],
+                    reference.stderr.strip().splitlines()[-1],
+                )
+
+    def test_a_choice_model_answer_traces_and_replays_as_the_reference(self) -> None:
+        # A model whose output is a choice has that choice's schema in its
+        # trace, and the answer is one alternative.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        program = ROOT / "conformance" / "cases" / "choice_outputs.kos"
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "input.json").write_text(
+                json.dumps({"question": {"text": "x"}}), encoding="utf-8"
+            )
+            (folder / "fixture.json").write_text(
+                json.dumps({"judge": [{"$case": "accepted", "note": "ok"}]}),
+                encoding="utf-8",
+            )
+            flags = [
+                "--workflow", "main",
+                "--input", str(folder / "input.json"),
+                "--model-fixture", str(folder / "fixture.json"),
+            ]
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program),
+                 *flags, "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertEqual(reference.returncode, 0, reference.stderr)
+            native = self.run_engine(
+                "run", str(program), *flags, "--trace", str(folder / "native.jsonl")
+            )
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+            self.assertEqual(
+                native.stdout.decode("utf-8").splitlines()[0],
+                reference.stdout.splitlines()[0],
+            )
+            self.assertEqual(events(folder / "native.jsonl"), events(folder / "reference.jsonl"))
+            for written, reader in (("native.jsonl", "reference"), ("reference.jsonl", "native")):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run([sys.executable, "-m", "kosika.cli", "replay", trace],
+                                   cwd=ROOT, capture_output=True, text=True)
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+
+    def test_it_splits_every_kosika_file_into_the_reference_tokens(self) -> None:
+        listed = subprocess.run(
+            ["git", "ls-files", "*.kos"], cwd=ROOT, capture_output=True, text=True
+        ).stdout.split()
+        files = [ROOT / name for name in listed] or conformance.programs()
+        self.assertGreater(len(files), 0)
+        compared = 0
+        for path in files:
+            with self.subTest(path.name):
+                source = path.read_bytes().decode("utf-8")
+                ran = self.run_engine("tokens", str(path))
+                got = [
+                    [token["kind"], token["value"], token["line"], token["column"]]
+                    for token in map(
+                        json.loads, ran.stdout.decode("utf-8").splitlines()
+                    )
+                ]
+                try:
+                    wanted = [[t.kind, t.value, t.line, t.column] for t in lex(source)]
+                except LexError as exc:
+                    # Both must stop at the same place.
+                    self.assertNotEqual(ran.returncode, 0)
+                    self.assertEqual(
+                        ran.stderr.decode("utf-8", "replace").split(": ")[0],
+                        str(exc).split(": ")[0],
+                    )
+                    continue
+                self.assertEqual(ran.returncode, 0)
+                self.assertEqual(got, wanted)
+                compared += len(wanted)
+        self.assertGreater(compared, 1000)
+
+    def test_what_it_cannot_do_yet_it_refuses_by_name(self) -> None:
+        ran = self.run_engine(
+            "test", str(ROOT / "benchmarks" / "spec" / "reference" / "20_swarm.kos")
+        )
+        self.assertEqual(ran.returncode, 1)
+        said = ran.stderr.decode("utf-8", "replace")
+        self.assertIn("kosika-native cannot read a swarm yet", said)
+        self.assertEqual(ran.stdout, b"")
+        with tempfile.TemporaryDirectory() as scratch:
+            quoting = Path(scratch) / "quoting.kos"
+            quoting.write_text(
+                "record T { text: Text }\nmodel assistant\n"
+                "workflow main(t: T) -> Summary {\n"
+                "  s = summarize t.text with evidence\n}\n",
+                encoding="utf-8",
+            )
+            ran = self.run_engine("test", str(quoting))
+        # Evidence runs now; this one is refused for the reference's reason.
+        self.assertEqual(ran.returncode, 2)
+        self.assertIn(
+            "cannot give evidence: summarize writes new text",
+            ran.stdout.decode("utf-8", "replace"),
+        )
+        with tempfile.TemporaryDirectory() as scratch:
+            voting = Path(scratch) / "voting.kos"
+            voting.write_text(
+                "record A { text: Text }\nmodel assistant\n"
+                "workflow main(a: A) -> Summary {\n"
+                "  s = summarize a.text vote 3\n}\n",
+                encoding="utf-8",
+            )
+            ran = self.run_engine("test", str(voting))
+        # Votes run now; this one is refused for the reference's reason.
+        self.assertEqual(ran.returncode, 2)
+        self.assertIn(
+            "cannot vote: two summaries are never word for word the same",
+            ran.stdout.decode("utf-8", "replace"),
+        )
+        with tempfile.TemporaryDirectory() as scratch:
+            learning = Path(scratch) / "learning.kos"
+            learning.write_text(
+                "record A { text: Text }\nmodel assistant\n"
+                "workflow main(a: A) -> Summary {\n"
+                "  s = summarize a.text learn by a.text\n}\n",
+                encoding="utf-8",
+            )
+            ran = self.run_engine("test", str(learning))
+        # A step that learns is read and checked now; this program has no
+        # tests, and says so as the reference does.
+        self.assertEqual(ran.returncode, 0)
+        self.assertIn("No tests found", ran.stdout.decode("utf-8", "replace"))
+
+    def test_a_text_that_is_not_kosika_is_refused_with_its_place(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            bad = Path(scratch) / "bad.kos"
+            bad.write_text("fn f() -> Number {\n  return 1 +\n}\n", encoding="utf-8")
+            ran = self.run_engine("test", str(bad))
+        self.assertEqual(ran.returncode, 1)
+        self.assertIn("Expected expression at 3:1, got '}'", ran.stderr.decode("utf-8"))
+
+    def test_it_asks_a_model_server_as_the_reference_does(self) -> None:
+        # A stand-in model server that answers in either wire format, and
+        # keeps what each engine asked of it.
+        replies = [
+            {"label": "billing", "confidence": 0.9},
+            {"number": "A-7", "total": 40},
+            {"text": "Charged twice."},
+            {"answer": True, "confidence": 0.8, "reason": "It says so."},
+        ]
+        asked: list[dict] = []
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append({"path": self.path, **body})
+                reply = json.dumps(replies[(len(asked) - 1) % len(replies)])
+                if self.path.endswith("/api/chat"):
+                    answer = {"message": {"role": "assistant", "content": reply}, "done": True}
+                else:
+                    answer = {
+                        "choices": [
+                            {"message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}
+                        ]
+                    }
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}"
+        program = ROOT / "conformance" / "cases" / "thinking.kos"
+        with tempfile.TemporaryDirectory() as scratch:
+            inputs = Path(scratch) / "input.json"
+            inputs.write_text(json.dumps({"ticket": {"text": "Charged twice."}}))
+            for protocol, endpoint in (("openai", url + "/v1"), ("ollama", url)):
+                with self.subTest(protocol):
+                    flags = [
+                        "--input", str(inputs), "--model", "small",
+                        "--model-url", endpoint, "--model-protocol", protocol,
+                    ]
+                    asked.clear()
+                    reference = subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "run", str(program),
+                         *flags, "--trace", str(Path(scratch) / "trace.jsonl")],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    by_reference = list(asked)
+                    asked.clear()
+                    native = self.run_engine("run", str(program), *flags)
+                    self.assertEqual(native.returncode, 0, native.stderr.decode())
+                    self.assertEqual(
+                        native.stdout.decode("utf-8").splitlines()[0],
+                        reference.stdout.splitlines()[0],
+                    )
+                    # Each engine asked the same questions, word for word.
+                    self.assertEqual(asked, by_reference)
+
+    def test_an_agent_calls_its_tools_as_the_reference_does(self) -> None:
+        # A stand-in model that asks for the disk tool, then answers from
+        # what the tool gave back; the tool is the example MCP server.
+        asked: list[dict] = []
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append({"path": self.path, **body})
+                ollama = self.path.endswith("/api/chat")
+                if not any(m["role"] == "tool" for m in body["messages"]):
+                    if ollama:
+                        call = {"function": {"name": "check_disk", "arguments": {}}}
+                        answer = {"message": {"role": "assistant", "content": "", "tool_calls": [call]}, "done": True}
+                    else:
+                        call = {"id": "call_1", "type": "function",
+                                "function": {"name": "check_disk", "arguments": "{}"}}
+                        answer = {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": [call]},
+                                               "finish_reason": "tool_calls"}]}
+                else:
+                    told = json.loads(body["messages"][-1]["content"])
+                    reply = json.dumps({"text": f"{told['used_percent']} percent used", "did": []})
+                    message = {"role": "assistant", "content": reply}
+                    answer = (
+                        {"message": message, "done": True}
+                        if ollama
+                        else {"choices": [{"message": message, "finish_reason": "stop"}]}
+                    )
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}"
+        with tempfile.TemporaryDirectory() as scratch:
+            program = Path(scratch) / "disk.kos"
+            program.write_text(
+                "record Question { text: Text }\n"
+                "record Answer { text: Text did: Text[] }\n"
+                "record DiskStatus { mount: Text used_percent: Number }\n"
+                'tool check_disk {\n  source mcp "local_stdio"\n  operation: "get_disk_info"\n'
+                "  access: observe\n  output: DiskStatus\n}\n"
+                "model thinker {\n  input: Question\n  output: Answer\n}\n"
+                "agent watcher {\n  model: thinker\n  can: [check_disk]\n"
+                '  instructions: "Answer from the disk."\n}\n'
+                "workflow main(question: Question) -> Answer {\n"
+                "  answer = ask watcher(question.text)\n}\n",
+                encoding="utf-8",
+            )
+            inputs = Path(scratch) / "input.json"
+            inputs.write_text(json.dumps({"question": {"text": "How full is the disk?"}}))
+            for protocol, endpoint in (("openai", url + "/v1"), ("ollama", url)):
+                with self.subTest(protocol):
+                    flags = [
+                        "--input", str(inputs), "--model", "small",
+                        "--model-url", endpoint, "--model-protocol", protocol,
+                        "--mcp-server", str(ROOT / "examples" / "mcp_host_server.py"),
+                        "--mcp-manifest", str(ROOT / "examples" / "mcp_manifest.json"),
+                    ]
+                    asked.clear()
+                    reference = subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "run", str(program),
+                         *flags, "--trace", str(Path(scratch) / "trace.jsonl")],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    by_reference = list(asked)
+                    asked.clear()
+                    native = self.run_engine("run", str(program), *flags)
+                    self.assertEqual(native.returncode, 0, native.stderr.decode())
+                    self.assertEqual(
+                        native.stdout.decode("utf-8").splitlines()[0],
+                        reference.stdout.splitlines()[0],
+                    )
+                    self.assertEqual(len(asked), 2)
+                    self.assertEqual(asked, by_reference)
+
+    def test_a_change_waits_for_its_approval_as_in_the_reference(self) -> None:
+        # Each engine keeps its own journal and names a run by its own plan
+        # hash, so an approval serves only the engine that asked for it. What
+        # each asks, and what an approval then lets happen, are the same.
+        program = ROOT / "examples" / "approval_mutation.kos"
+        server = [
+            "--mcp-source", "approval_mutation",
+            "--mcp-server", str(ROOT / "examples" / "approval_mutation_mcp_server.py"),
+            "--mcp-manifest", str(ROOT / "examples" / "approval_mutation_manifest.json"),
+        ]
+
+        def engine(name: str, folder: Path, *flags: str) -> subprocess.CompletedProcess[str]:
+            command = (
+                [sys.executable, "-m", "kosika.cli", "run", str(program)]
+                if name == "reference"
+                else [str(self.engine), "run", str(program)]
+            )
+            environment = {**os.environ, "PYTHONPATH": str(ROOT)}
+            return subprocess.run(
+                [*command, "--workflow", "apply_change", "--input", "in.json", *server,
+                 "--trace", "trace.jsonl", *flags],
+                cwd=folder, capture_output=True, text=True, env=environment,
+            )
+
+        asked = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "in.json").write_text(json.dumps({"request": {"change": "rename"}}))
+                journal = ["--journal", "run.journal", "--binding-id", "here"]
+                # Without a journal the change is refused outright.
+                ran = engine(name, folder)
+                self.assertEqual(ran.returncode, 2)
+                self.assertIn("requires a verified approval record", ran.stderr)
+                # With one, the run waits for an approval of this one action.
+                ran = engine(name, folder, *journal)
+                self.assertEqual(ran.returncode, 3, ran.stderr)
+                request = json.loads(ran.stdout)
+                asked[name] = {k: request[k] for k in ("status", "tool", "arguments", "step")}
+                self.assertFalse((folder / "mutation_sink.json").exists())
+                approval = {
+                    "plan_hash": request["plan_hash"],
+                    "action_hash": request["action_hash"],
+                    "approved_by": "tester",
+                }
+                (folder / "approval.json").write_text(json.dumps(approval))
+                ran = engine(name, folder, *journal, "--approval-record", "approval.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                self.assertIn("'status': 'applied'", ran.stdout)
+                written = (folder / "mutation_sink.json").stat().st_mtime_ns
+                # Begun again, the change that already happened is not repeated.
+                ran = engine(name, folder, *journal, "--approval-record", "approval.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                self.assertEqual((folder / "mutation_sink.json").stat().st_mtime_ns, written)
+        self.assertEqual(asked["native"], asked["reference"])
+
+    def test_its_trace_is_the_reference_trace(self) -> None:
+        # Apart from the time, the program's hash and how long it took, the
+        # native engine writes down a run as the reference does, and each
+        # engine's replay accepts the other's trace.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        source = (
+            "record Ask { text: Text kind: Text }\n"
+            "record Said { text: Text n: Number }\n"
+            "record Answer { text: Text did: Text[] }\n"
+            "record Box {\n  label: Text\n  size: Number\n"
+            "  fn grown(self, by: Number) -> Box { return {..self, size: self.size + by} }\n}\n"
+            "model writer {\n  input: Ask\n  output: Said\n}\n"
+            "model helper {\n  input: Ask\n  output: Answer\n}\n"
+            "model editor {\n  input: Ask\n  output: Said\n}\n"
+            "model stronger {\n  input: Ask\n  output: Said\n}\n"
+            "model judge {\n  input: Ask\n  output: Said\n}\n"
+            "model reader {\n  input: Ask\n  output: Said\n}\n"
+            "record Note { text: Text }\n"
+            "model scribe {\n  input: Ask\n  output: Note as text\n}\n"
+            "fn short(said: Said, ask: Ask) -> Text {\n"
+            '  if said.text.length() > ask.text.length() { return "Too long." }\n'
+            '  return ""\n}\n'
+            "default model assistant\n"
+            'agent plain {\n  model: helper\n  can: []\n  instructions: "Help."\n}\n'
+            "fn scaled(base: Number, factor: Number) -> Number {\n"
+            "  let shift: Number = 2\n"
+            "  fn apply(value: Number) -> Number { return value * factor + shift }\n"
+            "  return apply(value: base)\n}\n"
+            "fn sized(ask: Ask) -> Said {\n  let box: Box = {label: ask.text, size: 1}\n"
+            "  let bigger = box.grown(scaled(2, 3))\n  return {text: bigger.label, n: bigger.size}\n}\n"
+            "fn quiet(ask: Ask) -> Said { return {text: ask.text, n: 0} }\n"
+            "fn bad(ask: Ask) -> Said {\n  if ask.text != \"\" { fail \"no\" }\n  return {text: \"\", n: 0}\n}\n"
+            "workflow inner(ask: Ask) -> Said {\n  said = sized(ask)\n}\n"
+            "workflow main(ask: Ask) -> Said {\n"
+            "  first = sized(ask)\n"
+            "  nested = call inner(ask)\n"
+            "  third = bad(ask) otherwise quiet(ask)\n"
+            "  retried = use_model writer(text: first.text, kind: ask.kind) retry 2\n"
+            "  edited = use_model editor(text: ask.text, kind: ask.kind) verify short(edited, ask) retry 1\n"
+            '  voted = classify ask.text into ["a", "b"] using judge vote 3\n'
+            "  lifted = use_model editor(text: ask.text, kind: ask.kind) escalate stronger\n"
+            '  quoted = classify ask.text into ["a", "b"] with evidence using reader retry 1\n'
+            "  parallel {\n    together = sized(ask)\n    apart = quiet(ask)\n  }\n"
+            "  written = use_model scribe(text: ask.text, kind: ask.kind)\n"
+            '  kind = classify ask.text into ["a", "b"]\n'
+            "  brief = summarize ask.text\n"
+            "  helped = ask plain(text: ask.text, kind: ask.kind)\n"
+            "  routed = match ask.kind {\n"
+            '    case "loud" { sized(ask) }\n    case _ { quiet(ask) }\n  }\n}\n'
+        )
+        fixture = {
+            "writer": [{"text": "x"}, {"text": "y", "n": "bad"}, {"text": "ok", "n": 2}],
+            "assistant": [{"label": "a", "confidence": 1}, {"text": "short"}],
+            "helper": [{"words": 1}, {"text": "fine", "did": ["claimed"]}],
+            "editor": [{"text": "far too long", "n": 1}, {"text": "ok", "n": 1}, {"text": 1, "n": 1}],
+            "stronger": [{"text": "up", "n": 3}],
+            "scribe": [{"text": "a note"}],
+            "reader": [
+                {"label": "a", "confidence": 1, "evidence": ["nope"]},
+                {"label": "b", "confidence": 1, "evidence": ["HI"]},
+            ],
+            "judge": [
+                {"label": "a", "confidence": 1},
+                {"label": "b", "confidence": 1},
+                {"label": "a", "confidence": 0.5},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "p.kos").write_text(source, encoding="utf-8")
+            (folder / "fixture.json").write_text(json.dumps(fixture), encoding="utf-8")
+            (folder / "input.json").write_text(json.dumps({"ask": {"text": "hi", "kind": "loud"}}))
+            flags = ["--input", str(folder / "input.json"), "--model-fixture", str(folder / "fixture.json")]
+            subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(folder / "p.kos"), *flags,
+                 "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True, check=True,
+            )
+            native = self.run_engine("run", str(folder / "p.kos"), *flags, "--trace", str(folder / "native.jsonl"))
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+
+            def events(name: str) -> list:
+                lines = (folder / name).read_text(encoding="utf-8").splitlines()
+                return [clean(json.loads(line)) for line in lines]
+
+            self.assertEqual(events("native.jsonl"), events("reference.jsonl"))
+            for written, reader in (("native.jsonl", "reference"), ("reference.jsonl", "native")):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run([sys.executable, "-m", "kosika.cli", "replay", trace],
+                                   cwd=ROOT, capture_output=True, text=True)
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+
+    def test_it_searches_by_meaning_as_the_reference_does(self) -> None:
+        # With the same embedding model and nothing remembered, and again
+        # with what each remembered: the same lines, nearest first, and the
+        # same nearness of two texts.
+        import math
+
+        def vector(text: str) -> list[float]:
+            # A stand-in model: how often each letter and a few word ends
+            # appear, so texts that share words are near.
+            counts = [0.0] * 30
+            for word in text.lower().split():
+                for letter in word:
+                    if "a" <= letter <= "z":
+                        counts[ord(letter) - 97] += 1
+                counts[26 + len(word) % 4] += 0.5
+            return [round(count / math.sqrt(1 + len(text)), 6) for count in counts]
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                asked = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                body = json.dumps({"embeddings": [vector(text) for text in asked["input"]]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        address = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        program = (
+            "record Search { path: Text query: Text }\n"
+            "record Found { matches: Text[] }\n"
+            "record Pair { a: Text b: Text }\n"
+            "record Near { score: Number }\n"
+            "record Ask { text: Text }\n"
+            'tool find_notes {\n  source system "files"\n  operation: "find"\n'
+            "  access: observe\n  input: Search\n  output: Found\n}\n"
+            'tool how_near {\n  source system "meaning"\n  operation: "near"\n'
+            "  access: observe\n  input: Pair\n  output: Near\n}\n"
+            "agent desk {\n  can: [find_notes, how_near]\n  max_steps: 1\n}\n"
+            "workflow find(a: Ask) -> Found {\n"
+            '  found = execute desk.find_notes(path: ".", query: a.text)\n}\n'
+            "workflow near(a: Ask) -> Near {\n"
+            '  n = execute desk.how_near(a: a.text, b: "monthly rent for the flat")\n}\n'
+            "record Note { text: Text }\n"
+            "memory notes of Note\n"
+            "workflow like(a: Ask) -> NotesLike {\n"
+            '  one = remember {text: "Rent is 900 euros a month"} in notes under "rent"\n'
+            '  two = remember {text: "The cat needs its vaccine"} in notes under "cat"\n'
+            "  found = recall notes like a.text\n}\n"
+        )
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            notes = folder / "notes"
+            (notes / "sub").mkdir(parents=True)
+            (notes / "home.txt").write_text("Rent is 900 euros a month, paid on the first.\nThe landlord lives upstairs.\nshort\n")
+            (notes / "travel.md").write_text("Train to Delhi leaves at 6 in the morning.\nPack the blue suitcase.\n")
+            (notes / "sub" / "pets.txt").write_text("The cat needs its vaccine in March.\nBuy cat food on Friday.\n")
+            (notes / ".hidden").write_text("A hidden line that is never searched.\n")
+            (folder / "p.kos").write_text(program, encoding="utf-8")
+            said: dict[str, list[str]] = {"reference": [], "native": []}
+            for name in said:
+                home = folder / f"home-{name}"
+                home.mkdir()
+                environment = {**os.environ, "USERPROFILE": str(home), "HOME": str(home), "PYTHONPATH": str(ROOT)}
+                for workflow, question in (("find", "what do I pay for the flat"), ("find", "when does my train go"),
+                                           ("find", "what do I pay for the flat"), ("near", "rent of the flat"),
+                                           ("like", "what do I pay for the flat")):
+                    (folder / "in.json").write_text(json.dumps({"a": {"text": question}}))
+                    first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+                    ran = subprocess.run(
+                        [*first, "run", str(folder / "p.kos"), "--workflow", workflow, "--input", str(folder / "in.json"),
+                         "--allow-folder", str(notes), "--embed-model", "stand-in", "--embed-url", address,
+                         "--memory", str(home / "memory"),
+                         "--trace", str(folder / "t.jsonl")],
+                        cwd=folder, capture_output=True, text=True, env=environment,
+                    )
+                    self.assertEqual(ran.returncode, 0, ran.stderr)
+                    said[name].append(ran.stdout.splitlines()[0])
+        self.assertEqual(said["native"], said["reference"])
+        self.assertIn("home.txt:1: Rent is 900 euros", said["reference"][0])
+        self.assertNotIn("hidden", "".join(said["reference"]))
+        self.assertNotIn("short", "".join(said["reference"]))
+        self.assertIn("'by': 'meaning'", said["reference"][-1])
+
+    def test_it_reads_a_page_as_the_reference_does(self) -> None:
+        # The web tool's reading of a page, a text and a feed: the same
+        # title and text, whatever the markup does.
+        from kosika.web import readable, readable_feed
+
+        long = "Kosika keeps what it reads as data. " * 8
+        pages = {
+            "html": [
+                "<!DOCTYPE html><HTML><Head><TITLE>Tea &amp; Light</TITLE>"
+                "<script>if (a < b) { document.write('<p>no</p>') }</script>"
+                "<style>p { color: red }</style></head><body>"
+                "<nav><a href='/'>Home</a></nav><header>Site</header>"
+                "<main><h1>Tea</h1><p>Hot&nbsp;water, it&#8217;s caf&eacute; time.</p>"
+                f"<p>{long}</p><br/>a < b and c > d<!-- hidden --></main>"
+                "<footer>Copyright</footer></body></html>",
+                "<p>Short page<br>two lines</p><div class=\"a>b\">attr with &gt;</div>"
+                "<ul><li>one<li>two</ul><form><button>Go</button></form>tail",
+                f"<article><p>{long}</p><svg><text>drawn</text></svg></article><p>outside</p><p",
+                "<?xml version='1.0'?><![CDATA[gone]]><table><tr><td>a</td><td>b</td></tr></table>",
+            ],
+            "text": ["  plain text\n\nwith  lines  \n"],
+            "feed": [
+                "<?xml version='1.0'?><feed><title>Feed</title><entry><title>A &amp; B</title>"
+                "<published>2026-10-14T10:00:00Z</published><link rel='alternate' href='https://x.org/1'/>"
+                "<link rel='related' href='https://x.org/no'/><author><name>Ann Lee</name></author>"
+                "<summary>  Tea\n  and light. </summary></entry><entry><title>Second</title></entry></feed>",
+                "<rss><channel><item><title>A</title><description><![CDATA[<p>B</p>]]></description>"
+                "<pubDate>Mon, 20 Oct 2026</pubDate><link>https://x.org/2</link></item></channel></rss>",
+            ],
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            for kind, bodies in pages.items():
+                for index, body in enumerate(bodies):
+                    with self.subTest(kind=kind, index=index):
+                        page = Path(scratch) / f"{kind}{index}.txt"
+                        page.write_bytes(body.encode("utf-8"))
+                        ran = self.run_engine("readable", kind, str(page))
+                        self.assertEqual(ran.returncode, 0, ran.stderr.decode())
+                        native = json.loads(ran.stdout.decode("utf-8"))
+                        if kind == "feed":
+                            reference = {"text": readable_feed(body)}
+                        else:
+                            title, text = readable(body, kind == "html")
+                            reference = {"title": title, "text": text}
+                        self.assertEqual(native, reference)
+
+    def test_it_refuses_the_addresses_the_reference_refuses(self) -> None:
+        # Before anything is asked of the network: the same refusals, in the
+        # same words, for sites and addresses that may not be read.
+        program = (
+            "record PageRequest { url: Text }\n"
+            "record Page { url: Text title: Text text: Text }\n"
+            'tool read_page {\n  source system "web"\n  operation: "fetch"\n'
+            "  access: observe\n  input: PageRequest\n  output: Page\n}\n"
+            "agent reader {\n  can: [read_page]\n  max_steps: 1\n}\n"
+            "workflow main(request: PageRequest) -> Page {\n"
+            "  page = execute reader.read_page(request.url)\n}\n"
+        )
+        cases = [
+            ("http://example.org/a", ["example.org"]),
+            ("https://user@example.org/a", ["example.org"]),
+            ("https://example.org:8443/a", ["example.org"]),
+            ("https://93.184.216.34/a", ["example.org"]),
+            ("https://evil.com/a", ["example.org", "en.wikipedia.org"]),
+            ("https://example.org/a", ["not a site"]),
+            ("https://example.org/a", ["127.0.0.1"]),
+            ("https://example.org/a", ["https://Example.ORG/path"]),
+        ]
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "p.kos").write_text(program, encoding="utf-8")
+            for address, sites in cases:
+                with self.subTest(address=address, sites=sites):
+                    (folder / "in.json").write_text(json.dumps({"request": {"url": address}}))
+                    flags = ["--input", str(folder / "in.json"), "--trace", str(folder / "t.jsonl")]
+                    for site in sites:
+                        flags += ["--allow-site", site]
+                    reference = subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "run", str(folder / "p.kos"), *flags],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    native = self.run_engine("run", str(folder / "p.kos"), *flags)
+                    said = reference.stderr.strip().splitlines()[-1]
+                    if sites == ["https://Example.ORG/path"]:
+                        # A site written as an address is the bare host; the
+                        # page is then asked for, so only the start is compared.
+                        self.assertNotIn("is not a site name", said)
+                        continue
+                    self.assertEqual(native.stderr.decode("utf-8").strip().splitlines()[-1], said)
+
+    def test_it_carries_the_same_standard_library(self) -> None:
+        # The native engine keeps a copy of kosika/std inside itself; it
+        # must be the same library, file for file.
+        canonical = ROOT / "kosika" / "std"
+        copy = ROOT / "native" / "std"
+
+        def files(folder: Path) -> dict[str, str]:
+            return {
+                path.name: path.read_text(encoding="utf-8").replace("\r\n", "\n")
+                for path in sorted(folder.glob("*.kos"))
+            }
+
+        self.assertTrue(files(canonical))
+        self.assertEqual(files(copy), files(canonical), "copy kosika/std/*.kos to native/std/")
+
+    def test_it_keeps_the_owners_services_as_the_reference_does(self) -> None:
+        # A services tool reads the one services file it was given, and
+        # pauses or resumes a service there only with the owner's yes.
+        program = (
+            "record Services { services: Text[] paused: Text[] text: Text }\n"
+            "record ServiceName { name: Text }\n"
+            "record ServicePaused { name: Text paused: Bool }\n"
+            "record Ask { name: Text }\n"
+            'tool my_services {\n  source system "services"\n  operation: "status"\n'
+            "  access: observe\n  output: Services\n}\n"
+            'tool pause_service {\n  source system "services"\n  operation: "pause"\n'
+            "  access: execute\n  input: ServiceName\n  output: ServicePaused\n}\n"
+            'tool resume_service {\n  source system "services"\n  operation: "resume"\n'
+            "  access: execute\n  input: ServiceName\n  output: ServicePaused\n}\n"
+            "agent desk {\n  can: [my_services, pause_service, resume_service]\n  max_steps: 1\n}\n"
+            "workflow status(a: Ask) -> Services {\n  now = execute desk.my_services()\n}\n"
+            "workflow pause(a: Ask) -> ServicePaused {\n  require approval\n"
+            "  done = execute desk.pause_service(a.name)\n}\n"
+            "workflow resume(a: Ask) -> ServicePaused {\n  require approval\n"
+            "  done = execute desk.resume_service(a.name)\n}\n"
+        )
+        services = (
+            "// The owner's services.\n"
+            'service lookout {\n  program "lookout.kos"\n  every 15 minutes\n}\n\n'
+            'service gatherer {\n  program "gatherer.kos"\n}\n'
+        )
+
+        def engine(name: str, folder: Path, *flags: str) -> tuple[int, str, str]:
+            command = ["run", str(folder / "p.kos"), "--services", str(folder / "aios.services"), *flags]
+            first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+            done = subprocess.run(
+                [*first, *command], cwd=folder, capture_output=True, text=True,
+                env={**os.environ, "PYTHONPATH": str(ROOT)},
+            )
+            return done.returncode, done.stdout, done.stderr
+
+        seen = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "p.kos").write_text(program, encoding="utf-8")
+                (folder / "aios.services").write_text(services, encoding="utf-8")
+                (folder / "aios.services.status.txt").write_text(
+                    "lookout (every 15 minutes): nothing\n  has not run yet\n", encoding="utf-8"
+                )
+                (folder / "in.json").write_text(json.dumps({"a": {"name": "lookout"}}))
+                (folder / "nobody.json").write_text(json.dumps({"a": {"name": "nobody"}}))
+                outcome: dict[str, object] = {}
+                code, out, _ = engine(name, folder, "--workflow", "status", "--input", "in.json")
+                outcome["status"] = (code, out.splitlines()[0])
+                code, _, err = engine(name, folder, "--workflow", "pause", "--input", "in.json")
+                outcome["unapproved"] = (code, err.strip().splitlines()[-1])
+                for workflow in ("pause", "resume"):
+                    journal = ["--journal", f"{workflow}.journal", "--binding-id", "here",
+                               "--workflow", workflow, "--input", "in.json"]
+                    code, out, err = engine(name, folder, *journal)
+                    self.assertEqual(code, 3, err)
+                    request = json.loads(out)
+                    outcome[f"{workflow} asked"] = {k: request[k] for k in ("status", "tool", "arguments", "step")}
+                    approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                    (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                    code, out, err = engine(name, folder, *journal, "--approval-record", "approval.json")
+                    self.assertEqual(code, 0, err)
+                    outcome[workflow] = out.splitlines()[0]
+                    outcome[f"{workflow} list"] = (folder / "aios.services.paused.txt").read_text(encoding="utf-8")
+                journal = ["--journal", "nobody.journal", "--binding-id", "here",
+                           "--workflow", "pause", "--input", "nobody.json"]
+                code, out, _ = engine(name, folder, *journal)
+                request = json.loads(out)
+                approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                code, out, err = engine(name, folder, *journal, "--approval-record", "approval.json")
+                outcome["nobody"] = (code, err.strip().splitlines()[-1])
+                seen[name] = outcome
+        self.assertEqual(seen["native"], seen["reference"])
+        self.assertIn("'services': ['lookout', 'gatherer']", seen["reference"]["status"][1])
+        self.assertEqual(seen["reference"]["pause list"], "lookout\n")
+        self.assertEqual(seen["reference"]["resume list"], "")
+
+    def test_it_checks_programs_and_notes_as_the_reference_does(self) -> None:
+        # A kosika tool checks a program given as text, or files a program
+        # means to write; a notify tool sends only to the address given.
+        program = (
+            "record Code { source: Text }\n"
+            "record Checked { ok: Bool problem: Text tests: Number passed: Number }\n"
+            "record Planned { path: Text text: Text before: Text exists: Bool }\n"
+            "record Reading { text: Text files: Planned[] }\n"
+            "record Engine { problems: Text[] }\n"
+            "record Note { title: Text text: Text link: Text file_name: Text file: Text }\n"
+            "record Sent { sent: Bool }\n"
+            'tool check_program {\n  source system "kosika"\n  operation: "check"\n'
+            "  access: observe\n  input: Code\n  output: Checked\n}\n"
+            'tool check_plan {\n  source system "kosika"\n  operation: "check_files"\n'
+            "  access: observe\n  input: Reading\n  output: Engine\n}\n"
+            'tool tell_me {\n  source system "notify"\n  operation: "send"\n'
+            "  access: execute\n  input: Note\n  output: Sent\n}\n"
+            "agent desk {\n  can: [check_program, check_plan, tell_me]\n  max_steps: 1\n}\n"
+            "workflow check(c: Code) -> Checked {\n  r = execute desk.check_program(c.source)\n}\n"
+            "workflow plan(r: Reading) -> Engine {\n  e = execute desk.check_plan(r.text, r.files)\n}\n"
+            "workflow note(n: Note) -> Sent {\n  require approval\n  s = execute desk.tell_me(n.title, n.text, n.link, n.file_name, n.file)\n}\n"
+        )
+        good = (
+            "record In { n: Number }\nrecord Out { twice: Number }\n"
+            "fn solve(input: In) -> Out {\n  return {twice: input.n * 2}\n}\n"
+            "workflow main(input: In) -> Out {\n  result = solve(input)\n}\n"
+            'test "doubles" {\n  a = main({n: 4})\n  expect a.twice == 8\n}\n'
+            'test "zero" {\n  a = main({n: 0})\n  expect a.twice == 0\n}\n'
+        )
+        sources = {
+            "good": good,
+            "failing": good.replace("a.twice == 8", "a.twice == 9"),
+            "invalid": good.replace("input.n * 2", "input.m * 2"),
+            "garbled": "workflow {",
+            "large": "// " + "x" * 70_000 + "\n",
+        }
+        planned = [
+            {"path": "notes.txt", "text": "A plain note that says something new.", "before": "", "exists": False},
+            {"path": "empty.txt", "text": "  ", "before": "", "exists": False},
+            {"path": "same.txt", "text": "please write the tests for the doubler", "before": "", "exists": False},
+            {"path": "notes.txt", "text": "again", "before": "", "exists": False},
+            {"path": "lines.txt", "text": "one\\ntwo", "before": "", "exists": False},
+            {"path": "good.kos", "text": good, "before": "", "exists": False},
+            {"path": "bad.kos", "text": sources["failing"], "before": "old", "exists": True},
+        ]
+
+        def engine(name: str, folder: Path, *flags: str) -> tuple[int, str, str]:
+            first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+            done = subprocess.run(
+                [*first, "run", str(folder / "p.kos"), *flags], cwd=folder,
+                capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
+            )
+            return done.returncode, done.stdout, done.stderr.strip().splitlines()[-1:]
+
+        seen = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "p.kos").write_text(program, encoding="utf-8")
+                outcome: dict[str, object] = {}
+                for label, source in sources.items():
+                    (folder / "in.json").write_text(json.dumps({"c": {"source": source}}))
+                    outcome[label] = engine(name, folder, "--workflow", "check", "--input", "in.json")
+                (folder / "in.json").write_text(json.dumps(
+                    {"r": {"text": "Please write the tests for the doubler.", "files": planned}}
+                ))
+                outcome["plan"] = engine(name, folder, "--workflow", "plan", "--input", "in.json")
+                (folder / "in.json").write_text(json.dumps(
+                    {"n": {"title": "Done", "text": "All good.", "link": "", "file_name": "", "file": ""}}
+                ))
+                outcome["unbound note"] = engine(name, folder, "--workflow", "note", "--input", "in.json")
+                for address in ("http://ntfy.sh/topic", "https://ntfy.sh/", "https://ntfy.sh/t?x=1",
+                                "https://me:pw@ntfy.sh/t", "https://ntfy.sh:8443/t"):
+                    outcome[address] = engine(
+                        name, folder, "--notify", address, "--workflow", "note", "--input", "in.json"
+                    )[0::2]
+                seen[name] = outcome
+        self.maxDiff = None
+        self.assertEqual(seen["native"], seen["reference"])
+        self.assertIn("'ok': True", seen["reference"]["good"][1])
+        self.assertIn("'tests': 2, 'passed': 1", seen["reference"]["failing"][1])
+        self.assertIn("larger than 64 KiB", seen["reference"]["large"][1])
+        self.assertIn("bad.kos: its test", seen["reference"]["plan"][1])
+
+    def test_it_looks_at_the_machine_as_the_reference_does(self) -> None:
+        # A computer tool reads this computer and a linux tool the one Linux
+        # named, each only when the person allows it; agents and outside
+        # tools are read and left to a host that has agents.
+        program = (
+            "record Linux { distro: Text kernel: Text uptime: Text load: Text memory: Text"
+            " disk: Text upgrades: Text top: Text[] }\n"
+            "record Computer { name: Text system: Text cores: Number memory: Text disk: Text uptime: Text }\n"
+            "record Handover { agent: Text text: Text }\n"
+            "record Handed { ok: Bool agent: Text text: Text }\n"
+            "record Ask { text: Text }\n"
+            'tool my_linux {\n  source system "linux"\n  operation: "status"\n'
+            "  access: observe\n  output: Linux\n}\n"
+            'tool my_computer {\n  source system "computer"\n  operation: "status"\n'
+            "  access: observe\n  output: Computer\n}\n"
+            'tool hand_over {\n  source system "agents"\n  operation: "ask"\n'
+            "  access: observe\n  input: Handover\n  output: Handed\n}\n"
+            'tool ask_outside {\n  source system "outside"\n  operation: "answer"\n'
+            "  access: observe\n  input: Handover\n  output: Handed\n}\n"
+            "agent desk {\n  can: [my_linux, my_computer, hand_over, ask_outside]\n  max_steps: 1\n}\n"
+            "workflow linux(a: Ask) -> Linux {\n  l = execute desk.my_linux()\n}\n"
+            "workflow computer(a: Ask) -> Computer {\n  c = execute desk.my_computer()\n}\n"
+            'workflow hand(a: Ask) -> Handed {\n  h = execute desk.hand_over("", a.text)\n}\n'
+            'workflow outside(a: Ask) -> Handed {\n  h = execute desk.ask_outside("devin", a.text)\n}\n'
+        )
+        wrong = {
+            "linux operation": program.replace('"linux"\n  operation: "status"', '"linux"\n  operation: "reboot"'),
+            "agents operation": program.replace('operation: "ask"', 'operation: "tell"'),
+            "outside operation": program.replace('operation: "answer"', 'operation: "write"'),
+            "computer shape": program.replace("cores: Number memory", "cores: Text memory"),
+        }
+
+        def engine(name: str, folder: Path, *flags: str) -> tuple[int, str, list[str]]:
+            first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+            done = subprocess.run(
+                [*first, "run", str(folder / "p.kos"), "--input", "in.json", *flags], cwd=folder,
+                capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
+            )
+            # The reference also says where in the file a refusal points;
+            # this engine does not place it yet.
+            said = [re.sub(r" \(line \d+, column \d+\)$", "", line) for line in done.stderr.strip().splitlines()[-1:]]
+            return done.returncode, done.stdout.splitlines()[:1], said
+
+        def kept(said: tuple[int, str, list[str]], *fields: str) -> object:
+            # What changes from one moment to the next is left out.
+            if said[0] != 0:
+                return said
+            record = ast.literal_eval(said[1][0])
+            return {field: record[field] for field in fields}
+
+        seen = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "in.json").write_text(json.dumps({"a": {"text": "hello"}}))
+                outcome: dict[str, object] = {}
+                for label, source in wrong.items():
+                    (folder / "p.kos").write_text(source, encoding="utf-8")
+                    outcome[label] = engine(name, folder, "--workflow", "computer")[0::2]
+                (folder / "p.kos").write_text(program, encoding="utf-8")
+                for workflow in ("computer", "linux", "hand", "outside"):
+                    outcome[f"{workflow} ungranted"] = engine(name, folder, "--workflow", workflow)
+                outcome["computer"] = kept(
+                    engine(name, folder, "--workflow", "computer", "--computer"), "name", "system", "cores"
+                )
+                outcome["bad name"] = engine(name, folder, "--workflow", "linux", "--linux", "Ubuntu; rm")
+                if shutil.which("wsl.exe"):
+                    outcome["no such linux"] = engine(name, folder, "--workflow", "linux", "--linux", "NoSuchLinux")
+                seen[name] = outcome
+        self.maxDiff = None
+        self.assertEqual(seen["native"], seen["reference"])
+        self.assertEqual(seen["reference"]["computer"]["cores"], os.cpu_count())
+        self.assertIn("is not a plain name", seen["reference"]["bad name"][2][0])
+
+    def test_it_learns_where_the_reference_learns(self) -> None:
+        # Lessons one engine keeps, the other finds and answers from, with
+        # the same trace: the same question again, and a new question that
+        # the examples kept answer alike.
+        program = str(ROOT / "conformance" / "cases" / "learn.kos")
+        asked = [
+            "the invoice total is wrong",
+            "my invoice shows a wrong total",
+            "wrong total on this invoice",
+            "the invoice has the wrong total again",
+            "invoice total looks wrong to me",
+            "why is my invoice total wrong",
+        ]
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def engine(name: str, folder: Path, *flags: str) -> None:
+            if name == "native":
+                ran = self.run_engine("run", program, *flags)
+                self.assertEqual(ran.returncode, 0, ran.stderr.decode())
+            else:
+                subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", "run", program, *flags],
+                    cwd=ROOT, capture_output=True, text=True, check=True,
+                )
+
+        for keeper, finder in (("reference", "native"), ("native", "reference")):
+            with self.subTest(keeper=keeper), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                memory = str(folder / "memory")
+                for index, text in enumerate(asked):
+                    (folder / "in.json").write_text(json.dumps({"t": {"text": text}}))
+                    (folder / "kept.json").write_text(json.dumps({
+                        "assistant": [{"label": "billing", "confidence": 0.9}],
+                        "writer": [{"text": f"reply {index}"}],
+                    }))
+                    engine(keeper, folder, "--input", str(folder / "in.json"),
+                           "--model-fixture", str(folder / "kept.json"), "--memory", memory,
+                           "--trace", str(folder / "kept.jsonl"))
+                # Asked again, a model would say something else: the lessons answer.
+                (folder / "wrong.json").write_text(json.dumps({
+                    "assistant": [{"label": "bug", "confidence": 0.9}] * 2,
+                    "writer": [{"text": "asked again"}] * 2,
+                }))
+                traces = {}
+                for text, how in ((asked[0], "same"), ("is the invoice total wrong here", "examples")):
+                    (folder / "in.json").write_text(json.dumps({"t": {"text": text}}))
+                    for name in ("reference", "native"):
+                        trace = folder / f"{name}-{how}.jsonl"
+                        # Each finds lessons in a copy, as the other left them.
+                        copy = folder / f"{name}-{how}-memory"
+                        shutil.copytree(memory, copy)
+                        engine(name, folder, "--input", str(folder / "in.json"),
+                               "--model-fixture", str(folder / "wrong.json"), "--memory", str(copy),
+                               "--trace", str(trace))
+                        lines = trace.read_text(encoding="utf-8").splitlines()
+                        traces[name, how] = [clean(json.loads(line)) for line in lines]
+                    self.assertEqual(traces["native", how], traces["reference", how])
+                    returns = [e for e in traces[finder, how] if e.get("event") == "model_return"]
+                    self.assertEqual(returns[0]["learned"]["how"], how)
+                    self.assertEqual(returns[0]["result"]["label"], "billing")
+
+    def test_it_reaches_a_pinned_mcp_server_as_the_reference_does(self) -> None:
+        program = ROOT / "examples" / "test_host_live.kos"
+        flags = [
+            "--mcp-server", str(ROOT / "examples" / "mcp_host_server.py"),
+            "--mcp-manifest", str(ROOT / "examples" / "mcp_manifest.json"),
+        ]
+        with tempfile.TemporaryDirectory() as scratch:
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program), *flags,
+                 "--trace", str(Path(scratch) / "trace.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        native = self.run_engine("run", str(program), *flags)
+        self.assertEqual(native.returncode, 0, native.stderr.decode())
+        self.assertEqual(
+            native.stdout.decode("utf-8").splitlines()[0],
+            reference.stdout.splitlines()[0],
+        )
+        # A manifest that pins nothing for the tool is refused by both.
+        with tempfile.TemporaryDirectory() as scratch:
+            empty = Path(scratch) / "manifest.json"
+            pinned = json.loads((ROOT / "examples" / "mcp_manifest.json").read_text())
+            pinned["tools"] = {}
+            empty.write_text(json.dumps(pinned), encoding="utf-8")
+            flags[-1] = str(empty)
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program), *flags,
+                 "--trace", str(Path(scratch) / "trace.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            native = self.run_engine("run", str(program), *flags)
+        self.assertEqual(native.returncode, 2)
+        self.assertEqual(
+            native.stderr.decode("utf-8").strip().splitlines()[-1],
+            reference.stderr.strip().splitlines()[-1],
+        )
+
+    def test_it_runs_in_an_environment_as_the_reference_does(self) -> None:
+        # A project's kosika.env names what its programs may reach; both
+        # engines find it above the program, take everything from it, keep
+        # their traces and journals where it says, and refuse alike.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        examples = ROOT / "examples"
+        server = [Path(sys.executable).as_posix(), (examples / "approval_mutation_mcp_server.py").as_posix()]
+        settings = (
+            "environment test {\n"
+            '  models answer from "fixture.json"\n'
+            "  budget 3 model calls, 60 seconds\n"
+            '  keep ".kosika/test"\n}\n'
+            "environment live {\n"
+            f"  mcp approval_mutation: {json.dumps(server)}\n"
+            f'    pinned "{(examples / "approval_mutation_manifest.json").as_posix()}"\n'
+            '  keep ".kosika/live"\n}\n'
+        )
+        source = (
+            "record Ask { text: Text }\nrecord Said { text: Text n: Number }\n"
+            "model writer {\n  input: Ask\n  output: Said\n}\n"
+            "workflow main(ask: Ask) -> Said {\n  said = use_model writer(text: ask.text)\n}\n"
+        )
+        seen: dict[str, dict[str, object]] = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                project = Path(scratch)
+                (project / "kosika.env").write_text(settings, encoding="utf-8")
+                (project / "fixture.json").write_text(json.dumps({"writer": [{"text": "ok", "n": 1}]}))
+                (project / "programs").mkdir()
+                (project / "programs" / "p.kos").write_text(source, encoding="utf-8")
+                shutil.copy(examples / "approval_mutation.kos", project / "programs")
+                (project / "in.json").write_text(json.dumps({"ask": {"text": "hi"}}))
+                (project / "req.json").write_text(json.dumps({"request": {"change": "rename"}}))
+
+                def engine(*arguments: str) -> subprocess.CompletedProcess[str]:
+                    command = (
+                        [sys.executable, "-m", "kosika.cli", "run"]
+                        if name == "reference"
+                        else [str(self.engine), "run"]
+                    )
+                    return subprocess.run(
+                        [*command, *arguments], cwd=project, capture_output=True, text=True,
+                        env={**os.environ, "PYTHONPATH": str(ROOT)},
+                    )
+
+                def said(ran: subprocess.CompletedProcess[str]) -> tuple[int, str, str]:
+                    lines = [line for line in ran.stderr.splitlines() if line.strip()]
+                    return ran.returncode, ran.stdout.splitlines()[0] if ran.stdout else "", (
+                        lines[-1].replace(str(project), "PROJECT") if lines else ""
+                    )
+
+                outcome: dict[str, object] = {}
+                ran = engine("programs/p.kos", "--env", "test", "--input", "in.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                outcome["result"] = ran.stdout.splitlines()[0]
+                traces = list((project / ".kosika" / "test" / "traces").iterdir())
+                self.assertEqual(len(traces), 1)
+                outcome["trace"] = [
+                    clean(json.loads(line))
+                    for line in traces[0].read_text(encoding="utf-8").splitlines()
+                ]
+                for refused in (
+                    ["--env", "test", "--model-fixture", "fixture.json"],
+                    ["--env", "test", "--journal", "j", "--binding-id", "b"],
+                    ["--env", "elsewhere"],
+                ):
+                    outcome[" ".join(refused)] = said(engine("programs/p.kos", "--input", "in.json", *refused))
+                # A change waits for its approval in the environment's own
+                # journal, and once approved is made, and the journal let go.
+                change = ["programs/approval_mutation.kos", "--env", "live",
+                          "--workflow", "apply_change", "--input", "req.json"]
+                ran = engine(*change)
+                self.assertEqual(ran.returncode, 3, ran.stderr)
+                request = json.loads(ran.stdout)
+                outcome["asked"] = {k: request[k] for k in ("status", "tool", "arguments", "step")}
+                approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                (project / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                ran = engine(*change, "--approval-record", "approval.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                outcome["applied"] = ran.stdout.splitlines()[0]
+                self.assertTrue((project / "mutation_sink.json").exists())
+                journals = project / ".kosika" / "live" / "journals"
+                self.assertFalse(
+                    [p for p in journals.iterdir() if not p.name.endswith((".lock.sqlite", ".approvals.sqlite", ".approvals.json"))]
+                )
+                # A broken environment file is refused with its place.
+                (project / "kosika.env").write_text("environment test { budget 3 hours }")
+                outcome["broken"] = said(engine("programs/p.kos", "--env", "test", "--input", "in.json"))
+                seen[name] = outcome
+        for key in seen["reference"]:
+            self.assertEqual(seen["native"][key], seen["reference"][key], key)
+
+    def test_it_refuses_imports_as_the_reference_does(self) -> None:
+        # What a refusal of an import says names files by their whole path,
+        # so these are made here, in a folder of their own, not in the suite.
+        cases = {
+            "private": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return hidden() }\n',
+                "lib.kos": "export [shown]\nfn shown() -> Number { return 1 }\n"
+                "fn hidden() -> Number { return 2 }\n",
+            },
+            "typo": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return shwn() }\n',
+                "lib.kos": "export [shown]\nfn shown() -> Number { return 1 }\n",
+            },
+            "cycle": {
+                "main.kos": 'import "a.kos"\nfn f() -> Number { return 1 }\n',
+                "a.kos": 'import "b.kos"\nexport [a]\nfn a() -> Number { return 1 }\n',
+                "b.kos": 'import "a.kos"\nexport [b]\nfn b() -> Number { return 2 }\n',
+            },
+            "outside": {
+                "main.kos": 'import "../elsewhere.kos"\nfn f() -> Number { return 1 }\n',
+            },
+            "not a module": {
+                "main.kos": 'import "notes.txt"\nfn f() -> Number { return 1 }\n',
+                "notes.txt": "hello\n",
+            },
+            "exports": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return 1 }\n',
+                "lib.kos": "export [shown, shown]\nfn shown() -> Number { return 1 }\n",
+            },
+            "export unknown": {
+                "main.kos": "export [nothing]\nfn f() -> Number { return 1 }\n",
+            },
+            "bad text": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return 1 }\n',
+                "lib.kos": "fn g( -> Number { return 1 }\n",
+            },
+            "no path": {
+                "main.kos": "import lib\nfn f() -> Number { return 1 }\n",
+            },
+        }
+        for name, files in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                project = Path(scratch) / "project"
+                project.mkdir()
+                (Path(scratch) / "elsewhere.kos").write_text("fn e() -> Number { return 1 }\n")
+                for file, text in files.items():
+                    (project / file).write_text(text, encoding="utf-8")
+                entry = str(project / "main.kos")
+                reference = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", "test", entry],
+                    cwd=ROOT, capture_output=True, text=True,
+                )
+                native = self.run_engine("test", entry)
+
+                def said(out: str, err: str) -> str:
+                    lines = [
+                        line for line in (out + err).splitlines()
+                        if line.strip() and "platform independent" not in line
+                    ]
+                    return lines[-1].replace(str(Path(scratch).resolve()), "SCRATCH") if lines else ""
+
+                self.assertEqual(
+                    said(native.stdout.decode("utf-8"), native.stderr.decode("utf-8")),
+                    said(reference.stdout, reference.stderr),
+                )
+                self.assertNotEqual(native.returncode, 0)
+
+    def test_it_reaches_files_and_programs_as_the_reference_does(self) -> None:
+        # Files in a granted folder, and a program started there: what each
+        # engine gives back, refuses, and changes, side by side.
+        source = (
+            "record Ask { path: Text query: Text }\n"
+            "record Query { path: Text query: Text }\n"
+            "record Hits { matches: Text[] }\n"
+            "record Command { args: Text[] }\n"
+            "record Ran { exit_code: Number stdout: Text stderr: Text }\n"
+            'tool find_text {\n  source system "files"\n  operation: "search"\n'
+            "  access: observe\n  input: Query\n  output: Hits\n}\n"
+            'tool run_python {\n  source system "shell"\n  operation: "python"\n'
+            "  access: execute\n  input: Command\n  output: Ran\n}\n"
+            "agent hands {\n  can: [find_text, run_python]\n}\n"
+            "workflow names(ask: Ask) -> FileNames {\n  names = list files ask.path\n}\n"
+            "workflow note(ask: Ask) -> FileContent {\n  note = read file ask.path\n}\n"
+            "workflow hits(ask: Ask) -> Hits {\n  hits = execute hands.find_text(ask.path, ask.query)\n}\n"
+            "workflow save(ask: Ask) -> FileSaved {\n"
+            '  saved = write file ask.path with ask.query\n  require approval\n}\n'
+            "workflow python(ask: Ask) -> Ran {\n"
+            '  ran = execute hands.run_python(["-c", ask.query])\n  require approval\n}\n'
+        )
+        runs = [
+            ("names", ".", "", []),
+            ("names", "notes", "", []),
+            ("note", "notes/todo.txt", "", []),
+            ("note", "../outside.txt", "", []),
+            ("note", "missing.txt", "", []),
+            ("note", "notes", "", []),
+            ("hits", ".", "rent lists", []),
+            ("hits", ".", "", []),
+            ("save", "out/report.txt", "written", []),
+            ("save", "out/report.txt", "written", ["journal"]),
+            ("python", ".", "print('ran here')", ["journal"]),
+            ("names", ".", "", ["no folder"]),
+            ("names", ".", "", ["shell, no folder"]),
+        ]
+        seen: dict[str, list[object]] = {}
+        for name in ("reference", "native"):
+            outcome: list[object] = []
+            with tempfile.TemporaryDirectory() as scratch:
+                root = Path(scratch)
+                (root / "p.kos").write_text(source, encoding="utf-8")
+                (root / "outside.txt").write_text("not yours\n")
+                granted = root / "granted"
+                (granted / "notes").mkdir(parents=True)
+                (granted / "notes" / "todo.txt").write_text("rent is due\r\nbuy lists\ncurrent rental\n")
+                (granted / "readme.md").write_text("Lists of rent.\n")
+                for workflow, path, query, how in runs:
+                    (root / "in.json").write_text(json.dumps({"ask": {"path": path, "query": query}}))
+                    flags = ["--workflow", workflow, "--input", "in.json", "--trace", "t.jsonl"]
+                    if "no folder" in how or "shell, no folder" in how:
+                        flags += ["--allow-shell"] if "shell, no folder" in how else []
+                    else:
+                        flags += ["--allow-folder", "granted", "--allow-shell"]
+                    if "journal" in how:
+                        flags += ["--journal", f"{workflow}.journal", "--binding-id", "b"]
+                    command = (
+                        [sys.executable, "-m", "kosika.cli", "run", "p.kos"]
+                        if name == "reference"
+                        else [str(self.engine), "run", "p.kos"]
+                    )
+                    ran = subprocess.run(
+                        [*command, *flags], cwd=root, capture_output=True, text=True,
+                        encoding="utf-8", env={**os.environ, "PYTHONPATH": str(ROOT)},
+                    )
+                    said = [
+                        line for line in ran.stderr.splitlines()
+                        if line.strip() and "platform independent" not in line
+                    ]
+                    first = ran.stdout.splitlines()[:1]
+                    if ran.returncode == 3:
+                        asked = json.loads(ran.stdout)
+                        first = [{k: asked[k] for k in ("tool", "arguments", "step")}]
+                        (root / "ok.json").write_text(json.dumps({
+                            "plan_hash": asked["plan_hash"], "action_hash": asked["action_hash"],
+                            "approved_by": "tester",
+                        }))
+                        again = subprocess.run(
+                            [*command, *flags, "--approval-record", "ok.json"], cwd=root,
+                            capture_output=True, text=True, encoding="utf-8",
+                            env={**os.environ, "PYTHONPATH": str(ROOT)},
+                        )
+                        first.append((again.returncode, again.stdout.splitlines()[:1]))
+                    outcome.append((workflow, path, ran.returncode, first, said[-1:]))
+                written = granted / "out" / "report.txt"
+                outcome.append(written.read_text() if written.exists() else None)
+            seen[name] = outcome
+        for native, reference in zip(seen["native"], seen["reference"]):
+            self.assertEqual(native, reference)
+
+    def test_it_keeps_memories_as_the_reference_does(self) -> None:
+        # Run twice over one memory folder, each engine writes the same file
+        # and gives the same results and traces; without a folder both
+        # refuse to begin.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        program = ROOT / "conformance" / "cases" / "memories.kos"
+        seen: dict[str, list[object]] = {}
+        for name in ("reference", "native"):
+            with tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "in.json").write_text(json.dumps({"ask": {"text": "hi é", "key": "k"}}))
+                command = (
+                    [sys.executable, "-m", "kosika.cli", "run"]
+                    if name == "reference"
+                    else [str(self.engine), "run"]
+                )
+                outcome: list[object] = []
+                for flags in ([], ["--memory", "kept"], ["--memory", "kept"]):
+                    ran = subprocess.run(
+                        [*command, str(program), "--workflow", "note", "--input", "in.json",
+                         "--trace", "trace.jsonl", *flags],
+                        cwd=folder, capture_output=True, text=True, encoding="utf-8",
+                        env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"},
+                    )
+                    said = [
+                        line for line in ran.stderr.splitlines()
+                        if line.strip() and "platform independent" not in line
+                    ]
+                    outcome.append((ran.returncode, ran.stdout.splitlines()[:1], said[-1:]))
+                    if ran.returncode == 0:
+                        outcome.append([
+                            clean(json.loads(line))
+                            for line in (folder / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+                        ])
+                outcome.append((folder / "kept" / "notes.json").read_text(encoding="utf-8"))
+                seen[name] = outcome
+        self.assertEqual(seen["native"], seen["reference"])
+
+    def test_an_agent_plan_that_writes_files_is_read_as_the_reference_reads_it(self) -> None:
+        # A stand-in model plans a Kosika file whose test fails: the plan is
+        # sent back. Then the file put right and an empty one: sent back
+        # again. The third time the plan is shown all the same, with what is
+        # still wrong. The agent's own check is asked each time.
+        bad = 'fn add(a: Number, b: Number) -> Number { return a - b }\ntest "adds" {\n  expect add(1, 2) == 3\n}\n'
+        good = 'fn add(a: Number, b: Number) -> Number { return a + b }\ntest "adds" {\n  expect add(1, 2) == 3\n}\n'
+        plans = [
+            [{"path": "calc.kos", "text": bad}],
+            [{"path": "calc.kos", "text": good}, {"path": "empty.txt", "text": "  "}],
+            [{"path": "calc.kos", "text": good}, {"path": "empty.txt", "text": "  "}, {"path": "notes.md", "text": "Plain notes"}],
+        ]
+        asked: list[dict] = []
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append(body)
+                told = [m for m in body["messages"] if m["role"] == "tool"]
+                turn = len([m for m in body["messages"] if m["role"] == "assistant"])
+                if turn < len(plans):
+                    calls = [
+                        {"id": f"call_{turn}_{i}", "type": "function",
+                         "function": {"name": "write_file", "arguments": json.dumps(change)}}
+                        for i, change in enumerate(plans[turn])
+                    ]
+                    answer = {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": calls},
+                                           "finish_reason": "tool_calls"}]}
+                else:
+                    reply = json.dumps({"text": "done: " + str(len(told)), "did": []})
+                    answer = {"choices": [{"message": {"role": "assistant", "content": reply},
+                                           "finish_reason": "stop"}]}
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}/v1"
+        source = (
+            "record Ask { text: Text }\nrecord Answer { text: Text did: Text[] }\n"
+            "record ReadRequest { path: Text }\nrecord FileText { text: Text }\n"
+            "record WriteRequest { path: Text text: Text }\nrecord Written { bytes: Number }\n"
+            "record PlanFile { path: Text text: Text before: Text exists: Bool }\n"
+            'tool read_file {\n  source system "files"\n  operation: "read"\n'
+            "  access: observe\n  input: ReadRequest\n  output: FileText\n}\n"
+            'tool write_file {\n  source system "files"\n  operation: "write"\n'
+            "  access: execute\n  input: WriteRequest\n  output: Written\n}\n"
+            "fn own_check(request: Text, files: PlanFile[]) -> Text[] {\n"
+            '  return for file in files where file.path == "notes.md" and not file.exists '
+            '{ "notes.md: say what changed" }\n}\n'
+            "model thinker {\n  input: Ask\n  output: Answer\n}\n"
+            "agent coder {\n  model: thinker\n  can: [read_file, write_file]\n  check: own_check\n  max_steps: 6\n}\n"
+            "workflow main(ask: Ask) -> Answer {\n  require approval\n  answer = ask coder(ask.text)\n}\n"
+        )
+        seen: dict[str, dict[str, object]] = {}
+        for name in ("reference", "native"):
+            with self.subTest(engine=name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "work").mkdir()
+                (folder / "p.kos").write_text(source, encoding="utf-8")
+                (folder / "in.json").write_text(json.dumps({"ask": {"text": "add numbers in calc.kos"}}))
+                command = [sys.executable, "-m", "kosika.cli", "run"] if name == "reference" else [str(self.engine), "run"]
+                flags = ["p.kos", "--input", "in.json", "--model", "small", "--model-url", url,
+                         "--allow-folder", "work", "--trace", "trace.jsonl",
+                         "--journal", "run.journal", "--binding-id", "here"]
+                asked.clear()
+                ran = subprocess.run([*command, *flags], cwd=folder, capture_output=True, text=True,
+                                     env={**os.environ, "PYTHONPATH": str(ROOT)})
+                self.assertEqual(ran.returncode, 3, ran.stderr)
+                request = json.loads(ran.stdout)
+                tool_answers = [
+                    [m["content"] for m in body["messages"] if m["role"] == "tool"] for body in asked
+                ]
+                written_before = sorted(path.name for path in (folder / "work").iterdir())
+                approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                done = subprocess.run([*command, *flags, "--approval-record", "approval.json"], cwd=folder,
+                                      capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(ROOT)})
+                self.assertEqual(done.returncode, 0, done.stderr)
+                seen[name] = {
+                    "asked": {k: request[k] for k in ("status", "tool", "arguments", "step")},
+                    "told": tool_answers,
+                    "written": written_before,
+                    "answer": done.stdout.splitlines()[0],
+                    "files": {path.name: path.read_text(encoding="utf-8") for path in sorted((folder / "work").iterdir())},
+                }
+        self.assertEqual(seen["native"]["answer"], seen["reference"]["answer"])
+        self.assertEqual(seen["native"]["files"], seen["reference"]["files"])
+        self.assertEqual(sorted(seen["reference"]["files"]), ["calc.kos", "empty.txt", "notes.md"])
+        self.assertEqual(seen["native"]["told"], seen["reference"]["told"])
+        self.assertEqual(seen["native"]["asked"], seen["reference"]["asked"])
+        self.assertEqual(seen["reference"]["written"], [])
+        warnings = seen["reference"]["asked"]["arguments"]["warnings"]
+        self.assertIn("empty.txt: the file would be empty", warnings)
+        self.assertIn("notes.md: say what changed", warnings)
+        told = "".join(str(answer) for answer in seen["reference"]["told"])
+        self.assertIn("calc.kos: its test", told)
+        self.assertIn("fails at line 3: expected add(1, 2) == 3", told)
+
+    def test_an_agent_makes_its_approved_change_as_the_reference_does(self) -> None:
+        # A stand-in model asks for a change (twice over, when `second`),
+        # then answers from what the change gave back. An agent that plans
+        # shows its changes as one plan; one with `plan: off` makes one
+        # change a step. Each waits for its approval, makes the change once
+        # approved, and does not make it again.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash", "duration_ms"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        asked: list[dict] = []
+        second = [False]
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append(body)
+                told = [m for m in body["messages"] if m["role"] == "tool"]
+                if not told or (second[0] and len(told) == 1):
+                    n = len(told) + 1
+                    call = {"id": f"call_{n}", "type": "function",
+                            "function": {"name": "apply_change",
+                                         "arguments": json.dumps({"change": f"rename{n}"})}}
+                    answer = {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": [call]},
+                                           "finish_reason": "tool_calls"}]}
+                else:
+                    reply = json.dumps({"text": "done: " + told[-1]["content"], "did": []})
+                    answer = {"choices": [{"message": {"role": "assistant", "content": reply},
+                                           "finish_reason": "stop"}]}
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}/v1"
+        examples = ROOT / "examples"
+        for plan, twice in (("", False), ("", True), ("  plan: off\n", False), ("  plan: off\n", True)):
+            second[0] = twice
+            source = (
+                "record Ask { text: Text }\nrecord Answer { text: Text did: Text[] }\n"
+                "record MutationRequest { change: Text }\n"
+                "record MutationResult { status: Text change: Text sink: Text }\n"
+                'tool apply_change {\n  source mcp "approval_mutation"\n  operation: "apply_change"\n'
+                "  access: execute\n  input: MutationRequest\n  output: MutationResult\n}\n"
+                "model thinker {\n  input: Ask\n  output: Answer\n}\n"
+                f"agent operator {{\n  model: thinker\n  can: [apply_change]\n{plan}}}\n"
+                "workflow main(ask: Ask) -> Answer {\n  answer = ask operator(ask.text)\n}\n"
+            )
+            seen: dict[str, dict[str, object]] = {}
+            for name in ("reference", "native"):
+                with self.subTest(plan=plan, second=twice, engine=name), tempfile.TemporaryDirectory() as scratch:
+                    folder = Path(scratch)
+                    (folder / "p.kos").write_text(source, encoding="utf-8")
+                    (folder / "in.json").write_text(json.dumps({"ask": {"text": "rename it"}}))
+                    command = (
+                        [sys.executable, "-m", "kosika.cli", "run"]
+                        if name == "reference"
+                        else [str(self.engine), "run"]
+                    )
+                    flags = [
+                        "p.kos", "--input", "in.json", "--model", "small", "--model-url", url,
+                        "--mcp-source", "approval_mutation",
+                        "--mcp-server", str(examples / "approval_mutation_mcp_server.py"),
+                        "--mcp-manifest", str(examples / "approval_mutation_manifest.json"),
+                        "--trace", "trace.jsonl",
+                    ]
+
+                    def engine(*more: str) -> tuple[int, str, str, list[dict]]:
+                        asked.clear()
+                        ran = subprocess.run(
+                            [*command, *flags, *more], cwd=folder, capture_output=True, text=True,
+                            env={**os.environ, "PYTHONPATH": str(ROOT)},
+                        )
+                        said = [line for line in ran.stderr.splitlines() if line.strip()]
+                        return ran.returncode, ran.stdout.strip(), said[-1] if said else "", list(asked)
+
+                    outcome: dict[str, object] = {"without a journal": engine()}
+                    journal = ["--journal", "run.journal", "--binding-id", "here"]
+                    code, printed, said, models = engine(*journal)
+                    self.assertEqual(code, 3, said)
+                    request = json.loads(printed)
+                    outcome["asked"] = ({k: request[k] for k in ("status", "tool", "arguments", "step")}, models)
+                    approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                    (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                    outcome["approved"] = engine(*journal, "--approval-record", "approval.json")
+                    if outcome["approved"][0] == 0:
+                        outcome["trace"] = [
+                            clean(json.loads(line))
+                            for line in (folder / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+                        ]
+                    outcome["changed"] = (folder / "mutation_sink.json").read_text(encoding="utf-8")
+                    outcome["again"] = engine(*journal, "--approval-record", "approval.json")
+                    self.assertEqual((folder / "mutation_sink.json").read_text(encoding="utf-8"), outcome["changed"])
+                    seen[name] = outcome
+            for key in seen["reference"]:
+                self.assertEqual(seen["native"][key], seen["reference"][key], f"{plan!r} {twice} {key}")
+
+
+if __name__ == "__main__":
+    unittest.main()

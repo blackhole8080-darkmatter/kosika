@@ -1,0 +1,58 @@
+// Shapes: a type every record with the shape's functions is.
+
+shape Priced {
+  fn price(self) -> Number
+  fn label(self, currency: Text) -> Text
+}
+
+record Book {
+  title: Text
+  pages: Number
+  fn price(self) -> Number { return self.pages / 10 }
+  fn label(self, currency: Text) -> Text { return self.title + ": " + currency + self.price() }
+}
+
+record Lamp {
+  watts: Number
+  fn price(self) -> Number { return 25 }
+  fn label(self, currency: Text) -> Text { return "Lamp: " + currency + self.price() }
+}
+
+record Note { text: Text }
+
+record Cart { items: Priced[] }
+
+fn total(items: Priced[]) -> Number {
+  var sum = 0
+  for item in items { sum = sum + item.price() }
+  return sum
+}
+
+fn cheapest(a: Priced, b: Priced) -> Priced {
+  return if a.price() <= b.price() { a } else { b }
+}
+
+fn tags(items: Priced[]) -> Text[] {
+  return for item in items { item.label("$") }
+}
+
+workflow checkout(cart: Cart) -> Cart {
+  same = keep(cart)
+}
+
+fn keep(cart: Cart) -> Cart { return cart }
+
+test "every record that is a shape may stand for it" {
+  book: Book = {title: "Dune", pages: 400}
+  lamp: Lamp = {watts: 60}
+  expect total([book, lamp]) == 65.0
+  expect cheapest(book, lamp).price() == 25
+  expect tags([book, lamp]) == ["Dune: $40", "Lamp: $25"]
+}
+
+test "a workflow takes shapes from outside, told apart by their fields" {
+  book: Book = {title: "Dune", pages: 400}
+  lamp: Lamp = {watts: 60}
+  c = checkout({items: [book, lamp]})
+  expect total(c.items) == 65.0
+}

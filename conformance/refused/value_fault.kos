@@ -1,0 +1,9 @@
+// Refused: a fault in a value step is reported as the fault it is.
+
+record Said { text: Text count: Number }
+
+workflow main() -> Said {
+  count = 2
+  more = count + "1"
+  said = {text: "hi" count: count}
+}

@@ -1,0 +1,43 @@
+// Fails on purpose: answers whose evidence does not hold, and the reason
+// each gives.
+
+record Note { text: Text }
+record Person { name: Text city: Text }
+
+model assistant
+
+workflow sort_it(note: Note) -> Choice {
+  kind = classify note.text into ["complaint", "praise"] with evidence
+}
+
+workflow who(note: Note) -> Person {
+  who = extract Person from note.text with evidence
+}
+
+workflow near(note: Note) -> Decision {
+  near = decide "Is the writer nearby?" given note.text with evidence
+}
+
+test "a quote too short to check" {
+  answers assistant: [{label: "complaint", confidence: 0.9, evidence: ["a."]}]
+  k = sort_it({text: "a bad day"})
+  expect k.label == "complaint"
+}
+
+test "a filled field with no quote" {
+  answers assistant: [{name: "Ada", city: "Paris", evidence: {name: "Ada", city: null}}]
+  p = who({text: "Ada wrote this"})
+  expect p.city == "Paris"
+}
+
+test "a yes with nothing quoted" {
+  answers assistant: [{answer: true, confidence: 0.9, reason: "close", evidence: []}]
+  v = near({text: "I am next door"})
+  expect v.answer
+}
+
+test "a label with no quotes at all" {
+  answers assistant: [{label: "praise", confidence: 0.9, evidence: []}]
+  k = sort_it({text: "lovely"})
+  expect k.label == "praise"
+}

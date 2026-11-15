@@ -1,0 +1,5 @@
+{
+  "writer": {
+    "command": ["kosika-langflow", "kosika-model"]
+  }
+}

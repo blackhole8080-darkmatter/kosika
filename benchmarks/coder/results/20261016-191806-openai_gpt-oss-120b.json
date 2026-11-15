@@ -1,0 +1,74 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "results": [
+    {
+      "id": "py-bpe",
+      "passed": true,
+      "state": "done",
+      "seconds": 24.8,
+      "approvals": 4,
+      "failures": [],
+      "error": "",
+      "said": "My first try failed its tests, so I read what they printed and put it right.\nWrote bpe.py, test_bpe.py, one whole file at a time.\nWrote: bpe.py, test_bpe.py\nThe tests for bpe pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "bpe.py",
+        "calc.py",
+        "test_bpe.py",
+        "test_calc.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-4sr0dq4f\\py"
+    },
+    {
+      "id": "py-astar",
+      "passed": false,
+      "state": "done",
+      "seconds": 62.4,
+      "approvals": 6,
+      "failures": [
+        "python -m pytest: Could not find platform independent libraries <prefix>"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote astar.py, test_astar.py, one whole file at a time.\nWrote: astar.py, test_astar.py\nThe tests failed.\n...........F\n================================== FAILURES ===================================\n_______________________ test_path_avoids_walls_diagonal _______________________\n\n    def test_path_avoids_walls_diagonal():\n        \"\"\"A diagonal wall should force the algorithm to go around, not cut corners.\"\"\"\n        grid = [\n            \".#.\",\n            \"#.#\",\n            \".#.\",\n        ]\n        start = (0, 0)\n        goal = (2, 2)\n        path = shortest_path(grid, start, goal)\n>       assert path is not None\nE       assert None is not None\n\ntest_astar.py:177: AssertionError\n=========================== short test summary i",
+      "files": [
+        "astar.py",
+        "calc.py",
+        "test_astar.py",
+        "test_calc.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-3joqkd17\\py"
+    },
+    {
+      "id": "kosika-paper-agent",
+      "passed": false,
+      "state": "done",
+      "seconds": 64.9,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('papers/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed, getattr(x,'message','')) for x in r]\ns=open('papers/main.kos', encoding='utf-8').read()\nassert 'extract' in s and 'decide' in s and 'memory' in s: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-62vuo2ce\\agents\\papers\\main.kos: Expected 'from' at 31:20, got '.'"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote papers/main.kos, one whole file at a time.\nWrote: papers/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-62vuo2ce\\agents\\papers\\main.kos: Expected 'from' at 31:20, got '.'\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "papers\\main.kos"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-62vuo2ce\\agents"
+    },
+    {
+      "id": "dashboard",
+      "passed": true,
+      "state": "done",
+      "seconds": 75.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-4jwfq2qb\\site"
+    }
+  ]
+}

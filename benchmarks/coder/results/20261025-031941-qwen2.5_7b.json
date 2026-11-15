@@ -1,0 +1,68 @@
+{
+  "model": "qwen2.5:7b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 347.8,
+      "attempts": 1
+    }
+  },
+  "languages": {
+    "kosika": {
+      "passed": 0,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "kosika-route",
+      "language": "kosika",
+      "passed": false,
+      "state": "done",
+      "seconds": 347.8,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('route/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\r\nWrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests failed.\nCheck failed: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "route\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-route",
+          "attempt": 1,
+          "asked": "create a Kosika program in route/main.kos that sorts a support ticket's text into billing, bug or account with classify, falls back to account when the model's answer is not one of those, and has at least two tests that script the model with answers",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 347.8,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('route/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)\n      check(without)\n      binding_type = _expression_type(\n                     ^^^^^^^^^^^^^^^^^"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\r\nWrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests failed.\nCheck failed: Step 'function next_count local before' cannot access field 'count' on 'Category?': the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "route\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 347.8
+        }
+      }
+    }
+  ]
+}

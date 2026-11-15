@@ -1,0 +1,13 @@
+// Refused: a question is known by text.
+
+record Note { text: Text n: Number }
+record Reply { text: Text }
+
+model writer {
+  input: Note
+  output: Reply
+}
+
+workflow main(n: Note) -> Reply {
+  said = use_model writer(text: n.text, n: n.n) learn by n.n
+}

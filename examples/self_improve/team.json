@@ -1,0 +1,8 @@
+{
+  "request": {
+    "project": "kosika-native-learning",
+    "question": "Does the native engine currently support learn? What should a developer verify before choosing it for a learning agent?",
+    "focus": "native/README.md",
+    "reference": "conformance/README.md"
+  }
+}

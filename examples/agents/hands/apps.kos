@@ -1,0 +1,83 @@
+// The programs the hands may work in, described in Kosika: what to start,
+// which window is theirs, where their words are, how to get a fresh page,
+// and the ways words can be put in. hands.py knows none of this; Kosika tells
+// it with each action (app_flags), so adding a program is a change here only.
+//
+//   program  what Windows starts, when the program is not open yet
+//   window   the window's class, which is how the hands find it
+//   fields   the kinds of thing that hold its words (Windows' accessibility)
+//   fresh    the button that gives a new empty page when it is open already,
+//            pressed through accessibility; "" when it has none
+//   ways     how words may be put in, best first: "field" writes them straight
+//            into the field through accessibility, with no keyboard; "keys"
+//            types them, so the window must be in front
+
+export [App, apps, app_named, app_flags, app_hands]
+
+record App { name: Text title: Text program: Text window: Text fields: Text[] fresh: Text ways: Text[] }
+record Asked { name: Text }
+
+fn apps() -> App[] {
+  return [
+    {name: "notepad", title: "Notepad", program: "notepad.exe", window: "Notepad",
+     fields: ["Document", "Edit"], fresh: "Add New Tab", ways: ["field", "keys"]},
+    {name: "calculator", title: "Calculator", program: "calc.exe", window: "ApplicationFrameWindow",
+     fields: [], fresh: "", ways: ["keys"]}
+  ]
+}
+
+// The program called that; one the hands do not know has no program, so
+// nothing can be started or found for it.
+fn app_named(name: Text) -> App {
+  for a in apps() {
+    if a.name == name { return a }
+  }
+  return {name: name, title: name, program: "", window: "", fields: [], fresh: "", ways: []}
+}
+
+// "open:NAME=start TITLE" for every program, the hands a kit may give.
+fn app_hands() -> Text[] {
+  return (for a in apps() { f"open:{a.name}=start {a.title}" })
+}
+
+// What hands.py is told about the program an action works in.
+fn app_flags(a: App) -> Text[] {
+  if a.program == "" { return [] }
+  return ["--app", a.name, "--window", a.window, "--program", a.program, "--fields", a.fields.join(","), "--fresh", a.fresh]
+}
+
+// For hands.py run by hand, with no flags: the program described as JSON.
+workflow describe(a: Asked) -> App {
+  result = app_named(a.name)
+}
+
+// What is missing from a program's description, or "".
+fn app_problems(a: App) -> Text {
+  if a.program == "" or a.window == "" or a.title == "" { return a.name + " needs a program, a window and a title" }
+  if a.ways.length() == 0 { return a.name + " needs at least one way to put words in" }
+  for way in a.ways {
+    if not ["field", "keys"].contains(way) { return f"{a.name}: '{way}' is not a way; use field or keys" }
+  }
+  return ""
+}
+
+test "every program has its window, the program to start and a way to put words in" {
+  expect (for a in apps() { app_problems(a) }).join("") == ""
+  bad: App = {name: "x", title: "X", program: "x.exe", window: "X", fields: [], fresh: "", ways: ["telepathy"]}
+  expect app_problems(bad).contains("'telepathy' is not a way")
+}
+
+test "Notepad gives a fresh tab, and its words can be put straight in the field" {
+  n = app_named("notepad")
+  expect n.fresh == "Add New Tab"
+  expect n.ways[0] == "field"
+  expect app_flags(n) == ["--app", "notepad", "--window", "Notepad", "--program", "notepad.exe", "--fields", "Document,Edit", "--fresh", "Add New Tab"]
+}
+
+test "a program the hands do not know is never started" {
+  x = app_named("regedit")
+  expect x.program == ""
+  expect app_flags(x) == []
+  expect app_hands().contains("open:notepad=start Notepad")
+  expect not app_hands().join(" ").contains("regedit")
+}

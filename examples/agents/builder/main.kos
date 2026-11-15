@@ -26,7 +26,8 @@ record Listing { names: Text[] }
 record NewFile { path: Text text: Text }
 record Written { bytes: Number }
 // What the builder did: a sentence about it, and the files it made.
-record Built { summary: Text made: Text[] }
+// `did` is filled in by Kosika from what really ran, not by the model.
+record Built { summary: Text did: Text[] }
 
 model maker {
   input: Request
@@ -57,7 +58,7 @@ agent builder {
   can: [list_folder, create_file]
   max_steps: 5
   max_tool_calls: 12
-  instructions: "You make small text files in one folder. First list the folder with path \".\" to see what is already there. Never use a path that already exists. Then call create_file once for every file that is needed, all in the same reply, each with its complete text. Keep files short. After they are made, answer with one sentence in summary and the paths you made in made."
+  instructions: "You make small text files in one folder. First list the folder with path \".\" to see what is already there. Never use a path that already exists. Then call create_file once for every file that is needed, all in the same reply, each with its complete text. Keep files short. After they are made, answer with one sentence in summary, and an empty list in did."
 }
 
 fn request(msg: Msg) -> Request {
@@ -66,11 +67,13 @@ fn request(msg: Msg) -> Request {
 
 fn tell(built: Built) -> Said {
   var made: Text[] = []
-  for path in built.made {
-    if path.trim().length() > 0 { made = made.append(path.trim()) }
+  for line in built.did {
+    made = made.append(line.replace("create_file ", ""))
   }
-  let tail = if made.length() > 0 { "\nMade: " + made.unique().join(", ") } else { "\nNothing was made." }
-  return {text: built.summary.trim() + tail}
+  // With nothing made, the model's sentence is shown as what it said,
+  // not as what happened.
+  let said = if built.summary.trim().length() > 0 { " The agent said: " + built.summary.trim() } else { "" }
+  return {text: if made.length() > 0 { built.summary.trim() + "\nMade: " + made.unique().join(", ") } else { "Nothing was made." + said }}
 }
 
 workflow main(msg: Msg) -> Said {
@@ -81,9 +84,9 @@ workflow main(msg: Msg) -> Said {
   require approval
 }
 
-test "the answer lists what was made" {
-  a = tell({summary: " Made a todo list. ", made: ["notes/todo.txt", "notes/todo.txt", " "]})
-  b = tell({summary: "The folder already has those files.", made: []})
+test "the answer lists what was really made" {
+  a = tell({summary: " Made a todo list. ", did: ["create_file notes/todo.txt", "create_file notes/todo.txt"]})
+  b = tell({summary: "I made five files.", did: []})
   expect a.text == "Made a todo list.\nMade: notes/todo.txt"
-  expect b.text == "The folder already has those files.\nNothing was made."
+  expect b.text == "Nothing was made. The agent said: I made five files."
 }

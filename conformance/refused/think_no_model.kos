@@ -1,0 +1,7 @@
+// Refused: a thinking step needs a model to ask.
+
+record Ticket { text: Text }
+
+workflow main(ticket: Ticket) -> Summary {
+  brief = summarize ticket.text
+}

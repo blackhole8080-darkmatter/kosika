@@ -1,0 +1,75 @@
+// An agent that uses a paired phone. It reaches the phone only through the
+// `phone` MCP server that the person running it names in an environment
+// (kosika.env here), and the phone's person still says yes on the phone to
+// every request. Showing a message changes something, so `remind` also
+// waits for an approval here first.
+//
+//   kos phone mcp --manifest > phone_manifest.json
+//   kos run phone_agent.kos --env phone --workflow look --input where.json
+
+record PhoneAsk {
+  device: Text
+  sense: Text
+}
+
+record PhoneDo {
+  device: Text
+  action: Text
+  args: Text[]
+}
+
+record PhoneReply {
+  device: Text
+  status: Text
+  note: Text
+  result: Text
+  simulated: Bool
+}
+
+tool phone_ask {
+  source mcp "phone"
+  operation: "phone_ask"
+  access: observe
+  input: PhoneAsk
+  output: PhoneReply
+}
+
+tool phone_do {
+  source mcp "phone"
+  operation: "phone_do"
+  access: execute
+  input: PhoneDo
+  output: PhoneReply
+}
+
+agent phone_helper {
+  can: [phone_ask, phone_do]
+  cannot: [arbitrary_shell, write_files]
+  max_steps: 2
+}
+
+record Where {
+  device: Text
+}
+
+record Reminder {
+  device: Text
+  text: Text
+}
+
+// What the phone is: asks the phone's person first.
+workflow look(where: Where) -> PhoneReply {
+  step read {
+    let reply: PhoneReply = execute phone_helper.phone_ask(device: where.device, sense: "device")
+    return reply
+  }
+}
+
+// A message on the phone's screen: approved here, then yes on the phone.
+workflow remind(reminder: Reminder) -> PhoneReply {
+  require approval
+  step show {
+    let reply: PhoneReply = execute phone_helper.phone_do(device: reminder.device, action: "show", args: [reminder.text])
+    return reply
+  }
+}

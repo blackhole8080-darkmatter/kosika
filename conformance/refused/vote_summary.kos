@@ -1,0 +1,13 @@
+// Refused: two summaries are never the same word for word.
+
+record Msg { text: Text }
+
+model fast {
+  input: Msg
+  output: Msg
+}
+
+workflow main(m: Msg) -> Msg {
+  brief = summarize m.text using fast vote 3
+  said = {text: brief.text}
+}

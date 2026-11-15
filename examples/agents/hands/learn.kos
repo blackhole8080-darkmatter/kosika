@@ -1,0 +1,121 @@
+// Skills that grow from jobs that worked. A run from the diary that ended
+// well, every step done, becomes a skill note in skills/, the same kind of
+// note as skills/notes.md: what it is, when it fits, and the steps that
+// worked, in order. You approve the note before it is kept.
+//
+//   python diary.py traces --lesson 3 --name open-and-write-a-note --when "note, notepad"
+//   kosika run learn.kos --workflow learn --input lesson.json --allow-shell --allow-folder . --approve
+//
+// Kosika decides whether a run can be learned from, and writes the note.
+// skillbook.py only puts it in skills/, never over a note already there.
+
+import "diary.kos"
+import "kit.kos"
+
+record Lesson { name: Text when: Text[] entries: Entry[] }
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+record Kept { kept: Bool said: Text }
+
+tool keep {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+agent scribe {
+  can: [keep]
+  max_steps: 1
+}
+
+fn good_name(name: Text) -> Bool {
+  if name.length() < 3 or name.length() > 48 { return false }
+  for letter in name.chars() {
+    if not "abcdefghijklmnopqrstuvwxyz0123456789-".contains(letter) { return false }
+  }
+  return not name.starts_with("-")
+}
+
+// Why this run cannot be learned from, or "" when it can.
+fn not_learnable(l: Lesson) -> Text {
+  if not good_name(l.name) { return f"the name '{l.name}' must be 3 to 48 small letters, digits or dashes" }
+  if l.when.length() == 0 { return "say when the skill fits: at least one word for When" }
+  if l.entries.length() < 2 { return "a skill needs a run of at least two actions" }
+  let agents = agents_of(l.entries)
+  for e in l.entries {
+    if ending(e) != "done" { return f"step '{e.step}' ended '{ending(e)}', and only runs that worked are learned from" }
+    if e.run != l.entries[0].run { return "the actions come from more than one run" }
+  }
+  if agents[0] == "" { return "the run does not say which agent acted" }
+  return ""
+}
+
+fn step_line(e: Entry, at: Number) -> Text {
+  let said = e.said.trim().split("\n").take(1).join("").trim()
+  let ended = if said == "" { "done" } else { said }
+  return f"{at.to_text()}. `{shown_action(e)}`: {ended}"
+}
+
+// The note itself, in the shape skills/*.md are read in.
+fn lesson_note(l: Lesson) -> Text {
+  let agent = agents_of(l.entries)[0]
+  var lines: Text[] = []
+  var at = 1
+  for e in l.entries {
+    lines = lines.append(step_line(e, at))
+    at += 1
+  }
+  return f"# Learned: {l.name}\n"
+    + "When: " + l.when.join(", ") + "\n\n"
+    + f"Learned from a {l.entries[0].job} job that worked, done by {agent}.\n"
+    + "These steps worked, in this order:\n\n"
+    + lines.join("\n") + "\n\n"
+    + "Do them in the same order with the same hands. If a step ends any other way, stop there and say which step it was.\n"
+}
+
+fn keep_command(l: Lesson) -> Text[] {
+  let why = not_learnable(l)
+  if why != "" { return ["skillbook.py", "refuse", why] }
+  return ["skillbook.py", "keep", f"skills/learned-{l.name}.md", lesson_note(l)]
+}
+
+fn kept(ran: Ran) -> Kept {
+  return {kept: ran.exit_code == 0, said: (ran.stdout.trim() + " " + ran.stderr.trim()).trim()}
+}
+
+workflow learn(l: Lesson) -> Kept {
+  wrote = execute scribe.keep(args: keep_command(l))
+  result = kept(wrote)
+  require approval
+}
+
+test "a run that worked becomes a note with its steps in order" {
+  args = ["hands.py", "--agent", "coder-1", "--speed", "fast"]
+  steps: Entry[] = [
+    {run: 1, at: "1", job: "note", step: "opened", args: args.concat(["open", "notepad"]), exit_code: 0, said: "opened notepad (a fresh page)", approved_by: "aryan"},
+    {run: 1, at: "2", job: "note", step: "typed", args: args.concat(["write", "notepad", "hello"]), exit_code: 0, said: "typed 5 letters", approved_by: "aryan"}
+  ]
+  l: Lesson = {name: "open-and-write", when: ["note", "notepad"], entries: steps}
+  expect not_learnable(l) == ""
+  note = lesson_note(l)
+  expect note.contains("# Learned: open-and-write\nWhen: note, notepad\n")
+  expect note.contains("1. `open notepad`: opened notepad (a fresh page)")
+  expect note.contains("2. `write notepad (5 letters)`: typed 5 letters")
+  expect note.contains("done by coder-1")
+  expect not note.contains("hello")
+  expect keep_command(l)[2] == "skills/learned-open-and-write.md"
+}
+
+test "only runs that worked, from one run, with a good name, are learned" {
+  ok: Entry = {run: 1, at: "1", job: "note", step: "opened", args: ["hands.py", "--agent", "coder-1", "open", "notepad"], exit_code: 0, said: "", approved_by: ""}
+  stopped: Entry = {run: 1, at: "2", job: "note", step: "typed", args: ["hands.py", "--agent", "coder-1", "write", "notepad", "x"], exit_code: 3, said: "stopped", approved_by: ""}
+  other: Entry = {run: 2, at: "3", job: "note", step: "read", args: ["hands.py", "--agent", "coder-1", "read", "notepad"], exit_code: 0, said: "", approved_by: ""}
+  expect not_learnable({name: "a-note", when: ["note"], entries: [ok, stopped]}).contains("ended 'stopped by you'")
+  expect not_learnable({name: "a-note", when: ["note"], entries: [ok, other]}).contains("more than one run")
+  expect not_learnable({name: "A Note", when: ["note"], entries: [ok, ok]}).contains("small letters")
+  expect not_learnable({name: "a-note", when: [], entries: [ok, ok]}).contains("When")
+  expect not_learnable({name: "a-note", when: ["note"], entries: [ok]}).contains("at least two")
+  expect keep_command({name: "a-note", when: ["note"], entries: [ok, stopped]})[1] == "refuse"
+}

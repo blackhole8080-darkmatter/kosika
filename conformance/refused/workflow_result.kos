@@ -1,0 +1,13 @@
+// Refused: a workflow's last step must give what the workflow gives.
+
+record Ask { text: Text }
+record Said { text: Text }
+record Heard { words: Number }
+
+fn hear(ask: Ask) -> Heard {
+  return {words: ask.text.words().length()}
+}
+
+workflow main(ask: Ask) -> Said {
+  heard = hear(ask)
+}

@@ -1,0 +1,1 @@
+Check failed: Step 'kind' cannot learn: an answer given again from what was learned has no quotes from the new text to check

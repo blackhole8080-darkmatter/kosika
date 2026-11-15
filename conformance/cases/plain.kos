@@ -1,0 +1,44 @@
+// A model declared `output: NAME as text` answers in plain text, which
+// fills NAME's one Text field. When the answer holds one fenced block, the
+// lines inside it are the text; otherwise it is the whole answer, trimmed.
+
+record Ask { text: Text }
+record Code { text: Text }
+
+model writer {
+  input: Ask
+  output: Code as text
+}
+
+fn has_return(code: Code) -> Text {
+  if code.text.contains("return") { return "" }
+  return "The function must return its value."
+}
+
+workflow main(a: Ask) -> Code {
+  code = use_model writer(a.text) verify has_return(code) retry 1 otherwise {text: "none"}
+}
+
+test "a fenced file is taken as itself" {
+  answers writer: [{text: "Here it is:\n```python\ndef f():\n    return 1\n```\n"}]
+  c = main({text: "write f"})
+  expect c.text == "def f():\n    return 1"
+}
+
+test "text without a fence is taken whole, trimmed" {
+  answers writer: [{text: "  return 2  \n"}]
+  c = main({text: "write f"})
+  expect c.text == "return 2"
+}
+
+test "a refused answer is asked again" {
+  answers writer: [{text: "print(1)"}, {text: "return 1"}]
+  c = main({text: "write f"})
+  expect c.text == "return 1"
+}
+
+test "no text at all is refused" {
+  answers writer: [{text: "   "}, {text: ""}]
+  c = main({text: "write f"})
+  expect c.text == "none"
+}

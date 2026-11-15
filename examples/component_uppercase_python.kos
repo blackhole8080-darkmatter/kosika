@@ -1,0 +1,27 @@
+record TransformInput {
+  text: Text
+}
+
+record TransformOutput {
+  text: Text
+}
+
+tool uppercase_python {
+  source mcp "component:example.uppercase-python"
+  operation: "uppercase_python"
+  access: analyze
+  input: TransformInput
+  output: TransformOutput
+}
+
+agent transformer {
+  can: [uppercase_python]
+  cannot: [network]
+}
+
+workflow main(input: TransformInput) -> TransformOutput {
+  step transform {
+    let result = execute transformer.uppercase_python(text: input.text)
+    return result
+  }
+}

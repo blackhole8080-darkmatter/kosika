@@ -2,68 +2,83 @@
 //
 // Studio does not carry a drawing of its mark. It carries this program, runs
 // it when it starts, and plays the scene it describes. So the first
-// animation anyone sees in Studio was written in Kosika.
+// animation anyone sees in Studio was written in Kosika — and, since the
+// scene library, it is a scene the language itself has already checked:
+// scene_problems reads the whole film before it leaves this file.
 //
-// What happens: ten dots fly out from the centre into a ring, the orange
-// tile drops in with a bounce and a quarter turn, the K fades up, and then a
-// slow wave of light keeps going round the ring.
+// What happens, as an event horizon: a violet halo fades in, the gold photon
+// ring ignites, twelve particles of accretion fly out from the centre onto
+// the ring, the void itself blooms at the middle, the K appears inside it,
+// and then a slow wave of light keeps going round the ring for as long as
+// Studio is open.
 
-record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
-record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text }
-record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
-
-fn move(shape: Text, what: Text, to: Number, start: Number, seconds: Number, ease: Text) -> Move {
-  return {shape: shape, what: what, to: to, start: start, seconds: seconds, ease: ease, repeat: 1, color: ""}
-}
-
-fn hidden(shape: Text) -> Move {
-  return move(shape, "fade", 0, 0, 0, "linear")
-}
-
-fn forever(m: Move) -> Move {
-  return {..m, repeat: 0}
-}
+import "std/scene.kos"
 
 fn build() -> Scene {
-  let dots = 10
+  let dots = 12
+  let ring = 42
   var shapes: Shape[] = []
   var moves: Move[] = []
+  // The halo: a dim violet ring of gravity, breathing very slowly.
+  shapes = shapes.append(shape("halo", "ring", 60, 60, 108, "#241d45"))
+  moves = moves.concat([
+    hidden("halo"),
+    move("halo", "fade", 1, 0, 0.5, "out"),
+    forever(move("halo", "size", 114, 2, 5, "back"))
+  ])
+  // The photon ring: the bright circle light makes on its last orbit.
+  shapes = shapes.append(shape("photon", "ring", 60, 60, 84, "#f5b45c"))
+  moves = moves.concat([
+    hidden("photon"),
+    move("photon", "fade", 1, 0.15, 0.6, "out"),
+    forever(move("photon", "size", 90, 2, 4, "back")),
+    forever(color_move("photon", "#ffd9a0", 2.5, 4, "back"))
+  ])
+  // The accretion particles: gold and violet, out of the centre onto the
+  // ring, then the wave — each swells and brightens after the one before
+  // it, for as long as Studio is open.
   for i in 0 until dots {
     let id = f"dot{i}"
     let angle = 360 * i / dots - 90
     let leave = 0.1 + i * 0.05
-    shapes = shapes.append({id: id, kind: "circle", x: 60, y: 60, size: 9, color: if i % 2 == 0 { "#e8813a" } else { "#f2b880" }, text: ""})
+    shapes = shapes.append(shape(id, "circle", 60, 60, 5, if i % 2 == 0 { "#f5b45c" } else { "#9a8cff" }))
     moves = moves.concat([
       hidden(id),
       move(id, "fade", 1, leave, 0.2, "out"),
-      move(id, "x", 60 + 47 * angle.cos(), leave, 0.7, "bounce"),
-      move(id, "y", 60 + 47 * angle.sin(), leave, 0.7, "bounce"),
-      // The wave: each dot swells a little after the one before it, for
-      // as long as Studio is open.
-      forever(move(id, "size", 14, 2 + i * 0.3, 3, "back")),
-      forever({shape: id, what: "color", to: 0, start: 2 + i * 0.3, seconds: 3, ease: "back", repeat: 1, color: "#fff1e0"})
+      move(id, "x", 60 + ring * angle.cos(), leave, 0.7, "bounce"),
+      move(id, "y", 60 + ring * angle.sin(), leave, 0.7, "bounce"),
+      forever(move(id, "size", 8, 2 + i * 0.3, 3, "back")),
+      forever(color_move(id, if i % 2 == 0 { "#ffe9c4" } else { "#cabfff" }, 2 + i * 0.3, 3, "back"))
     ])
   }
+  // The void: darker than everything, blooming once and then perfectly
+  // still. The letter rises inside it.
   shapes = shapes.concat([
-    {id: "tile", kind: "square", x: 60, y: -40, size: 56, color: "#d9703a", text: ""},
-    {id: "letter", kind: "text", x: 60, y: 62, size: 38, color: "#fff8f0", text: "K"}
+    shape("core", "circle", 60, 60, 10, "#05060b"),
+    words_shape("letter", 60, 61, 30, "#f2f4ff", "K")
   ])
   moves = moves.concat([
-    move("tile", "y", 60, 0.5, 0.7, "bounce"),
-    move("tile", "turn", 90, 0.5, 0.7, "out"),
+    hidden("core"),
+    move("core", "fade", 1, 0.5, 0.4, "out"),
+    move("core", "size", 58, 0.5, 0.7, "bounce"),
     hidden("letter"),
     move("letter", "fade", 1, 1.1, 0.4, "out")
   ])
-  return {width: 120, height: 120, seconds: 2, background: "#000000", shapes: shapes, moves: moves}
+  return scene(120, 120, 2.2, "#0a0c16", shapes, moves)
 }
 
 workflow main() -> Scene {
   scene = build()
 }
 
-test "the mark has a ring of dots, a tile and a letter" {
+test "the mark has a halo, a photon ring, accretion and a letter" {
   a = main()
-  expect a.shapes.length() == 12
-  expect a.moves.length() == 10 * 6 + 4
-  expect a.shapes[11].text == "K"
+  expect a.shapes.length() == 16
+  expect a.moves.length() == 3 + 4 + 12 * 6 + 5
+  expect a.shapes[15].text == "K"
+}
+
+test "the scene library has already checked the mark, and found nothing" {
+  film = main()
+  expect scene_problems(film).length() == 0
 }

@@ -12,8 +12,11 @@ from unittest.mock import patch
 from kosika import cli
 from kosika.source_map import (
     MAX_FILES,
+    MAX_VIEW_CHARS,
     SourceMapError,
     build_source_map,
+    readable_source,
+    scout_sources,
     to_mermaid,
     to_text,
 )
@@ -131,6 +134,20 @@ class SourceMapTests(unittest.TestCase):
             self.assertEqual(report["summary"]["file_count"], 1)
             self.assertEqual(report["summary"]["unreadable_files"], 1)
             self.assertEqual(report["unreadable_files"][0]["path"], "broken.js")
+
+    def test_a_package_relative_import_does_not_crash_the_map(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "pkg"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "from . import helper\n", encoding="utf-8"
+            )
+            (root / "helper.py").write_text(
+                "def twice(n):\n    return n * 2\n", encoding="utf-8"
+            )
+            report = build_source_map(root)
+            self.assertEqual(report["summary"]["file_count"], 2)
+            self.assertEqual(report["summary"]["symbol_kind_counts"]["function"], 1)
 
     def test_reports_ambiguous_and_unresolved_callees(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -298,6 +315,200 @@ class SourceMapRenderingTests(unittest.TestCase):
             if "-->" not in line
         }
         self.assertTrue(all(item.startswith("n_") for item in identifiers))
+
+
+class SourceScoutTests(unittest.TestCase):
+    def test_names_the_languages_and_declarations_in_a_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "notes.py").write_text(
+                "def summarise(text):\n    return text\n", encoding="utf-8"
+            )
+            (root / "view.ts").write_text(
+                "export function draw() { return 1; }\n", encoding="utf-8"
+            )
+            for hidden in (".venv", "node_modules"):
+                (root / hidden).mkdir()
+                (root / hidden / "ignored.py").write_text(
+                    "def never():\n    return 0\n", encoding="utf-8"
+                )
+            (root / "README.md").write_text("# Notes\n", encoding="utf-8")
+
+            report = scout_sources(root)
+            self.assertEqual(report["file_count"], 2)
+            self.assertEqual(
+                report["language_file_counts"], {"python": 1, "typescript": 1}
+            )
+            self.assertEqual(
+                [(item["path"], item["language"]) for item in report["files"]],
+                [("notes.py", "python"), ("view.ts", "typescript")],
+            )
+            self.assertEqual(report["files"][0]["declarations"], ["summarise"])
+            self.assertEqual(report["files"][0]["declaration_count"], 1)
+            self.assertFalse(report["truncated"])
+
+    def test_stops_at_its_budget_instead_of_refusing_a_big_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for number in range(5):
+                (root / f"part{number}.py").write_text(
+                    f"def part{number}():\n    return {number}\n", encoding="utf-8"
+                )
+            with patch("kosika.source_map.SCOUT_FILE_LIMIT", 3):
+                report = scout_sources(root)
+            self.assertEqual(report["file_count"], 3)
+            self.assertTrue(report["truncated"])
+            # Still a complete answer for the files it did read.
+            self.assertEqual(len(report["files"]), 3)
+            self.assertTrue(all(item["declarations"] for item in report["files"]))
+
+    def test_a_file_it_cannot_read_is_counted_not_fatal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "good.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+            # Not UTF-8, so there is nothing to read as structure.
+            (root / "broken.js").write_bytes(b"const p = \xff\xfe;\n")
+            report = scout_sources(root)
+            self.assertEqual(report["file_count"], 1)
+            self.assertEqual(report["unreadable_files"], 1)
+
+    def test_a_missing_folder_fails_safely(self) -> None:
+        with self.assertRaises(SourceMapError):
+            scout_sources("missing-directory-xyz")
+
+    def test_an_import_and_a_call_become_arrows_between_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "store.py").write_text(
+                "def load():\n    return 1\n", encoding="utf-8"
+            )
+            (root / "main.py").write_text(
+                "from store import load\n\n"
+                "def start():\n    return load()\n",
+                encoding="utf-8",
+            )
+            graph = scout_sources(root)["graph"]
+            self.assertEqual(
+                [(link["from"], link["to"], link["kind"]) for link in graph["links"]],
+                [("main.py", "store.py", "import"), ("main.py", "store.py", "call")],
+            )
+            levels = {node["path"]: node["level"] for node in graph["nodes"]}
+            # The file that reaches the other starts the map.
+            self.assertEqual(levels, {"main.py": 0, "store.py": 1})
+            self.assertEqual(graph["unresolved_imports"], 0)
+
+    def test_one_arrow_per_pair_of_files_however_many_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "store.py").write_text(
+                "class Store:\n    pass\n\ndef load():\n    return 1\n",
+                encoding="utf-8",
+            )
+            (root / "main.py").write_text(
+                "from store import Store, load\n", encoding="utf-8"
+            )
+            graph = scout_sources(root)["graph"]
+            self.assertEqual(
+                [(link["from"], link["to"]) for link in graph["links"]],
+                [("main.py", "store.py")],
+            )
+
+    def test_a_name_declared_twice_is_not_linked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.py").write_text("def build():\n    return 1\n", encoding="utf-8")
+            (root / "b.py").write_text("def build():\n    return 2\n", encoding="utf-8")
+            (root / "use.py").write_text(
+                "def go():\n    return build()\n", encoding="utf-8"
+            )
+            graph = scout_sources(root)["graph"]
+            self.assertEqual(graph["links"], [])
+            self.assertEqual(graph["ambiguous_calls"], 1)
+
+    def test_a_cycle_stays_inside_its_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.py").write_text(
+                "import b\n\ndef one():\n    return b.two()\n", encoding="utf-8"
+            )
+            (root / "b.py").write_text(
+                "import a\n\ndef two():\n    return a.one()\n", encoding="utf-8"
+            )
+            graph = scout_sources(root)["graph"]
+            self.assertEqual(len(graph["nodes"]), 2)
+            self.assertTrue(all(node["level"] < 4 for node in graph["nodes"]))
+
+    def test_a_folder_too_full_to_draw_is_counted_not_crowded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for number in range(10):
+                (root / f"part{number}.py").write_text(
+                    f"def part{number}():\n    return {number}\n", encoding="utf-8"
+                )
+            graph = scout_sources(root)["graph"]
+            # Six boxes to a column, so the rest are counted and left out.
+            self.assertEqual(graph["drawn_files"], 6)
+            self.assertEqual(graph["hidden_files"], 4)
+            self.assertEqual(graph["rows"], 6)
+
+
+class ReadableSourceTests(unittest.TestCase):
+    def test_a_file_inside_the_folder_is_given_as_it_is(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "store.py").write_text(
+                "def load():\n    return 1\n", encoding="utf-8", newline="\n"
+            )
+            document = readable_source(root, "store.py")
+            self.assertEqual(
+                (document["path"], document["language"]), ("store.py", "python")
+            )
+            self.assertEqual(document["text"], "def load():\n    return 1\n")
+            self.assertEqual(
+                (document["line_count"], document["truncated"]), (2, False)
+            )
+
+    def test_a_path_outside_the_folder_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "inner"
+            root.mkdir()
+            (Path(directory) / "secret.py").write_text("x = 1\n", encoding="utf-8")
+            for given in (
+                "../secret.py",
+                str(Path(directory) / "secret.py"),
+                "",
+            ):
+                with self.assertRaises(SourceMapError):
+                    readable_source(root, given)
+
+    def test_a_folder_a_map_skips_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "node_modules").mkdir()
+            (root / "node_modules" / "hidden.py").write_text(
+                "x = 1\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(SourceMapError, "skips"):
+                readable_source(root, "node_modules/hidden.py")
+
+    def test_what_is_not_source_at_all_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "notes.txt").write_text("hi\n", encoding="utf-8")
+            (root / "broken.py").write_bytes(b"x = \xff\xfe\n")
+            with self.assertRaisesRegex(SourceMapError, "cannot read"):
+                readable_source(root, "notes.txt")
+            with self.assertRaisesRegex(SourceMapError, "not UTF-8"):
+                readable_source(root, "broken.py")
+
+    def test_a_long_file_says_it_was_cut(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "long.py").write_text("x = 1\n" * 30_000, encoding="utf-8")
+            document = readable_source(root, "long.py")
+            self.assertEqual(len(document["text"]), MAX_VIEW_CHARS)
+            self.assertTrue(document["truncated"])
+            self.assertEqual(document["line_count"], 30_000)
 
 
 class SourceMapCliTests(unittest.TestCase):

@@ -12,11 +12,14 @@ do not exist.
 
 from __future__ import annotations
 
+import datetime
 import difflib
 import math
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
+
+from . import learning_ops, matrices
 
 #: The element type of the receiving array, in a signature.
 ELEMENT = "$element"
@@ -36,11 +39,13 @@ FIELD_NUMBER = "$field:Number"
 FIELD_TEXT = "$field:Text"
 #: Building a map with more entries than this fails the run instead.
 MAX_MAP_ENTRIES = 100_000
-_NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?\Z")
+_NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?\Z")
 #: Building an array longer than this fails the run instead.
 MAX_ARRAY_LENGTH = 1_000_000
 #: Splitting cannot produce more parts than this; it fails instead.
-MAX_SPLIT_PARTS = 512
+#: The most parts `split`, `words` and `chars` give: room for a whole
+#: paper, still a bound.
+MAX_SPLIT_PARTS = 100_000
 #: A replace that would make a text longer than this fails instead.
 MAX_TEXT_LENGTH = 10_000_000
 _SCALARS = ("Text", "Number", "Bool", "Null")
@@ -158,7 +163,7 @@ def _to_number(text: str) -> int | float | None:
     trimmed = text.strip()
     if not _NUMBER_TEXT.match(trimmed):
         return None
-    return float(trimmed) if "." in trimmed else int(trimmed)
+    return float(trimmed) if any(ch in trimmed for ch in ".eE") else int(trimmed)
 
 
 def _require(value: Any) -> Any:
@@ -221,6 +226,88 @@ def _group_by(items: list[Any], field: str) -> dict[str, list[Any]]:
     return groups
 
 
+#: A whole power may not be larger than this, so a result stays a size a
+#: person could read and a run cannot be made to work for ever.
+MAX_POWER = 1000
+
+
+def _power(base: Any, exponent: Any) -> Any:
+    """A number raised to a power. Whole numbers stay exact; a power that
+    is not whole goes through decimals and is rounded to nine places."""
+
+    if exponent == int(exponent):
+        times = int(exponent)
+        if abs(times) > MAX_POWER:
+            raise RuntimeError(
+                f"power needs an exponent between -{MAX_POWER} and {MAX_POWER}"
+            )
+        if times < 0 and base == 0:
+            raise RuntimeError("0 cannot be raised to a negative power")
+        try:
+            if times >= 0:
+                result = base**times
+            elif isinstance(base, int):
+                result = 1 / (base**-times)
+            else:
+                result = base**times
+        except OverflowError:
+            raise RuntimeError("power gives a number too large to hold") from None
+        if isinstance(result, float):
+            if math.isinf(result) or math.isnan(result):
+                raise RuntimeError("power gives a number too large to hold")
+            result = round(result, 9)
+            return (
+                int(result) if result == int(result) and abs(result) < 1e15 else result
+            )
+        return result
+    if base < 0:
+        raise RuntimeError("power needs a whole exponent when the number is negative")
+    try:
+        result = round(float(base) ** float(exponent), 9)
+    except (OverflowError, ZeroDivisionError):
+        raise RuntimeError("power gives a number too large to hold") from None
+    return int(result) if result == int(result) and abs(result) < 1e15 else result
+
+
+def _index_of(items: list[Any], item: Any) -> int | None:
+    # Same rule as `==` and `contains`: true is never equal to 1.
+    for position, candidate in enumerate(items):
+        if isinstance(candidate, bool) == isinstance(item, bool) and candidate == item:
+            return position
+    return None
+
+
+def _text_index_of(text: str, part: str) -> int | None:
+    if part == "":
+        raise RuntimeError("index_of needs a non-empty text to look for")
+    position = text.find(part)
+    return None if position < 0 else position
+
+
+def _lines(text: str) -> list[str]:
+    """A text as its lines, without their line ends. A file is read this
+    way, so the limit is that of any array, not the small one of `split`."""
+
+    return _bounded(text.splitlines())
+
+
+def _chars(text: str) -> list[str]:
+    if len(text) > MAX_SPLIT_PARTS:
+        raise RuntimeError(f"chars produced more than {MAX_SPLIT_PARTS} parts")
+    return list(text)
+
+
+def _pad(text: str, width: Any, fill: str, left: bool) -> str:
+    name = "pad_left" if left else "pad_right"
+    if isinstance(width, bool) or width != int(width) or width < 0:
+        raise RuntimeError(f"{name} needs a whole width that is not negative")
+    if len(fill) != 1:
+        raise RuntimeError(f"{name} needs exactly one character to fill with")
+    if width > MAX_TEXT_LENGTH:
+        raise RuntimeError(f"{name} would exceed {MAX_TEXT_LENGTH} characters")
+    return text.rjust(int(width), fill) if left else text.ljust(int(width), fill)
+
+
 def _contains(items: list[Any], item: Any) -> bool:
     # Same rule as `==`: true is never equal to 1.
     return any(
@@ -229,11 +316,91 @@ def _contains(items: list[Any], item: Any) -> bool:
     )
 
 
+def _capitalized(text: str) -> str:
+    return text[:1].upper() + text[1:].lower()
+
+
+def _count_part(text: str, part: str) -> int:
+    if not part:
+        raise RuntimeError("count needs a part that is not empty")
+    return text.count(part)
+
+
+def _repeat(text: str, times: Any) -> str:
+    count = _count(times, "repeat")
+    if len(text) * count > MAX_TEXT_LENGTH:
+        raise RuntimeError(f"repeat would exceed {MAX_TEXT_LENGTH} characters")
+    return text * count
+
+
+def _clamp(value: Any, low: Any, high: Any) -> Any:
+    if low > high:
+        raise RuntimeError("clamp needs low to be no more than high")
+    return low if value < low else high if value > high else value
+
+
+def _log(value: Any) -> float:
+    if value <= 0:
+        raise RuntimeError("log needs a number above zero")
+    return round(math.log(value), 9) + 0.0
+
+
+def _exp(value: Any) -> float:
+    try:
+        return round(math.exp(value), 9) + 0.0
+    except OverflowError as exc:
+        raise RuntimeError("exp gives a number too large") from exc
+
+
+def _to_fixed(value: Any, digits: Any) -> str:
+    if isinstance(digits, bool) or digits != int(digits) or not 0 <= digits <= 20:
+        raise RuntimeError("to_fixed needs a whole number of digits from 0 to 20")
+    return f"{float(value):.{int(digits)}f}"
+
+
+def _count_item(items: list[Any], item: Any) -> int:
+    return sum(
+        1
+        for candidate in items
+        if isinstance(candidate, bool) == isinstance(item, bool) and candidate == item
+    )
+
+
+_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _date(text: str, name: str) -> datetime.date:
+    """A date written YYYY-MM-DD, as `now` gives one."""
+
+    try:
+        if not _DATE.fullmatch(text):
+            raise ValueError
+        return datetime.date(int(text[:4]), int(text[5:7]), int(text[8:]))
+    except ValueError:
+        raise RuntimeError(f"{name} needs a date written YYYY-MM-DD, got {text!r}") from None
+
+
+def _add_days(text: str, days: Any) -> str:
+    if isinstance(days, bool) or days != int(days):
+        raise RuntimeError("add_days needs a whole number of days")
+    try:
+        return (_date(text, "add_days") + datetime.timedelta(days=int(days))).isoformat()
+    except OverflowError:
+        raise RuntimeError("add_days goes past the years 1 to 9999") from None
+
+
+def _days_until(text: str, other: str) -> int:
+    return (_date(other, "days_until") - _date(text, "days_until")).days
+
+
 METHODS: tuple[Method, ...] = (
     Method("Text", "length", (), "Number", lambda text: len(text)),
     Method("Text", "upper", (), "Text", lambda text: text.upper()),
     Method("Text", "lower", (), "Text", lambda text: text.lower()),
     Method("Text", "trim", (), "Text", lambda text: text.strip()),
+    Method("Text", "trim_start", (), "Text", lambda text: text.lstrip()),
+    Method("Text", "trim_end", (), "Text", lambda text: text.rstrip()),
     Method(
         "Text", "contains", (("part", "Text"),), "Bool", lambda text, part: part in text
     ),
@@ -396,6 +563,27 @@ METHODS: tuple[Method, ...] = (
     Method("Number", "sin", (), "Number", lambda value: _wave(value, "sin")),
     Method("Number", "cos", (), "Number", lambda value: _wave(value, "cos")),
     Method("Number", "sqrt", (), "Number", _sqrt),
+    Method("Number", "abs", (), "Number", lambda value: abs(value)),
+    Method("Number", "power", (("exponent", "Number"),), "Number", _power),
+    Method("Number", "is_whole", (), "Bool", lambda value: value == int(value)),
+    Method(ANY_ARRAY, "index_of", (("item", ELEMENT),), "Number?", _index_of),
+    Method("Text", "index_of", (("part", "Text"),), "Number?", _text_index_of),
+    Method("Text", "chars", (), "Text[]", _chars),
+    Method("Text", "lines", (), "Text[]", _lines),
+    Method(
+        "Text",
+        "pad_left",
+        (("width", "Number"), ("fill", "Text")),
+        "Text",
+        lambda text, width, fill: _pad(text, width, fill, True),
+    ),
+    Method(
+        "Text",
+        "pad_right",
+        (("width", "Number"), ("fill", "Text")),
+        "Text",
+        lambda text, width, fill: _pad(text, width, fill, False),
+    ),
     Method("Text", "is_empty", (), "Bool", lambda text: len(text) == 0),
     Method(ANY_ARRAY, "is_empty", (), "Bool", lambda items: len(items) == 0),
     Method("Text", "take", (("count", "Number"),), "Text", _take),
@@ -417,6 +605,135 @@ METHODS: tuple[Method, ...] = (
         (("separator", "Text"),),
         "Text",
         lambda items, separator: separator.join(items),
+    ),
+    # Vectors and matrices. A vector is a Number[], a matrix a Number[][].
+    # The arithmetic is in kosika.matrices: exact for whole numbers, and done
+    # by NumPy for decimals when it is installed.
+    Method(
+        "Number[]", "plus", (("other", "Number[]"),), "Number[]", matrices.vector_plus
+    ),
+    Method(
+        "Number[]", "minus", (("other", "Number[]"),), "Number[]", matrices.vector_minus
+    ),
+    Method(
+        "Number[]", "scaled", (("by", "Number"),), "Number[]", matrices.vector_scaled
+    ),
+    Method("Number[]", "dot", (("other", "Number[]"),), "Number", matrices.dot),
+    Method("Number[]", "cross", (("other", "Number[]"),), "Number[]", matrices.cross),
+    Method("Number[]", "norm", (), "Number", matrices.norm),
+    Method("Number[]", "mean", (), "Number", matrices.mean),
+    Method("Number", "identity", (), "Number[][]", matrices.identity),
+    Method("Number", "zeros", (("columns", "Number"),), "Number[][]", matrices.zeros),
+    Method("Number[][]", "rows", (), "Number", lambda m: matrices.shape(m)[0]),
+    Method("Number[][]", "columns", (), "Number", lambda m: matrices.shape(m)[1]),
+    Method("Number[][]", "transpose", (), "Number[][]", matrices.transpose),
+    Method(
+        "Number[][]", "plus", (("other", "Number[][]"),), "Number[][]", matrices.plus
+    ),
+    Method(
+        "Number[][]", "minus", (("other", "Number[][]"),), "Number[][]", matrices.minus
+    ),
+    Method("Number[][]", "scaled", (("by", "Number"),), "Number[][]", matrices.scaled),
+    Method(
+        "Number[][]", "times", (("other", "Number[][]"),), "Number[][]", matrices.times
+    ),
+    Method(
+        "Number[][]", "apply", (("vector", "Number[]"),), "Number[]", matrices.apply
+    ),
+    Method(
+        "Number[][]", "power", (("exponent", "Number"),), "Number[][]", matrices.power
+    ),
+    Method("Number[][]", "trace", (), "Number", matrices.trace),
+    Method("Number[][]", "determinant", (), "Number", matrices.determinant),
+    Method("Number[][]", "inverse", (), "Number[][]", matrices.inverse),
+    Method("Number[][]", "solve", (("right", "Number[]"),), "Number[]", matrices.solve),
+    # Relations and graphs, as matrices of 0s and 1s.
+    Method("Number[][]", "is_reflexive", (), "Bool", matrices.is_reflexive),
+    Method("Number[][]", "is_symmetric", (), "Bool", matrices.is_symmetric),
+    Method("Number[][]", "is_antisymmetric", (), "Bool", matrices.is_antisymmetric),
+    Method("Number[][]", "is_transitive", (), "Bool", matrices.is_transitive),
+    Method(
+        "Number[][]",
+        "bool_times",
+        (("other", "Number[][]"),),
+        "Number[][]",
+        matrices.bool_times,
+    ),
+    Method("Number[][]", "closure", (), "Number[][]", matrices.closure),
+    # What a model learns with, a whole batch in one call (learning_ops.py).
+    Method("Number[][]", "each_times", (("other", "Number[][]"),), "Number[][]", learning_ops.each_times),
+    Method("Number[][]", "tanh", (), "Number[][]", learning_ops.tanh),
+    Method("Number[][]", "tanh_slope", (), "Number[][]", learning_ops.tanh_slope),
+    Method("Number[][]", "sigmoid", (), "Number[][]", learning_ops.sigmoid),
+    Method("Number[][]", "relu", (), "Number[][]", learning_ops.relu),
+    Method("Number[][]", "relu_slope", (), "Number[][]", learning_ops.relu_slope),
+    Method("Number[][]", "exp", (), "Number[][]", learning_ops.exp),
+    Method("Number[][]", "softmax", (), "Number[][]", learning_ops.softmax),
+    Method("Number[][]", "plus_row", (("row", "Number[]"),), "Number[][]", learning_ops.plus_row),
+    Method("Number[][]", "column_sums", (), "Number[]", learning_ops.column_sums),
+    Method("Number[][]", "row_argmax", (), "Number[]", learning_ops.row_argmax),
+    Method("Number[][]", "cross_entropy", (("classes", "Number[]"),), "Number", learning_ops.cross_entropy),
+    Method("Number[]", "one_hot", (("classes", "Number"),), "Number[][]", learning_ops.one_hot),
+    Method("Number", "noise", (("columns", "Number"), ("seed", "Number")), "Number[][]", learning_ops.noise),
+    Method("Text[]", "top_words", (("count", "Number"),), "Text[]", learning_ops.top_words),
+    Method("Text[]", "bag_of_words", (("vocabulary", "Text[]"),), "Number[][]", learning_ops.bag_of_words),
+    Method(
+        "Number[][]",
+        "adjacency",
+        (("nodes", "Number"),),
+        "Number[][]",
+        matrices.adjacency,
+    ),
+    Method(
+        "Number[][]",
+        "directed_adjacency",
+        (("nodes", "Number"),),
+        "Number[][]",
+        lambda edges, nodes: matrices.adjacency(edges, nodes, True),
+    ),
+    Method("Number[][]", "degrees", (), "Number[]", matrices.degrees),
+    Method(
+        "Number[][]",
+        "neighbours",
+        (("node", "Number"),),
+        "Number[]",
+        matrices.neighbours,
+    ),
+    Method(
+        "Number[][]",
+        "shortest_path",
+        (("start", "Number"), ("end", "Number")),
+        "Number[]",
+        matrices.shortest_path,
+    ),
+    Method("Number[][]", "components", (), "Number[][]", matrices.components),
+    # Text, numbers, lists and dates, as people use them every day.
+    Method("Text", "capitalize", (), "Text", _capitalized),
+    Method(
+        "Text",
+        "title",
+        (),
+        "Text",
+        lambda text: " ".join(_capitalized(word) for word in text.split(" ")),
+    ),
+    Method("Text", "count", (("part", "Text"),), "Number", _count_part),
+    Method("Text", "repeat", (("times", "Number"),), "Text", _repeat),
+    Method("Text", "reverse", (), "Text", lambda text: text[::-1]),
+    Method(
+        "Number", "clamp", (("low", "Number"), ("high", "Number")), "Number", _clamp
+    ),
+    Method("Number", "log", (), "Number", _log),
+    Method("Number", "exp", (), "Number", _exp),
+    Method("Number", "to_fixed", (("digits", "Number"),), "Text", _to_fixed),
+    Method(ANY_ARRAY, "count", (("item", ELEMENT),), "Number", _count_item),
+    Method("Text", "add_days", (("days", "Number"),), "Text", _add_days),
+    Method("Text", "days_until", (("other", "Text"),), "Number", _days_until),
+    Method(
+        "Text",
+        "weekday",
+        (),
+        "Text",
+        lambda text: _WEEKDAYS[_date(text, "weekday").weekday()],
     ),
 )
 
@@ -444,6 +761,12 @@ def resolve_for_value(value: Any, name: str) -> Method:
     if isinstance(value, dict):
         return resolve("Any{}", name)
     if isinstance(value, list):
+        # A vector and a matrix share method names, such as `plus`. The
+        # value itself says which one this is.
+        exact = _value_type(value)
+        for method in METHODS:
+            if method.name == name and method.receiver == exact:
+                return method
         # The checker already matched the element type; at run time an empty
         # array has none to inspect, so array methods are found by name alone.
         for method in METHODS:

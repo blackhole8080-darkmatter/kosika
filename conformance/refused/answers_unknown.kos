@@ -1,0 +1,18 @@
+// Refused: a test scripts answers only for a declared tool or model.
+
+record Ask { text: Text }
+record Said { text: Text }
+
+fn echo(ask: Ask) -> Said {
+  return {text: ask.text}
+}
+
+workflow main(ask: Ask) -> Said {
+  said = echo(ask)
+}
+
+test "never runs" {
+  answers search: [{text: "x"}]
+  r = main({text: "hi"})
+  expect r.text == "hi"
+}

@@ -1,0 +1,103 @@
+// Smart Agent with Algorithmic Capabilities
+// Using actual Kosika syntax
+
+record TaskInput {
+  task_type: Text
+  data: Text
+}
+
+record TaskResult {
+  answer: Text
+  method: Text
+}
+
+// Pure function for deciding approach
+fn decide_method(task_type: Text) -> Text {
+  if task_type == "search" {
+    return "bfs_algorithm"
+  }
+  if task_type == "optimize" {
+    return "gradient_descent"
+  }
+  if task_type == "reason" {
+    return "logical_inference"
+  }
+  return "default"
+}
+
+// Matrix operations using built-in methods
+workflow matrix_example() -> Number[][] {
+  step create {
+    let matrix: Number[][] = [[1, 2], [3, 4]]
+    return matrix
+  }
+
+  step transpose {
+    let m = create
+    let result = m.transpose()
+    return result
+  }
+}
+
+// Knowledge reasoning using pattern matching
+workflow reason_about(subject: Text) -> Text {
+  step classify {
+    if subject == "Kosika" {
+      return "AI programming language"
+    }
+    if subject == "Python" {
+      return "General programming language"
+    }
+    return "Unknown entity"
+  }
+}
+
+// Search simulation using loops
+workflow find_path(start: Text, goal: Text) -> Text[] {
+  step search {
+    let nodes: Text[] = ["A", "B", "C", "D", "E"]
+    let path: Text[] = [start]
+    let current = start
+
+    for node in nodes {
+      if node == goal {
+        path = path.append(node)
+        return path
+      }
+      if node != start {
+        path = path.append(node)
+      }
+    }
+
+    return path
+  }
+}
+
+// Composite smart agent
+workflow smart_agent(task_type: Text, data: Text) -> TaskResult {
+  step plan {
+    let method = decide_method(task_type)
+    return method
+  }
+
+  step execute {
+    let method = plan
+    let answer = ""
+
+    if method == "bfs_algorithm" {
+      let path = find_path("A", "E")
+      answer = "Path found: " + path.join(" -> ")
+    } else if method == "logical_inference" {
+      answer = reason_about(data)
+    } else {
+      answer = "Used default method for: " + data
+    }
+
+    let result: TaskResult = {
+      answer: answer,
+      method: method
+    }
+
+    return result
+  }
+}

@@ -1,0 +1,39 @@
+// A thinking step `with evidence` must quote the text it was given. A quote
+// is found whatever its letter case, spacing or kind of quotation marks; a
+// quote that is not in the text refuses the answer.
+
+record Note { text: Text }
+record Person { name: Text city: Text }
+record Read { label: Text who: Text near: Bool }
+
+model assistant
+
+workflow main(note: Note) -> Read {
+  kind = classify note.text into ["complaint", "praise"] with evidence retry 1
+  who = extract Person from note.text with evidence
+  near = decide "Is the writer nearby?" given note.text with evidence
+  read = {label: kind.label who: who.name near: near.answer}
+}
+
+test "every answer quotes the note" {
+  answers assistant: [
+    {label: "complaint", confidence: 0.9, evidence: ["the box was CRUSHED"]},
+    {name: "Ada", city: "", evidence: {name: "signed,   Ada", city: null}},
+    {answer: false, confidence: 0.6, reason: "no place given", evidence: []}
+  ]
+  r = main({text: "The box was crushed. “Never again,” signed, Ada"})
+  expect r.label == "complaint"
+  expect r.who == "Ada"
+  expect r.near == false
+}
+
+test "a quote that is not in the text is asked again" {
+  answers assistant: [
+    {label: "praise", confidence: 0.9, evidence: ["I loved it"]},
+    {label: "complaint", confidence: 0.8, evidence: ["\"never again,\""]},
+    {name: "Ada", city: "", evidence: {name: "Ada", city: null}},
+    {answer: false, confidence: 0.6, reason: "none", evidence: []}
+  ]
+  r = main({text: "The box was crushed. “Never again,” signed, Ada"})
+  expect r.label == "complaint"
+}

@@ -1,0 +1,29 @@
+// The standard library's neural network: it learns XOR, which no straight
+// line can split, the same in every engine.
+
+import "std/nn.kos"
+
+record XorCheck { before: Number after: Number one: Number both: Number }
+
+fn xor_check() -> XorCheck {
+  let xs = [[0, 0], [0, 1], [1, 0], [1, 1]]
+  let ys = [[0], [1], [1], [0]]
+  let start = net([2, 4, 1], 1)
+  let done = train(start, xs, ys, 0.3, 400)
+  return {before: loss(start, xs, ys), after: loss(done, xs, ys), one: predict(done, [0, 1])[0], both: predict(done, [1, 1])[0]}
+}
+
+test "the network learns XOR" {
+  x = xor_check()
+  expect x.before > 0.5
+  expect x.after < 0.05
+  expect x.one > 0.9
+  expect x.both < 0.1
+}
+
+test "the same seed makes the same network" {
+  expect net([2, 3, 1], 7) == net([2, 3, 1], 7)
+  expect net([2, 3, 1], 7) != net([2, 3, 1], 8)
+  expect net([2, 3, 1], 7).layers.length() == 2
+  expect predict(net([3, 1], 2), [1, 0, 1]).length() == 1
+}

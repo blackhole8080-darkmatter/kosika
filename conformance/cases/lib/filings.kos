@@ -1,0 +1,9 @@
+// Filings, for choice_modules.kos. Exporting the choice exports its
+// constructors too, since they are written unqualified.
+
+export [Filing]
+
+choice Filing {
+  filed(invoice: Text)
+  pending
+}

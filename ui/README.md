@@ -1,11 +1,11 @@
 # Kosika UI system
 
-`ui/kosika.css` is the single source of truth for Kosika's interface. The SVG renderer in
-`kosika/design.py` mirrors the same palette, so a diagram the engine generates and a surface a
-human reads share one visual language.
+`ui/kosika.css` is the single source of truth for Kosika's interface. Two pages in the project
+root read it: `kosika-preview.html` and `kosika-design-sheet.html`.
 
-This directory is deliberately separate from `design/`, which holds deterministic design
-*manifests* and generated artifacts.
+The SVG renderer in `kosika/design.py` and the `design/` manifests this file once shared a palette
+with were retired along with the city pictures. The tokens stay because those two pages still use
+them.
 
 ## Doctrine
 
@@ -74,18 +74,5 @@ respects `prefers-reduced-motion`.
 ## Surfaces in this system
 
 - `kosika-preview.html` — language, workflow graph, mindmap, trace, capability matrix, agent loop.
-- `kosika_results_preview.html` — a run report; its body is real output and is not restyled, only
-  the shell is mapped onto these tokens.
-- `kosika/workbench_assets/styles.css` — still on the original light palette. Adopting these tokens
-  there is a mechanical swap, because the file is already organised by component.
-
-## Renderer themes
-
-`kosika design show --format svg` takes `--theme lab` (default) or `--theme light`. The theme is
-presentation only: `DesignManifest.digest` is computed over the manifest, so retheming never
-invalidates a digest, a trace, or a replay. Node ids, kinds, and typed edges remain authoritative —
-see `design/DESIGN.md`.
-
-```text
-python -m kosika.cli design show design/test-host.json --format svg --view mindmap --theme lab
-```
+- `kosika-design-sheet.html` — the tokens themselves, drawn.
+- `ui/legacy/kosika-preview.light.html` — the earlier light-palette preview, kept for comparison.

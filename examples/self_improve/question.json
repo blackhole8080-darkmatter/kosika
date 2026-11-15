@@ -1,0 +1,20 @@
+{
+  "request": {
+    "question": "Does model output grant execution permission?",
+    "passages": [
+      {
+        "id": "KOSIKA_PLAN.md:authority",
+        "text": "Model output is a proposal, never execution permission."
+      },
+      {
+        "id": "native/README.md:numbers",
+        "text": "Whole numbers are exact at any size."
+      },
+      {
+        "id": "KOSIKA.md:budgets",
+        "text": "A budget only tightens. Whoever runs the program keeps every limit they set, and the stricter of the two applies."
+      }
+    ],
+    "limit": 400
+  }
+}

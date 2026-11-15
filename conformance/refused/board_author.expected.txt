@@ -1,0 +1,1 @@
+Check failed: Board 'desk' post in step 'p' is signed 'nobody', which is not a declared agent; declared: none

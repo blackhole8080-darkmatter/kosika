@@ -1,0 +1,329 @@
+// Research analyst: answers a question from the files in the folder you
+// grant, and shows an answer only with a quote that is really in a line it
+// found. When nothing in the files supports an answer it says so, and shows
+// the closest lines instead of guessing.
+//
+//   kosika test examples/research_analyst/main.kos
+//   kosika measure examples/research_analyst/main.kos --model qwen2.5:3b
+//   kosika studio FOLDER --model qwen2.5:3b --allow-folder YOUR_NOTES
+//
+// The evals at the end are the measurement. Half of them ask something the
+// fixture lines answer, and must come back naming the exact file and line.
+// The other half ask something those lines cannot answer, and must come back
+// refused. An eval that fails on a question the files cannot answer is a
+// citation the analyst should not have shown, which is the failure this
+// program exists to avoid.
+
+record Msg { text: Text }
+record Said { text: Text shown: Bool cited: Text }
+record Ask { text: Text }
+record Found { answer: Text quote: Text }
+record Query { path: Text query: Text }
+record Hits { matches: Text[] }
+
+model reader { input: Ask output: Found }
+
+// Asked the same question when every answer from reader was refused.
+model strong { input: Ask output: Found }
+
+tool search_files {
+  source system "files"
+  operation: "search"
+  access: observe
+  input: Query
+  output: Hits
+}
+
+agent hands {
+  can: [search_files]
+  max_steps: 1
+}
+
+// ------------------------------------------------------------------ words
+
+// Words that say nothing about what a question is about.
+fn small_words() -> Text[] {
+  return ["a", "an", "the", "is", "are", "was", "were", "be", "do", "does", "did", "i", "me", "my", "we", "our", "you", "your", "it", "its", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "and", "or", "what", "when", "where", "which", "who", "whom", "why", "how", "tell", "say", "says", "said", "there", "that", "this", "these", "those", "have", "has", "had", "can", "could", "should", "would", "will", "please", "any", "all", "much", "many", "need", "find", "search", "show", "am", "not", "no", "yes", "answer", "question", "line", "lines", "text", "there"]
+}
+
+fn clean(word: Text) -> Text {
+  var out = word.lower()
+  for mark in ["?", "!", ",", ";", "\"", "'", "(", ")", ":"] {
+    out = out.replace(mark, "")
+  }
+  // A full stop ends a sentence but belongs inside a file name.
+  if out.ends_with(".") { out = out.slice(0, out.length() - 1) }
+  return out.trim()
+}
+
+// The words of a question worth searching for, at most six.
+fn key_words(text: Text) -> Text {
+  let small = small_words()
+  var words: Text[] = []
+  for word in text.words() {
+    let item = clean(word)
+    if item.length() > 1 and not small.contains(item) and not words.contains(item) {
+      words = words.append(item)
+    }
+  }
+  return words.take(6).join(" ")
+}
+
+// Text as it is compared: lower case, no quotation marks, one space between
+// words.
+fn plain(text: Text) -> Text {
+  var out = text.lower().replace("\"", "")
+  out = out.replace("'", "")
+  return out.words().join(" ")
+}
+
+// --------------------------------------------------------------- readings
+
+fn field(hit: Text, at: Number) -> Text {
+  let marks = hit.split(":")
+  return if at < marks.length() { marks[at].trim() } else { "" }
+}
+
+// The text of a line as the search tool writes it: file:line: text.
+fn line_text(hit: Text) -> Text {
+  let marks = hit.split(":")
+  return if marks.length() > 2 { marks.drop(2).join(":").trim() } else { "" }
+}
+
+// A model sometimes copies the whole line, file name and line number
+// included. The words after that place are the quote itself.
+fn without_place(quote: Text, hit: Text) -> Text {
+  let place = (field(hit, 0) + ":" + field(hit, 1) + ":").lower()
+  let said = quote.lower().trim()
+  let cut = if said.starts_with(place) { said.drop(place.length()).trim() } else { said }
+  return plain(cut)
+}
+
+// The line a quote is really in, or "" when it is in none of them.
+fn proof(hits: Hits, quote: Text) -> Text {
+  var found = ""
+  for hit in hits.matches {
+    let said = without_place(quote, hit)
+    if found.is_empty() and not said.is_empty() and plain(line_text(hit)).contains(said) { found = hit }
+  }
+  return found
+}
+
+// Does the line share a word with the question? A quote can be real and
+// still be about something else; this is the cheap way to notice.
+fn shares_question(question: Text, line: Text) -> Bool {
+  let lower = plain(line)
+  var shared = 0
+  for word in key_words(question).split(" ") where not word.is_empty() {
+    if lower.contains(word) { shared += 1 }
+  }
+  return shared > 0
+}
+
+// The lines found, as the model will see them. Kept short so a small model
+// can read all of it.
+fn passages(hits: Hits) -> Text {
+  var rows: Text[] = []
+  var size = 0
+  for hit in hits.matches {
+    if rows.length() < 12 and size + hit.length() < 2400 {
+      rows = rows.append(hit)
+      size += hit.length()
+    }
+  }
+  return rows.join("\n")
+}
+
+fn ask_prompt(question: Text, lines: Text) -> Text {
+  return "Answer the question using only the lines below. Each line is written as file:line: text.\nGive the answer in one short sentence.\nIn quote, copy the exact words from one line that state the answer: the text only, without the file and line number, and without changing a single character.\nIf the lines do not answer the question, set answer to \"\" and quote to \"\".\n\nLines:\n" + lines + "\n\nQuestion: " + question.trim()
+}
+
+// Why an answer may not be shown, or "" when it may. Saying there is no
+// answer is allowed and needs no quote.
+fn proven(found: Found, hits: Hits, msg: Msg) -> Text {
+  let answer = found.answer.trim()
+  let quote = found.quote.trim()
+  if answer.is_empty() {
+    if quote.is_empty() { return "" }
+    return "You quoted something without answering. If the lines do not answer the question, set answer and quote to \"\"."
+  }
+  if quote.length() < 6 {
+    return "Copy into quote at least a few words from the line that states the answer."
+  }
+  let hit = proof(hits, quote)
+  if hit.is_empty() {
+    return "Your quote is not word for word in any of the lines. Copy the exact words from one line, or set answer and quote to \"\"."
+  }
+  if line_text(hit).starts_with("#") {
+    return "Your quote is a heading, which states no fact. Quote the line that states the answer, or set answer and quote to \"\"."
+  }
+  if not shares_question(msg.text, line_text(hit)) {
+    return "The line you quoted is about something else. If no line answers this exact question, set answer and quote to \"\"."
+  }
+  return ""
+}
+
+// -------------------------------------------------------------- workflows
+
+workflow look(msg: Msg, hits: Hits) -> Found {
+  // When neither model can prove an answer, the step fails; that failure is
+  // turned into the refusal the caller shows, never into a guess.
+  found = use_model reader(text: ask_prompt(msg.text, passages(hits))) verify proven(found, hits, msg) retry 1 escalate strong otherwise {answer: "", quote: ""}
+}
+
+fn shown(found: Found, hits: Hits) -> Said {
+  if found.answer.trim().is_empty() {
+    let closest = if hits.matches.is_empty() { "No line matched the question." } else { "Closest lines:\n" + passages(hits) }
+    return {text: "Nothing in these files supports an answer, so none is given.\n\n" + closest, shown: false, cited: ""}
+  }
+  let hit = proof(hits, found.quote)
+  let where = field(hit, 0) + ", line " + field(hit, 1)
+  return {text: found.answer.trim() + "\nQuote: \"" + found.quote.trim() + "\"\nFrom: " + where, shown: true, cited: where}
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 5 model calls, 300 seconds
+  query = key_words(msg.text)
+  hits  = execute hands.search_files(".", query) otherwise {matches: []}
+  found = match hits.matches.is_empty() {
+    case false { call look(msg, hits) }
+    case _ { {answer: "", quote: ""} }
+  }
+  said  = shown(found, hits)
+}
+
+// ------------------------------------------------------------------ tests
+
+test "a quote that is really in the files is shown with its line" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [{answer: "The demo is next Tuesday at 3pm.", quote: "Kosika demo for Ravi is next Tuesday at 3pm"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.shown
+  expect a.cited == "notes/work.md, line 12"
+  expect a.text.starts_with("The demo is next Tuesday at 3pm.")
+}
+
+test "a quote that is not in the files is refused, then asked of the strong model" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [{answer: "The demo is on Friday.", quote: "The demo is on Friday at noon"}, {answer: "The demo is on Friday.", quote: "The demo is on Friday at noon"}]
+  answers strong: [{answer: "The demo is next Tuesday at 3pm.", quote: "Kosika demo for Ravi is next Tuesday at 3pm"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.shown
+  expect a.cited == "notes/work.md, line 12"
+}
+
+test "when neither model can quote the files, no answer is shown" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [{answer: "The demo is on Friday.", quote: "Friday at noon, as I said"}, {answer: "The demo is on Friday.", quote: "Friday at noon, as I said"}]
+  answers strong: [{answer: "The demo is on Friday.", quote: "Friday at noon, as I said"}, {answer: "The demo is on Friday.", quote: "Friday at noon, as I said"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect not a.shown
+  expect a.cited == ""
+  expect a.text.starts_with("Nothing in these files supports an answer, so none is given.")
+  expect a.text.contains("notes/work.md:12:")
+}
+
+test "a real quote about something else is refused" {
+  answers search_files: [{matches: ["notes/kitchen.md:3: The kettle boils in four minutes"]}]
+  answers reader: [{answer: "The demo is next Tuesday.", quote: "The kettle boils in four minutes"}, {answer: "The demo is next Tuesday.", quote: "The kettle boils in four minutes"}]
+  answers strong: [{answer: "The demo is next Tuesday.", quote: "The kettle boils in four minutes"}, {answer: "The demo is next Tuesday.", quote: "The kettle boils in four minutes"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect not a.shown
+}
+
+test "a heading is not a statement of fact" {
+  answers search_files: [{matches: ["notes/work.md:1: # Demo notes"]}]
+  answers reader: [{answer: "The demo is next Tuesday.", quote: "# Demo notes"}, {answer: "The demo is next Tuesday.", quote: "# Demo notes"}]
+  answers strong: [{answer: "The demo is next Tuesday.", quote: "# Demo notes"}, {answer: "The demo is next Tuesday.", quote: "# Demo notes"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect not a.shown
+}
+
+test "an empty search is a refusal, and no model is asked" {
+  answers search_files: [{matches: []}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect not a.shown
+  expect a.text.contains("No line matched the question.")
+}
+
+test "a quote that copies its own file and line number is still found" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [{answer: "The demo is next Tuesday at 3pm.", quote: "notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.shown
+  expect a.cited == "notes/work.md, line 12"
+}
+
+test "a quote is found whatever its case and spacing" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [{answer: "The demo is next Tuesday at 3pm.", quote: "kosika DEMO   for ravi is next tuesday at 3pm"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.shown
+  expect a.cited == "notes/work.md, line 12"
+}
+
+// -------------------------------------------------------------- measured
+
+eval "answers: when the demo with Ravi is" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm", "notes/old.md:4: the demo went well"]}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.shown
+  expect a.cited == "notes/work.md, line 12"
+}
+
+eval "answers: what the licence costs" {
+  answers search_files: [{matches: ["notes/price.md:4: The licence costs 40 dollars a year", "notes/price.md:9: Prices include support"]}]
+  a = main({text: "What does the licence cost?"})
+  expect a.shown
+  expect a.cited == "notes/price.md, line 4"
+}
+
+eval "answers: which port the server listens on" {
+  answers search_files: [{matches: ["notes/server.md:8: The server listens on port 8080", "notes/server.md:2: The server runs on Linux"]}]
+  a = main({text: "Which port does the server use?"})
+  expect a.shown
+  expect a.cited == "notes/server.md, line 8"
+}
+
+eval "answers: who signed the contract" {
+  answers search_files: [{matches: ["notes/deal.md:2: Ravi signed the contract on 3 March"]}]
+  a = main({text: "Who signed the contract?"})
+  expect a.shown
+  expect a.cited == "notes/deal.md, line 2"
+}
+
+eval "cannot answer: how many people work at the company" {
+  answers search_files: [{matches: ["notes/deal.md:2: Ravi signed the contract on 3 March"]}]
+  a = main({text: "How many people work at the company?"})
+  expect not a.shown
+}
+
+eval "cannot answer: when the course starts" {
+  answers search_files: [{matches: ["notes/price.md:4: The licence costs 40 dollars a year"]}]
+  a = main({text: "When does the course start?"})
+  expect not a.shown
+}
+
+eval "cannot answer: what the refund policy is" {
+  answers search_files: [{matches: ["notes/server.md:8: The server listens on port 8080"]}]
+  a = main({text: "What is the refund policy?"})
+  expect not a.shown
+}
+
+eval "cannot answer: when the demo for the new client is" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  a = main({text: "When is the demo for the new client?"})
+  expect not a.shown
+}
+
+eval "cannot answer: what the licence costs for two people" {
+  answers search_files: [{matches: ["notes/price.md:4: The licence costs 40 dollars a year"]}]
+  a = main({text: "What does the licence cost for two people?"})
+  expect not a.shown
+}
+
+eval "cannot answer: how long shipping takes" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  a = main({text: "How long does shipping take?"})
+  expect not a.shown
+}

@@ -1,0 +1,1 @@
+Check failed: Step 'function clamp statement' local 'n' shadows an enclosing binding

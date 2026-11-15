@@ -1,0 +1,245 @@
+// Router: the cheapest way across a small rail network, found by A* search,
+// and explained in words when you ask why.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:3b --model-protocol ollama
+//
+// The network is written below as links with distances. The way is found by
+// `std/paths.kos`: exact, instant, and the same every time. The model is
+// asked only to explain the last journey in words, so a route is never
+// guessed by a language model.
+//
+// Say: from Ashby to Cove, cheapest Birch to Elm, the network, explain,
+// or help.
+
+import "std/paths.kos"
+
+record Msg { text: Text }
+record Said { text: Text }
+// One journey: the stations in order, what it costs, and how to say it.
+record Journey { found: Bool places: Text[] cost: Number text: Text }
+
+model speaker {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 180
+  }
+}
+
+memory journeys of Journey
+
+// ---------------------------------------------------------------- the network
+// Distances in kilometres. Every line runs both ways, so `rail` writes each
+// link in both directions.
+
+fn lines() -> Link[] {
+  return [
+    Link(from: "ashby", to: "birch", cost: 4),
+    Link(from: "ashby", to: "cove", cost: 11),
+    Link(from: "ashby", to: "dale", cost: 20),
+    Link(from: "birch", to: "dale", cost: 3),
+    Link(from: "birch", to: "elm", cost: 12),
+    Link(from: "dale", to: "cove", cost: 2),
+    Link(from: "cove", to: "elm", cost: 5)
+  ]
+}
+
+fn rail() -> Link[] {
+  var links: Link[] = []
+  for link in lines() {
+    links = links.append(link)
+    links = links.append(Link(from: link.to, to: link.from, cost: link.cost))
+  }
+  return links
+}
+
+// Every station on the network, including one no line reaches.
+fn stations() -> Text[] {
+  return ["ashby", "birch", "cove", "dale", "elm", "fen"]
+}
+
+fn spoken(place: Text) -> Text {
+  if place.length() == 0 { return place }
+  return place.slice(0, 1).upper() + place.slice(1, place.length())
+}
+
+fn legs(count: Number) -> Text {
+  if count == 1 { return "1 leg" }
+  return count.to_text() + " legs"
+}
+
+fn network_text() -> Text {
+  var written: Text[] = ["The lines, in kilometres:"]
+  for link in lines() {
+    written = written.append("  " + spoken(link.from) + " - " + spoken(link.to) + "  " + link.cost.to_text())
+  }
+  return written.join("\n") + "\nA station no line reaches: Fen."
+}
+
+// --------------------------------------------------------- reading the request
+
+fn kind_of(msg: Msg) -> Text {
+  let text = msg.text.lower().trim()
+  if text == "help" or text.contains("what can you do") { return "help" }
+  if text.contains("network") or text.contains("lines") or text.contains("map") { return "network" }
+  if text.contains("explain") or text.contains("why") { return "explain" }
+  if text.contains("fewest") or text.contains("changes") { return "fewest" }
+  return "route"
+}
+
+// The stations named in the request, in the order they are said.
+fn stations_asked(msg: Msg) -> Text[] {
+  let names = stations()
+  var found: Text[] = []
+  for word in msg.text.lower().words() {
+    let clean = word.trim_marks(".,;:!?'\"()")
+    if names.contains(clean) and not found.contains(clean) { found = found.append(clean) }
+  }
+  return found
+}
+
+fn journey_text(start: Text, goal: Text, route: Route) -> Journey {
+  if not route.found {
+    return {found: false places: [] cost: 0 text: "No line reaches " + spoken(goal) + " from " + spoken(start) + "."}
+  }
+  let stops = for place in route.places { spoken(place) }
+  let changes = route.places.length() - 1
+  let words = "The cheapest way from " + spoken(start) + " to " + spoken(goal) + " is " +
+    route.cost.to_text() + " km in " + legs(changes) + ": " + stops.join(" -> ") + "."
+  return {found: true places: stops cost: route.cost text: words}
+}
+
+fn journey_for(msg: Msg) -> Journey {
+  let asked = stations_asked(msg)
+  if asked.length() < 2 {
+    return {found: false places: [] cost: 0 text: "Name two stations and I will find the cheapest way between them, for example: from Ashby to Cove.\n\n" + network_text()}
+  }
+  return journey_text(asked[0], asked[1], shortest(asked[0], asked[1], rail(), {}))
+}
+
+fn fewest_stops_for(msg: Msg) -> Journey {
+  let asked = stations_asked(msg)
+  if asked.length() < 2 { return journey_for(msg) }
+  let route = hops(asked[0], asked[1], rail())
+  if not route.found {
+    return {found: false places: [] cost: 0 text: "No line reaches " + spoken(asked[1]) + " from " + spoken(asked[0]) + "."}
+  }
+  let stops = for place in route.places { spoken(place) }
+  let changes = route.places.length() - 1
+  return {found: true places: stops cost: changes text: "The way with the fewest changes from " + spoken(asked[0]) + " to " + spoken(asked[1]) + " is " + legs(changes) + ": " + stops.join(" -> ") + "."}
+}
+
+// --------------------------------------------------------------- the words
+
+fn explain_prompt(msg: Msg, known: JourneysRecalled) -> Prompt {
+  let last = if known.found { known.value.value() } else { {found: false places: [] cost: 0 text: ""} }
+  let seen = if last.text.length() > 0 { last.text } else { "(no journey has been planned yet)" }
+  return {text: "You are a concise travel assistant. In at most three sentences and using only the journey below, explain what the route is, roughly how far it goes, and one practical remark about the change of trains. Do not invent stations or prices. If no journey has been planned, ask the user to name two stations.\n\nJourney:\n" + seen + "\n\nUser: " + msg.text.trim()}
+}
+
+fn explained(reply: Reply) -> Journey {
+  return {found: false places: [] cost: 0 text: reply.text.trim()}
+}
+
+fn said(journey: Journey) -> Said {
+  return {text: journey.text}
+}
+
+// ------------------------------------------------------------ the requests
+
+workflow plan_route(msg: Msg) -> Journey {
+  journey = journey_for(msg)
+}
+
+workflow fewest_stops(msg: Msg) -> Journey {
+  journey = fewest_stops_for(msg)
+}
+
+workflow explain_last(msg: Msg) -> Journey {
+  known  = recall journeys under "me"
+  prompt = explain_prompt(msg, known)
+  reply  = use_model speaker(prompt.text) retry 1 otherwise {text: "Sorry, I could not get an answer just now. Please try again."}
+  journey = explained(reply)
+}
+
+fn help_text() -> Text {
+  return "I plan the cheapest journey over a small rail network, and I never guess it: A* search does the work.\nfrom Ashby to Cove: the cheapest way, with the distance it covers\nfewest Birch to Elm: the way with the fewest changes\nnetwork: every line and its distance\nexplain: words about the last journey, from the model\nhelp: this."
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 1 model calls, 120 seconds
+  kind = kind_of(msg)
+  journey = match kind {
+    case "network" { {found: false places: [] cost: 0 text: network_text()} }
+    case "explain" { call explain_last(msg) }
+    case "fewest" { call fewest_stops(msg) }
+    case "help" { {found: false places: [] cost: 0 text: help_text()} }
+    case _ { call plan_route(msg) }
+  }
+  known = recall journeys under "me"
+  kept = if journey.text.length() > 0 and journey.text.length() < 600 { journey } else { known.value.value() }
+  saved = remember kept in journeys under "me"
+  out = said(journey)
+}
+
+// ------------------------------------------------------------------ tests
+
+test "the cheapest way is not the most direct line" {
+  route = shortest("ashby", "cove", rail(), {})
+  expect route.found == true
+  expect route.places == ["ashby", "birch", "dale", "cove"]
+  expect route.cost == 9
+  expect shortest("ashby", "cove", rail(), {}).cost < 11
+  expect hops("ashby", "cove", rail()).places == ["ashby", "cove"]
+}
+
+test "a request names the stations it is about" {
+  expect stations_asked({text: "from Ashby to Cove"}) == ["ashby", "cove"]
+  expect stations_asked({text: "how far is Birch from Elm?"}) == ["birch", "elm"]
+  expect stations_asked({text: "Ashby, Cove, and Ashby again"}) == ["ashby", "cove"]
+  expect stations_asked({text: "where can I go?"}) == []
+  expect kind_of({text: "show me the network"}) == "network"
+  expect kind_of({text: "why that way?"}) == "explain"
+}
+
+test "a route is said in words with its distance" {
+  answer = journey_for({text: "from Ashby to Cove"})
+  expect answer.found == true
+  expect answer.cost == 9
+  expect answer.text == "The cheapest way from Ashby to Cove is 9 km in 3 legs: Ashby -> Birch -> Dale -> Cove."
+  far = journey_for({text: "from Ashby to Elm"})
+  expect far.cost == 14
+  expect far.text.contains("Ashby -> Birch -> Dale -> Cove -> Elm")
+}
+
+test "a station with no line is reported, not guessed" {
+  answer = journey_for({text: "from Ashby to Fen"})
+  expect answer.found == false
+  expect answer.text == "No line reaches Fen from Ashby."
+  expect journey_for({text: "from Ashby"}).text.contains("Name two stations")
+  expect journey_for({text: "from Ashby to Ashby"}).cost == 0
+}
+
+test "fewest changes is a different question" {
+  answer = fewest_stops_for({text: "fewest Ashby to Cove"})
+  expect answer.found == true
+  expect answer.cost == 1
+  expect answer.text == "The way with the fewest changes from Ashby to Cove is 1 leg: Ashby -> Cove."
+}
+
+test "the explanation is asked of the model with the last journey" {
+  answers speaker: [{text: "Take the slow line through Birch: 9 km, one change at Birch."}]
+  first = main({text: "from Ashby to Cove"})
+  second = main({text: "explain that"})
+  expect first.text.starts_with("The cheapest way from Ashby to Cove")
+  expect second.text == "Take the slow line through Birch: 9 km, one change at Birch."
+}
+
+test "the network and the help are written out without a model" {
+  shown = main({text: "network"})
+  expect shown.text.contains("Ashby - Birch  4")
+  expect shown.text.contains("A station no line reaches: Fen.")
+  helped = main({text: "help"})
+  expect helped.text.contains("A* search does the work")
+}

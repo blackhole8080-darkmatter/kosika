@@ -1,0 +1,9 @@
+// Refused: a name inside a block may not hide one from outside it.
+
+fn clamp(n: Number) -> Number {
+  if n > 100 {
+    let n = 100
+    return n
+  }
+  return n
+}

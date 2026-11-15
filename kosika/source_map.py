@@ -34,6 +34,25 @@ MAX_EDGES = 80_000
 MAX_REPORT_BYTES = 8 * 1024 * 1024
 MAX_DOC_SUMMARY_CHARS = 160
 
+#: What a page may spend on saying which files are here. A scout stops at
+#: these budgets and says it stopped; it does not refuse a large folder the
+#: way a full source map does.
+SCOUT_FILE_LIMIT = 200
+SCOUT_ENTRY_LIMIT = 20_000
+SCOUT_BYTE_LIMIT = 4 * 1024 * 1024
+SCOUT_LIST_LIMIT = 24
+SCOUT_DECLARATION_LIMIT = 8
+
+#: What a page may spend on drawing the map. Four columns of six boxes fit a
+#: panel without shrinking the names past reading size; a file that does not
+#: fit is counted and left out, never drawn on top of another.
+SCOUT_LEVELS = 4
+SCOUT_ROWS = 6
+
+#: What one file may give a page that opens it. A source map reads up to a
+#: megabyte per file; text a person reads in a panel does not need that much.
+MAX_VIEW_CHARS = 120_000
+
 #: Human-readable labels for a symbol kind, for reader-facing output.
 KIND_LABELS: dict[str, str] = {
     "class": "class",
@@ -118,6 +137,285 @@ def _discover(root: Path) -> list[Path]:
     return sorted(found, key=lambda item: item.relative_to(root).as_posix())
 
 
+def scout_sources(root: str | Path) -> dict[str, Any]:
+    """List the other-language files in a folder, within a fixed budget.
+
+    :func:`build_source_map` maps a whole tree and refuses one that is too
+    large. This asks the smaller question a page can afford to ask: which
+    files are here, in which language, and what does each one declare. It
+    never raises because of size; it stops at its budget and sets
+    ``truncated`` so the caller can say there may be more.
+
+    Nothing is imported, executed, or judged; only syntax is read.
+    """
+
+    try:
+        base = Path(root).resolve(strict=True)
+    except OSError as exc:
+        raise SourceMapError(f"Source root is unavailable: {exc}") from exc
+    if not base.is_dir():
+        raise SourceMapError(f"Source root is not a directory: {base}")
+
+    found: list[Path] = []
+    truncated = False
+    entries_seen = 0
+    pending: deque[Path] = deque([base])
+    while pending:
+        directory = pending.popleft()
+        try:
+            with os.scandir(directory) as iterator:
+                entries = sorted(iterator, key=lambda item: item.name)
+        except OSError:
+            truncated = True
+            continue
+        for entry in entries:
+            entries_seen += 1
+            if entries_seen > SCOUT_ENTRY_LIMIT or len(found) >= SCOUT_FILE_LIMIT:
+                truncated = True
+                break
+            if entry.is_symlink():
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                if not _ignored(entry.name):
+                    pending.append(Path(entry.path))
+                continue
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            path = Path(entry.path)
+            if adapter_for_suffix(path.suffix) is not None:
+                found.append(path)
+        if truncated:
+            break
+
+    files: list[dict[str, Any]] = []
+    documents: dict[str, dict[str, Any]] = {}
+    languages: Counter[str] = Counter()
+    unreadable = 0
+    total_bytes = 0
+    for path in sorted(found, key=lambda item: item.relative_to(base).as_posix()):
+        relative = path.relative_to(base).as_posix()
+        adapter = adapter_for_suffix(path.suffix)
+        assert adapter is not None
+        try:
+            with path.open("rb") as handle:
+                raw = handle.read(adapter.max_source_bytes + 1)
+        except OSError:
+            unreadable += 1
+            continue
+        if len(raw) > adapter.max_source_bytes:
+            unreadable += 1
+            continue
+        total_bytes += len(raw)
+        if total_bytes > SCOUT_BYTE_LIMIT:
+            truncated = True
+            break
+        try:
+            document, _ = _analyze(raw.decode("utf-8"), relative, adapter.language)
+        except UnicodeDecodeError:
+            unreadable += 1
+            continue
+        if document is None:
+            unreadable += 1
+            continue
+        documents[relative] = document
+        languages[adapter.language] += 1
+        if len(files) < SCOUT_LIST_LIMIT:
+            declarations = [
+                symbol["name"]
+                for symbol in sorted(
+                    document["symbols"], key=lambda item: item["start_line"]
+                )
+            ]
+            files.append(
+                {
+                    "path": relative,
+                    "language": adapter.language,
+                    "declarations": declarations[:SCOUT_DECLARATION_LIMIT],
+                    "declaration_count": len(declarations),
+                }
+            )
+
+    return {
+        "root": str(base),
+        "file_count": sum(languages.values()),
+        "language_file_counts": dict(sorted(languages.items())),
+        "files": files,
+        "graph": _scout_graph(documents),
+        "unreadable_files": unreadable,
+        "truncated": truncated,
+    }
+
+
+def _scout_graph(documents: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Link analyzed files to each other so a page can draw them.
+
+    The rules are those of :func:`build_source_map`, over a set small enough
+    to draw: an import edge when a specifier names a file in the set, and a
+    call edge when exactly one declaration in the set shares the callee's
+    name. Files sit in columns by how far a chain of links carries them, so
+    almost every arrow points forward; a cycle is placed by the level it first
+    reached, which is why the columns are clamped.
+    """
+
+    modules: dict[str, str] = {}
+    for relative in sorted(documents):
+        name = _module_name(relative, documents[relative]["language"])
+        if name:
+            modules.setdefault(name, relative)
+
+    declared: dict[str, list[str]] = {}
+    for relative in sorted(documents):
+        for symbol in documents[relative]["symbols"]:
+            declared.setdefault(symbol["name"], []).append(relative)
+
+    imports: Counter[tuple[str, str]] = Counter()
+    calls: Counter[tuple[str, str]] = Counter()
+    unresolved_imports = 0
+    ambiguous_calls = 0
+    for relative in sorted(documents):
+        document = documents[relative]
+        for item in document["imports"]:
+            if item["kind"] not in _IMPORT_KINDS:
+                continue
+            target = _module_name(item["module"], document["language"])
+            if not target:
+                continue
+            reached = modules.get(target)
+            if reached is None:
+                unresolved_imports += 1
+            elif reached != relative:
+                # One arrow per pair of files: what a language calls one import
+                # is a binding, a statement or a group, depending on the
+                # adapter, so counting them would not compare across languages.
+                imports[(relative, reached)] = 1
+        for symbol in document["symbols"]:
+            for call in symbol["calls"]:
+                owners = declared.get(_leaf(call["callee"]), [])
+                if len(owners) > 1:
+                    ambiguous_calls += 1
+                elif len(owners) == 1 and owners[0] != relative:
+                    calls[(relative, owners[0])] += 1
+
+    pairs = sorted(set(imports) | set(calls))
+    level = {relative: 0 for relative in documents}
+    for _ in range(SCOUT_LEVELS - 1):
+        moved = False
+        for source, target in pairs:
+            deeper = level[source] + 1
+            if deeper < SCOUT_LEVELS and level[target] < deeper:
+                level[target] = deeper
+                moved = True
+        if not moved:
+            break
+
+    degree: Counter[str] = Counter()
+    for source, target in pairs:
+        degree[source] += 1
+        degree[target] += 1
+
+    placed: dict[str, tuple[int, int]] = {}
+    used_rows: Counter[int] = Counter()
+    for relative in sorted(documents, key=lambda item: (-degree[item], item)):
+        column = level[relative]
+        if used_rows[column] >= SCOUT_ROWS:
+            continue
+        placed[relative] = (column, used_rows[column])
+        used_rows[column] += 1
+
+    nodes = []
+    for relative in sorted(placed):
+        document = documents[relative]
+        names = [
+            symbol["name"]
+            for symbol in sorted(
+                document["symbols"], key=lambda item: item["start_line"]
+            )
+        ]
+        nodes.append(
+            {
+                "path": relative,
+                "language": document["language"],
+                "declarations": names[:SCOUT_DECLARATION_LIMIT],
+                "declaration_count": len(names),
+                "level": placed[relative][0],
+                "row": placed[relative][1],
+            }
+        )
+
+    links = [
+        {"from": source, "to": target, "kind": "import", "count": count}
+        for (source, target), count in sorted(imports.items())
+        if source in placed and target in placed
+    ] + [
+        {"from": source, "to": target, "kind": "call", "count": count}
+        for (source, target), count in sorted(calls.items())
+        if source in placed and target in placed
+    ]
+    return {
+        "nodes": nodes,
+        "links": links,
+        "levels": max((column for column, _ in placed.values()), default=-1) + 1,
+        "rows": max((row for _, row in placed.values()), default=-1) + 1,
+        "drawn_files": len(nodes),
+        "hidden_files": len(documents) - len(nodes),
+        "unresolved_imports": unresolved_imports,
+        "ambiguous_calls": ambiguous_calls,
+    }
+
+
+def readable_source(root: str | Path, relative: str) -> dict[str, Any]:
+    """The text of one file this folder may be read as, to show in a page.
+
+    Only what a source map would itself have read is given: a path inside the
+    folder, in a language an adapter knows, outside the folders the scout
+    skips, and small enough for a panel. Nothing is imported, run, or judged,
+    and the answer is read-only: there is no path from here to a write.
+    """
+
+    try:
+        base = Path(root).resolve(strict=True)
+    except OSError as exc:
+        raise SourceMapError(f"Source root is unavailable: {exc}") from exc
+    if not isinstance(relative, str) or not relative.strip():
+        raise SourceMapError("Name a file inside the folder")
+    given = Path(relative)
+    if given.is_absolute() or ".." in given.parts:
+        raise SourceMapError(f"{relative} is not inside the folder")
+    try:
+        path = (base / given).resolve(strict=True)
+    except OSError as exc:
+        raise SourceMapError(f"{relative} is not there: {exc}") from exc
+    if not path.is_relative_to(base) or not path.is_file():
+        raise SourceMapError(f"{relative} is not inside the folder")
+    if any(_ignored(part) for part in path.relative_to(base).parts[:-1]):
+        raise SourceMapError(f"{relative} is in a folder a source map skips")
+    adapter = adapter_for_suffix(path.suffix)
+    if adapter is None:
+        raise SourceMapError(
+            f"Kosika cannot read {path.suffix or 'that kind of file'} as source"
+        )
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise SourceMapError(f"{relative} could not be read: {exc}") from exc
+    if len(raw) > adapter.max_source_bytes:
+        raise SourceMapError(
+            f"{relative} is larger than {adapter.max_source_bytes} bytes"
+        )
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SourceMapError(f"{relative} is not UTF-8") from exc
+    shown = text[:MAX_VIEW_CHARS]
+    return {
+        "path": path.relative_to(base).as_posix(),
+        "language": adapter.language,
+        "text": shown,
+        "truncated": len(shown) < len(text),
+        "line_count": text.count("\n") + (1 if text and not text.endswith("\n") else 0),
+    }
+
+
 def _read(path: Path, relative: str, total: list[int], max_source_bytes: int) -> str:
     try:
         with path.open("rb") as source_file:
@@ -156,7 +454,11 @@ def _analyze(
 
 
 def _module_name(relative: str, language: str) -> str:
-    parts = list(Path(relative).with_suffix("").parts)
+    path = Path(relative)
+    if not path.name:
+        # A relative import's specifier can be ".", which names no module.
+        return ""
+    parts = list(path.with_suffix("").parts)
     if parts and parts[-1] in {"__init__", "index", "mod"}:
         parts.pop()
     if language == "python":
@@ -511,6 +813,7 @@ __all__ = [
     "MAX_NODES",
     "SourceMapError",
     "build_source_map",
+    "readable_source",
     "to_mermaid",
     "to_text",
 ]

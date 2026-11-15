@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, cast
 
 from .agent import ApprovalRequiredError, ToolExecutor
-from .agent_steps import SaidBefore, call_agent, validate_agent_transcript
+from .agent_steps import (
+    DID_FIELD,
+    SaidBefore,
+    call_agent,
+    did_from,
+    takes_did,
+    validate_agent_transcript,
+)
 from .ambient import bind_ambient_tools
 from .ast import (
     AgentCall,
@@ -31,6 +38,7 @@ from .ast import (
     FunctionCall,
     FunctionCallExpr,
     FunctionDecl,
+    FunctionExpr,
     FunctionRefExpr,
     IndexExpr,
     LiteralExpr,
@@ -59,11 +67,12 @@ from .builtin_methods import call as call_method
 from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
 from .controls import ExecutionError
-from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
+from .durable import PLAN_TOOL, ApprovalPending, Claimed, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
-from .function_types import public_type
+from .function_types import function_type, public_type
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
+from .lessons import Lessons
 from .manifest import ManifestError, MCPManifest, verify_server
 from .mcp_stdio import MCPStdioClient
 from .model import ChatMessage, ModelProvider, ModelProviderError, ModelRequest
@@ -189,6 +198,23 @@ class MockMCP:
         )
 
 
+def _next_inline_name(functions: dict[str, Any]) -> str:
+    """A name for an anonymous function literal, counted within this run.
+
+    The name reaches the trace, so it must depend only on the program and the
+    order it is reached: the same program run twice must trace the same twice.
+    A counter kept for the process would name the same literal `__inline_1`
+    and then `__inline_2`, and two identical runs would stop being identical.
+    """
+
+    taken = sum(1 for name in functions if name.startswith("__inline_"))
+    name = f"__inline_{taken + 1}"
+    while name in functions:
+        taken += 1
+        name = f"__inline_{taken + 1}"
+    return name
+
+
 def _event(event: str, **data: object) -> dict:
     return {
         "event": event,
@@ -296,6 +322,16 @@ def _child_scope(environment: Any) -> _Scope:
     )
 
 
+def _choice_alternative(program: Program, name: str):
+    """The alternative a constructor name names, or None."""
+
+    for choice in program.choices:
+        for alternative in choice.alternatives:
+            if alternative.name == name:
+                return alternative
+    return None
+
+
 def _evaluate_expression(
     expression: Expression | Assignment,
     environment: dict[str, Any],
@@ -317,6 +353,26 @@ def _evaluate_expression(
             depth=depth,
         )
         for arm in expression.arms:
+            if arm.alternative is not None:
+                if not (
+                    isinstance(subject, dict)
+                    and subject.get("$case") == arm.alternative
+                ):
+                    continue
+                alternative = _choice_alternative(program, arm.alternative)
+                if alternative is None:
+                    continue
+                scope = _child_scope(environment)
+                for field, binding in zip(alternative.fields, arm.bindings):
+                    scope[binding] = subject[field.name]
+                return _evaluate_expression(
+                    arm.value,
+                    scope,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
             if arm.pattern is None or _value_equal(subject, arm.pattern.value):
                 return _evaluate_expression(
                     arm.value,
@@ -380,8 +436,38 @@ def _evaluate_expression(
         )
     if isinstance(expression, LiteralExpr):
         return expression.value
+    if isinstance(expression, FunctionExpr):
+        # Anonymous function literal: evaluate to a closure value. The body
+        # may only reference its own parameters and global functions (the
+        # checker rejects captures for ``FunctionExpr``), so no environment
+        # capture is needed at runtime.
+        output_type = expression.output_type or "Text"
+        synthetic_name = _next_inline_name(functions)
+        inline_fn = FunctionDecl(
+            name=synthetic_name,
+            parameters=expression.parameters,
+            output_type=output_type,
+            return_value=expression.body,
+            bindings=(),
+            nested=(),
+            recursion_limit=1,
+            statements=(),
+            order=(),
+        )
+        functions[synthetic_name] = inline_fn  # type: ignore[index]
+        return {
+            "$function": synthetic_name,
+            "$type": function_type(
+                tuple(Field(p.name, p.type_name) for p in expression.parameters),
+                output_type,
+            ),
+            "$captures": {},
+        }
     if isinstance(expression, VariableExpr):
         if expression.name not in environment:
+            alternative = _choice_alternative(program, expression.name)
+            if alternative is not None and not alternative.fields:
+                return {"$case": alternative.name}
             raise RuntimeError(f"Workflow variable {expression.name!r} is unavailable")
         return environment[expression.name]
     if isinstance(expression, FieldExpr):
@@ -635,6 +721,28 @@ def _evaluate_expression(
         }
     if isinstance(expression, FunctionCallExpr):
         argument_events: list[dict[str, Any]] = []
+        alternative = (
+            None
+            if expression.function_name in environment
+            else _choice_alternative(program, expression.function_name)
+        )
+        if alternative is not None:
+            named = resolve_unnamed(
+                expression.arguments,
+                [field.name for field in alternative.fields],
+            )
+            fields = {
+                name: _evaluate_expression(
+                    value,
+                    environment,
+                    program,
+                    functions,
+                    argument_events,
+                    depth=depth,
+                )
+                for name, value in named
+            }
+            return {"$case": alternative.name, **fields}
         arguments = {
             name: _evaluate_expression(
                 value,
@@ -855,8 +963,11 @@ def _call_declared_tool(
     input_schema: dict,
     output_schema: dict,
     mcp_commands: dict[str, Sequence[str]] | None,
-    manifest: MCPManifest | None,
+    manifest: MCPManifest | Mapping[str, MCPManifest] | None,
 ) -> tuple[object, str]:
+    if isinstance(manifest, Mapping):
+        # An environment pins a manifest for each server it names.
+        manifest = manifest.get(tool.source)
     if mcp_commands is not None and tool.source in mcp_commands:
         if manifest is None:
             raise ManifestError(
@@ -881,6 +992,7 @@ def _call_declared_tool(
                 f"Pinned output schema for {tool.operation!r} does not match Kosika record {tool.output!r}"
             )
         with MCPStdioClient(mcp_commands[tool.source]) as client:
+            client.timeout = manifest.wait_seconds
             verify_server(client, manifest)
             advertised = client.require_tool(tool.operation)
             result = client.call_tool(
@@ -1144,6 +1256,7 @@ def _ask_model(
                 presence_penalty=model.parameters.presence_penalty,
                 stop=model.parameters.stop,
                 rejected=tuple(rejected),
+                plain=_plain_field(model, asked_schema),
             )
             answered = response["content"]
             if model.evidence is not None:
@@ -1256,16 +1369,93 @@ def _ask_with_votes(
     }
 
 
+def _question_of(arguments: Mapping[str, Any]) -> str:
+    """What a model step is asked, as words: the text it is given, without
+    field names, and without lists such as the choices of a `classify`,
+    which are the same every time."""
+
+    found: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, str):
+            found.append(value)
+        elif isinstance(value, dict):
+            for key in sorted(value):
+                collect(value[key])
+
+    for name in sorted(arguments):
+        collect(arguments[name])
+    return "\n".join(found)
+
+
+def _plain_field(model: ModelDecl, schema: dict[str, Any]) -> str | None:
+    """The one Text field a plain answer fills, for a model `as text`."""
+
+    if not model.plain:
+        return None
+    return next(iter(schema.get("properties", {})), None)
+
+
+def _lesson_name(workflow: str, step: str, model: ModelDecl) -> str:
+    """The lessons of one step, kept apart from those of any other step
+    and of an earlier version of its model: a model declared differently
+    starts learning again. Both engines make the same name, from the
+    declaration written out in one fixed form (`lessonName` in
+    native/lessons.go), so each finds the lessons the other kept."""
+
+    def number(value: float | int | None) -> float | int | None:
+        if value is None:
+            return None
+        value = float(value)
+        return int(value) if value.is_integer() and abs(value) < 1e15 else value
+
+    parameters = model.parameters
+    declared = {
+        "name": model.name,
+        "input": model.input,
+        "output": model.output,
+        "deployment": model.deployment,
+        "provider": model.provider,
+        "verb": model.verb,
+        "evidence": model.evidence,
+        "plain": model.plain,
+        "temperature": number(parameters.temperature),
+        "max_output_tokens": parameters.max_output_tokens,
+        "top_p": number(parameters.top_p),
+        "frequency_penalty": number(parameters.frequency_penalty),
+        "presence_penalty": number(parameters.presence_penalty),
+        "stop": list(parameters.stop),
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            declared, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    ).hexdigest()[:10]
+    return f"{workflow}.{step}.{model.name}.{digest}"
+
+
+def _earlier_lesson_name(workflow: str, step: str, model: ModelDecl) -> str:
+    """The name lessons were kept under before both engines shared one,
+    made from this engine's own record of the model. Lessons found under
+    it are moved to the shared name."""
+
+    declared = hashlib.sha256(
+        json.dumps(asdict(model), sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:10]
+    return f"{workflow}.{step}.{model.name}.{declared}"
+
+
 def run(
     program: Program,
     workflow_name: str,
     trace_path: str | Path | None,
     *,
     mcp_commands: dict[str, Sequence[str]] | None = None,
-    manifest: MCPManifest | None = None,
+    manifest: MCPManifest | Mapping[str, MCPManifest] | None = None,
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
+    database_tables: Mapping[str, Mapping[str, str]] | None = None,
     session: ExecutionSession | None = None,
     limits: ExecutionLimits | None = None,
     cancel: threading.Event | None = None,
@@ -1273,6 +1463,7 @@ def run(
     function_cache: FunctionResultCache | None = None,
     on_event: Callable[[dict[str, Any], int], None] | None = None,
     skills: SkillCatalog | None = None,
+    lessons: Lessons | None = None,
     _events_out: list[dict[str, Any]] | None = None,
     _scope: tuple[str, ...] = (),
     _control: ExecutionControl | None = None,
@@ -1287,6 +1478,9 @@ def run(
         _control = ExecutionControl(
             within_budget(limits or ExecutionLimits(), declared), cancel
         )
+        # What the program's learning steps have learned, for the whole
+        # run, including the workflows it calls.
+        _control.lessons = lessons
         # The clock and chance need no grant; see kosika.ambient. A caller
         # may still supply its own, as a test does with scripted answers.
         ambient = bind_ambient_tools(program)
@@ -1318,6 +1512,7 @@ def run(
             inputs=inputs,
             model_bindings=model_bindings,
             tool_bindings=tool_bindings,
+            database_tables=database_tables,
             session=session,
             _events_out=events,
             _scope=_scope,
@@ -1368,9 +1563,13 @@ def run(
             try:
                 _write_trace(trace_path, events)
             except (OSError, ValueError, TypeError):
+                note = "Could not persist the execution failure trace"
                 add_note = getattr(exc, "add_note", None)
                 if callable(add_note):
-                    add_note("Could not persist the execution failure trace")
+                    add_note(note)
+                else:
+                    # Python 3.10 has no add_note; keep the note where 3.11 puts it.
+                    exc.__notes__ = [*getattr(exc, "__notes__", []), note]
         if interrupted:
             control.cancel.set()
             raise ExecutionError("cancelled", "Execution was cancelled") from exc
@@ -1416,10 +1615,11 @@ def _run_workflow(
     trace_path: str | Path | None,
     *,
     mcp_commands: dict[str, Sequence[str]] | None = None,
-    manifest: MCPManifest | None = None,
+    manifest: MCPManifest | Mapping[str, MCPManifest] | None = None,
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
+    database_tables: Mapping[str, Mapping[str, str]] | None = None,
     _events_out: list[dict[str, Any]] | None = None,
     session: ExecutionSession | None = None,
     _scope: tuple[str, ...] = (),
@@ -1447,6 +1647,7 @@ def _run_workflow(
                 inputs=inputs,
                 model_bindings=model_bindings,
                 tool_bindings=tool_bindings,
+                database_tables=database_tables,
                 session=session,
                 _events_out=_events_out,
                 _scope=_scope,
@@ -1494,7 +1695,13 @@ def _run_workflow(
                 "program": program_payload(program),
                 "workflow": workflow_name,
                 "inputs": environment,
-                "manifest": asdict(manifest) if manifest else None,
+                "manifest": (
+                    {source: asdict(item) for source, item in manifest.items()}
+                    if isinstance(manifest, Mapping)
+                    else asdict(manifest)
+                    if manifest
+                    else None
+                ),
                 "mcp_commands": mcp_commands,
             }
         )
@@ -1567,7 +1774,9 @@ def _run_workflow(
             # declared model it names; it has none of its own.
             asked = models[step.call.model_name]
             bound_name = asked.provider or asked.name
-            if bound_name not in providers:
+            # A step that learns may run without its model: it answers what
+            # it has learned, and for anything else its `otherwise` runs.
+            if bound_name not in providers and not step.learns:
                 raise PermissionError(
                     f"Model {bound_name!r} has no authorized host binding"
                 )
@@ -1593,18 +1802,24 @@ def _run_workflow(
                 f"Workflow tool {tool.name!r} requires a verified approval record"
             )
     events = _events_out if _events_out is not None else []
-    events.append(
-        _event(
-            "run_start",
-            workflow=workflow.name,
-            trace_version=5,
-            program_hash=hashlib.sha256(
-                json.dumps(program_payload(program), sort_keys=True).encode()
-            ).hexdigest(),
-            inputs=environment.copy(),
-            output_schema=schema_for_record(program, workflow.output_type),
-        )
+    start_event = _event(
+        "run_start",
+        workflow=workflow.name,
+        trace_version=5,
+        program_hash=hashlib.sha256(
+            json.dumps(program_payload(program), sort_keys=True).encode()
+        ).hexdigest(),
+        inputs=environment.copy(),
+        output_schema=schema_for_record(program, workflow.output_type),
     )
+    if database_tables is not None:
+        # The tables the granted file had when the run began, so that a replay
+        # can put a recorded statement back to SQLite with no database present
+        # (see kosika.database.sent_problem).
+        start_event["database"] = {
+            name: dict(columns) for name, columns in database_tables.items()
+        }
+    events.append(start_event)
     result: Any = {}
     queue = list(workflow.steps)
     recovered: dict[str, dict[str, str]] = {}
@@ -1618,7 +1833,7 @@ def _run_workflow(
 
         assert isinstance(member.call, ModelCall)
         asked_model = models[member.call.model_name]
-        schema = schema_for_record(program, asked_model.output)
+        schema = schema_for_type(program, asked_model.output)
         if asked_model.evidence is not None:
             schema = answer_schema(
                 asked_model.evidence, schema, list(schema.get("properties", {}))
@@ -1689,6 +1904,9 @@ def _run_workflow(
                 # Its arguments fail: let the step say so when its turn comes.
                 continue
             if isinstance(call, ModelCall):
+                if member.learns:
+                    # What it has learned may answer it, with no model.
+                    continue
                 asked = [
                     providers.get(models[name].provider or name)
                     for name in (member.voters or (call.model_name,))
@@ -1755,6 +1973,7 @@ def _run_workflow(
             }
             scope = (*_scope, workflow.name, step.name)
             action = None
+            claimed: Claimed | None = None
             if isinstance(step.call, WorkflowCall):
                 step_output = workflows[step.call.workflow_name].output_type
             elif isinstance(step.call, FunctionCall):
@@ -1798,7 +2017,8 @@ def _run_workflow(
                             program, tools[step.call.tool_name].input
                         ),
                     )
-                action = session.start(scope, mutation, arguments)
+                claimed = session.start(scope, mutation, arguments)
+                action = claimed.action if claimed is not None else None
             step_offset = len(events)
             events.append(
                 _event(
@@ -1842,6 +2062,7 @@ def _run_workflow(
                         inputs=arguments,
                         model_bindings=providers,
                         tool_bindings=host_tools,
+                        database_tables=database_tables,
                         mcp_commands=mcp_commands,
                         manifest=manifest,
                         _events_out=child_events,
@@ -1876,7 +2097,7 @@ def _run_workflow(
                 assert asked_agent.model is not None
                 model = models[asked_agent.model]
                 input_schema = schema_for_record(program, model.input)
-                output_schema = schema_for_record(program, model.output)
+                output_schema = schema_for_type(program, model.output)
                 validate(arguments, input_schema)
                 # Skills are chosen before the agent begins, from the words
                 # it was given. They are advice: they add no tool.
@@ -1948,12 +2169,17 @@ def _run_workflow(
                     input_schema=input_schema,
                     output_schema=output_schema,
                     max_steps=asked_agent.max_steps,
+                    changes=sorted(
+                        name
+                        for name in asked_agent.can
+                        if tools[name].access == "execute"
+                    ),
                     tools={
                         name: {
                             "input_schema": schema_for_tool_input(
                                 program, tools[name].input
                             ),
-                            "output_schema": schema_for_record(
+                            "output_schema": schema_for_type(
                                 program, tools[name].output
                             ),
                         }
@@ -1971,18 +2197,87 @@ def _run_workflow(
                 plan_results: list[dict[str, Any]] = []
                 plan_action: list[str | None] = []
 
+                def file_before(path: str) -> str | None:
+                    """A file as it is before the plan, read with the
+                    agent's own reading tool, or None when it is not there
+                    or the agent has no such tool. What is read is kept, so
+                    a step that begins again after a person answered checks
+                    its plan against the same text, not against the file
+                    the plan has since written."""
+
+                    key = (*scope, PLAN_TOOL + ":before", path)
+                    if session is not None:
+                        kept = session.remembered(key)
+                        if isinstance(kept, dict):
+                            found = kept.get("text")
+                            return found if isinstance(found, str) else None
+                    text: str | None = None
+                    for name in asked_agent.can:
+                        reader = tools[name]
+                        if (
+                            reader.source == "system:files"
+                            and reader.operation == "read"
+                            and name in host_tools
+                        ):
+                            try:
+                                got = host_tools[name](reader, {"path": path})
+                            except Exception:  # noqa: BLE001 - a file that cannot be read is no file
+                                got = None
+                            if isinstance(got, dict) and isinstance(
+                                got.get("text"), str
+                            ):
+                                text = got["text"]
+                            break
+                    if session is not None:
+                        session.remember(key, {"text": text})
+                    return text
+
                 def review_agent_plan(
                     actions: list[tuple[ToolDecl, dict[str, Any]]],
                 ) -> list[str]:
-                    return plan_problems(
-                        picked,
-                        " ".join(
-                            value
-                            for value in arguments.values()
-                            if isinstance(value, str)
-                        ),
-                        [(declaration.name, values) for declaration, values in actions],
+                    request = " ".join(
+                        value for value in arguments.values() if isinstance(value, str)
                     )
+                    problems = plan_problems(
+                        picked,
+                        request,
+                        [(declaration.name, values) for declaration, values in actions],
+                        file_before,
+                    )
+                    if asked_agent.check is None:
+                        return problems
+                    # The program's own check, written in Kosika: it is
+                    # given every file the plan would write, with the file
+                    # as it is now, and says what is wrong.
+                    files = []
+                    for _declaration, values in actions:
+                        path, text = values.get("path"), values.get("text")
+                        if isinstance(path, str) and isinstance(text, str):
+                            was = file_before(path)
+                            files.append(
+                                {
+                                    "path": path,
+                                    "text": text,
+                                    "before": was or "",
+                                    "exists": was is not None,
+                                }
+                            )
+                    checker_function = functions[asked_agent.check]
+                    first, second = checker_function.parameters
+                    said_wrong, _trace = _execute_function(
+                        program,
+                        checker_function,
+                        {first.name: request, second.name: files},
+                        functions,
+                        argument_events=[],
+                        depth=0,
+                    )
+                    own = [
+                        line
+                        for line in said_wrong or []
+                        if isinstance(line, str) and line.strip()
+                    ]
+                    return problems + [line for line in own if line not in problems]
 
                 def approve_agent_plan(
                     actions: list[tuple[ToolDecl, dict[str, Any]]],
@@ -2020,7 +2315,10 @@ def _run_workflow(
                     # begin again with the same plan once a person answers.
                     session.remember((*scope, PLAN_TOOL + ":said"), said.said)
                     try:
-                        plan_action.append(session.start(plan_scope, PLAN_TOOL, wanted))
+                        claimed_plan = session.start(plan_scope, PLAN_TOOL, wanted)
+                        plan_action.append(
+                            claimed_plan.action if claimed_plan is not None else None
+                        )
                     except ApprovalPending:
                         session.recover(scope)
                         raise
@@ -2078,7 +2376,7 @@ def _run_workflow(
                             outcome = _agent_tool_outcome(declaration, values)
                             validate(
                                 outcome,
-                                schema_for_record(program, declaration.output),
+                                schema_for_type(program, declaration.output),
                             )
                             plan_results.append(
                                 {"tool": declaration.name, "result": outcome}
@@ -2110,7 +2408,7 @@ def _run_workflow(
                                 "needs a step of its own"
                             )
                         try:
-                            action = session.start(inner, declaration.name, values)
+                            made = session.start(inner, declaration.name, values)
                         except ApprovalPending:
                             # Nothing has changed yet, so this step can be
                             # begun again once a person has answered.
@@ -2119,7 +2417,7 @@ def _run_workflow(
                         agent_changed.append(declaration.name)
                         outcome = _agent_tool_outcome(declaration, values)
                         validate(
-                            outcome, schema_for_record(program, declaration.output)
+                            outcome, schema_for_type(program, declaration.output)
                         )
                         session.complete(
                             inner,
@@ -2132,7 +2430,7 @@ def _run_workflow(
                                     result=outcome,
                                 )
                             ],
-                            action,
+                            made.action if made is not None else None,
                         )
                         return outcome
                     return _agent_tool_outcome(declaration, values)
@@ -2146,7 +2444,7 @@ def _run_workflow(
                         declaration,
                         values,
                         schema_for_tool_input(program, declaration.input),
-                        schema_for_record(program, declaration.output),
+                        schema_for_type(program, declaration.output),
                         mcp_commands,
                         manifest,
                     )
@@ -2183,6 +2481,16 @@ def _run_workflow(
                     skills_text(picked) if picked is not None else "",
                     review_agent_plan if plans else None,
                 )
+                if takes_did(output_schema):
+                    # What the agent changed is written by the runtime, from
+                    # what ran, never by the model: a model will say it wrote
+                    # a file it did not.
+                    result = {
+                        **result,
+                        DID_FIELD: did_from(
+                            agent_response["messages"], call_event["changes"]
+                        ),
+                    }
                 return_event = _event(
                     "agent_return",
                     agent=asked_agent.name,
@@ -2194,7 +2502,7 @@ def _run_workflow(
             elif isinstance(step.call, ModelCall):
                 model = models[step.call.model_name]
                 input_schema = schema_for_record(program, model.input)
-                output_schema = schema_for_record(program, model.output)
+                output_schema = schema_for_type(program, model.output)
                 validate(arguments, input_schema)
                 # A step `with evidence` asks the model for the record plus
                 # its quotes. The quotes are checked and kept in the trace;
@@ -2214,11 +2522,55 @@ def _run_workflow(
                     )
                 )
                 early = ahead.pop(step.name, None)
-                result, response = (
-                    early.result()
-                    if early is not None
-                    else model_answer(step, arguments)
-                )
+                book = getattr(_control, "lessons", None) if step.learns else None
+                known = None
+                if step.learns:
+                    question = (
+                        str(
+                            _evaluate_expression(
+                                step.learn_by, environment, program, functions, [], depth=-1
+                            )
+                        )
+                        if step.learn_by is not None
+                        else _question_of(arguments)
+                    )
+                    lesson = _lesson_name(workflow.name, step.name, model)
+                    if book is not None:
+                        book.adopt(
+                            _earlier_lesson_name(workflow.name, step.name, model), lesson
+                        )
+                        known = book.recall(
+                            lesson, question, voting=model.verb in ("classify", "decide")
+                        )
+                    if known is not None:
+                        try:
+                            validate(known["answer"], output_schema)
+                        except ValueError:
+                            known = None
+                if known is not None:
+                    result = known["answer"]
+                    # Recorded as the model's answer would be, so the run
+                    # replays the same; `learned` says where it came from.
+                    response = {
+                        "content": json.dumps(result, ensure_ascii=False),
+                        "finish_reason": "stop",
+                        "learned": {
+                            key: known[key] for key in ("how", "likeness", "lessons")
+                        }
+                    }
+                else:
+                    if step.learns and (model.provider or model.name) not in providers:
+                        raise ModelProviderError(
+                            f"Model {model.name!r} is not connected, and nothing "
+                            "like this has been learned yet"
+                        )
+                    result, response = (
+                        early.result()
+                        if early is not None
+                        else model_answer(step, arguments)
+                    )
+                    if book is not None:
+                        book.keep(lesson, question, result)
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )
@@ -2233,7 +2585,7 @@ def _run_workflow(
                     )
                 agent = agents[step.call.agent_name]
                 input_schema = schema_for_tool_input(program, tool.input)
-                output_schema = schema_for_record(program, tool.output)
+                output_schema = schema_for_type(program, tool.output)
                 validate(arguments, input_schema)
                 events.append(
                     _event(
@@ -2247,6 +2599,26 @@ def _run_workflow(
                         expression_events=expression_events,
                         input_schema=input_schema,
                         output_schema=output_schema,
+                        # The approval this call was made under, when it
+                        # needed one: who said yes, and the hash over the
+                        # plan, this step, this tool and these arguments. A
+                        # replay recomputes it, so an edited statement is not
+                        # one the approval covers.
+                        **(
+                            {
+                                "approval": {
+                                    "plan_hash": claimed.plan_hash,
+                                    "action_hash": claimed.action,
+                                    "approved_by": claimed.approved_by,
+                                    # The whole step path the hash is over,
+                                    # so a nested trace replayed on its own
+                                    # can still be checked.
+                                    "step": list(scope),
+                                }
+                            }
+                            if claimed is not None
+                            else {}
+                        ),
                     )
                 )
                 early = ahead.pop(step.name, None)

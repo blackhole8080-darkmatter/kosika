@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
@@ -110,6 +111,10 @@ class MethodCallExpr:
 class Field:
     name: str
     type_name: str
+    # `count: Number = 1`: the value given when a call leaves it out. Only a
+    # value written out may stand here: a number, text, true, false, null or
+    # []. See kosika.sugar.fill_defaults.
+    default_value: "Expression | None" = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +134,42 @@ def method_function(record: str, method: str) -> str:
 
 
 @dataclass(frozen=True)
+class ColumnDecl:
+    """One column a store declares: its name, and what it holds."""
+
+    name: str
+    type_name: str
+
+
+@dataclass(frozen=True)
+class TableDecl:
+    """One table a store declares."""
+
+    name: str
+    columns: tuple[ColumnDecl, ...]
+
+
+@dataclass(frozen=True)
+class StoreDecl:
+    """`store Notes at "./notes.db" { table notes { id: Number } }`:
+    the tables and columns a program means to use in one database file.
+
+    A store is a promise about a file, written where a person and the checker
+    can read it. It grants nothing and reaches nothing: the file it names is
+    relative to the program, and the runner still has to grant that file with
+    `--database`. Before the first step of a run the declaration is checked
+    against the file, so a table or a column that has drifted is refused
+    before anything happens (see `kosika.database.check_stores`). A column of
+    a store is `Text`, `Number` or `Bool`, the same three a row record may
+    hold.
+    """
+
+    name: str
+    file: str
+    tables: tuple[TableDecl, ...]
+
+
+@dataclass(frozen=True)
 class ToolDecl:
     name: str
     source: str
@@ -136,6 +177,12 @@ class ToolDecl:
     access: str
     output: str
     input: str | None = None
+
+
+#: The fields of the record an agent's `check` function is given for each
+#: file the plan would write: where, the whole new text, the file as it is
+#: now, and whether it is there now at all.
+PLAN_FILE_FIELDS = {"path": "Text", "text": "Text", "before": "Text", "exists": "Bool"}
 
 
 @dataclass(frozen=True)
@@ -152,6 +199,10 @@ class AgentDecl:
     #: `plan: first`, `plan: off`, or None when the program does not say.
     #: See `plans_first`.
     plan: str | None = None
+    #: `check: NAME`: a function of the program that reads the agent's plan
+    #: before a person is asked about it, and says what is wrong with it.
+    #: See `PLAN_FILE_FIELDS`.
+    check: str | None = None
 
     def plans_first(self, tools: Iterable[ToolDecl]) -> bool:
         """Whether this agent shows all its changes as one plan before any.
@@ -198,6 +249,79 @@ class SwarmDecl:
 @dataclass(frozen=True)
 class LiteralExpr:
     value: object
+
+
+@dataclass(frozen=True)
+class EnumValueExpr(LiteralExpr):
+    """`Size.small`: one value of a declared enum. It is the text of the
+    value, typed as the enum, so everything that reads a literal reads it."""
+
+    enum_name: str = ""
+
+
+@dataclass(frozen=True)
+class EnumDecl:
+    """`enum Size { small, medium, large }`: a type whose value is one of
+    these names, kept as text."""
+
+    name: str
+    values: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ChoiceField:
+    """One value an alternative of a `choice` carries."""
+
+    name: str
+    type_name: str
+
+
+@dataclass(frozen=True)
+class ChoiceAlternative:
+    """One alternative of a `choice`: `filed(invoice: Invoice)`."""
+
+    name: str
+    fields: tuple[ChoiceField, ...] = ()
+
+
+@dataclass(frozen=True)
+class ChoiceDecl:
+    """`choice Filing { filed(invoice: Invoice) refused(reason: Text) }`:
+    a value that is exactly one of these alternatives, carrying its fields."""
+
+    name: str
+    alternatives: tuple[ChoiceAlternative, ...]
+
+
+@dataclass(frozen=True)
+class ChoiceExpr:
+    """A constructed choice value: `found(value: "hello")`.
+
+    `alternative` names which alternative; `arguments` are its field values,
+    in the alternative's declared field order.
+    """
+
+    choice_name: str
+    alternative: str
+    arguments: tuple[tuple[str, "Expression"], ...] = ()
+
+
+@dataclass(frozen=True)
+class ShapeMethod:
+    """One function a shape asks for: `fn price(self) -> Number`."""
+
+    name: str
+    parameters: tuple[Field, ...]
+    output_type: str
+
+
+@dataclass(frozen=True)
+class ShapeDecl:
+    """`shape Priced { fn price(self) -> Number }`: a type that every record
+    with these functions is. See kosika.function_types.assignable."""
+
+    name: str
+    methods: tuple[ShapeMethod, ...]
 
 
 @dataclass(frozen=True)
@@ -266,6 +390,11 @@ class ConditionalExpr:
 class MatchArm:
     pattern: LiteralExpr | None
     value: "Expression"
+    # An arm may name a `choice` alternative instead of a literal:
+    # `case filed(invoice) { ... }`. `bindings` names the values it carries,
+    # in the alternative's field order.
+    alternative: str | None = None
+    bindings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -334,6 +463,7 @@ Expression = (
     | ContinueExpr
     | ModelVarExpr
     | Block
+    | ChoiceExpr
 )
 
 
@@ -451,6 +581,10 @@ class ModelDecl:
     # `default model NAME`: the model a thinking step uses when it names none
     # and the program declares several.
     default: bool = False
+    # `output: Code as text`: the model answers in plain words, not JSON,
+    # and the answer fills the output record's one Text field. A small model
+    # writes a file far better as itself than escaped inside a JSON string.
+    plain: bool = False
 
 
 @dataclass(frozen=True)
@@ -544,6 +678,12 @@ class Step:
     # results, so their slow calls can be made at the same time. 0
     # for every step written outside such a block.
     group: int = 0
+    # `step = use_model m(x) learn by key`: the model's accepted answers are
+    # kept, and a question asked before is answered without the model; see
+    # kosika.lessons. `learn_by` is what the question is known by, when it
+    # is not the whole of what the model is given.
+    learns: bool = False
+    learn_by: Any = None
 
 
 @dataclass(frozen=True)
@@ -628,10 +768,33 @@ def function_calls(
     )
 
 
+#: References already found, by function identity. A function is never
+#: changed once made, and the checker asks for the same ones many times.
+_REFERENCES: dict[
+    int,
+    tuple[weakref.ref[FunctionDecl], tuple[FunctionCallExpr | FunctionRefExpr, ...]],
+] = {}
+
+
 def static_function_references(
     function: FunctionDecl,
 ) -> tuple[FunctionCallExpr | FunctionRefExpr, ...]:
     """Resolve local call shadowing in declaration order, never for explicit refs."""
+    known = _REFERENCES.get(id(function))
+    if known is not None and known[0]() is function:
+        return known[1]
+    found = _static_function_references(function)
+    key = id(function)
+    _REFERENCES[key] = (
+        weakref.ref(function, lambda _ref: _REFERENCES.pop(key, None)),
+        found,
+    )
+    return found
+
+
+def _static_function_references(
+    function: FunctionDecl,
+) -> tuple[FunctionCallExpr | FunctionRefExpr, ...]:
     bound = {parameter.name for parameter in function.parameters}
     references: list[FunctionCallExpr | FunctionRefExpr] = []
     for name, expression in (
@@ -717,6 +880,7 @@ class TestDecl:
 @dataclass
 class Program:
     records: list[RecordDecl] = field(default_factory=list)
+    choices: list[ChoiceDecl] = field(default_factory=list)
     tools: list[ToolDecl] = field(default_factory=list)
     agents: list[AgentDecl] = field(default_factory=list)
     swarms: list[SwarmDecl] = field(default_factory=list)
@@ -736,6 +900,13 @@ class Program:
     memories: list[MemoryDecl] = field(default_factory=list)
     # `board NAME of Record`: where the agents of one run leave messages.
     boards: list[BoardDecl] = field(default_factory=list)
+    # `enum NAME { values }`.
+    enums: list[EnumDecl] = field(default_factory=list)
+    # `shape NAME { fn ... }`.
+    shapes: list[ShapeDecl] = field(default_factory=list)
+    # `store NAME at "FILE" { table ... }`: the tables a program means to
+    # use in one database file, checked against it before the first step.
+    stores: list[StoreDecl] = field(default_factory=list)
 
 
 #: Fields added to the tree after traces and approvals were first recorded,
@@ -744,6 +915,9 @@ class Program:
 #: did before the field existed.
 _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "order": ((), []),
+    "choices": ((), []),
+    "alternative": (None,),
+    "bindings": ((), []),
     "condition": (None,),
     "provider": (None,),
     "instruction": (None,),
@@ -760,16 +934,43 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "escalate": (None,),
     "group": (0,),
     "default": (False,),
+    "default_value": (None,),
     "more_models": ((), []),
     "budget": ((), []),
     "capped": (False,),
     "memories": ((), []),
     "boards": ((), []),
+    "enums": ((), []),
+    "shapes": ((), []),
+    "stores": ((), []),
+    "learns": (False,),
+    "plain": (False,),
+    "learn_by": (None,),
 }
 
 
+#: Payloads already made, by program identity. A program is not changed once
+#: made, and a run asks for its payload more than once.
+_PAYLOADS: dict[int, tuple[weakref.ref[Program], dict[str, Any]]] = {}
+
+
 def program_payload(program: Program) -> dict[str, Any]:
-    """The JSON-ready form of a program that every program hash is taken over."""
+    """The JSON-ready form of a program that every program hash is taken over.
+    It is shared between callers, so it must not be changed."""
+
+    known = _PAYLOADS.get(id(program))
+    if known is not None and known[0]() is program:
+        return known[1]
+    payload = _program_payload(program)
+    key = id(program)
+    _PAYLOADS[key] = (
+        weakref.ref(program, lambda _ref: _PAYLOADS.pop(key, None)),
+        payload,
+    )
+    return payload
+
+
+def _program_payload(program: Program) -> dict[str, Any]:
 
     def prune(value: Any) -> Any:
         if isinstance(value, dict):

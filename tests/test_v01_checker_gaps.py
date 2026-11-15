@@ -7,11 +7,13 @@ quietly produce a non-deterministic trace.
 """
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from kosika.checker import CheckError, check
+from kosika.modules import load_program
 from kosika.parser import ParseError, parse
 from kosika.runtime import run
 
@@ -63,13 +65,20 @@ class InlineFunctionGapTests(unittest.TestCase):
         with self.assertRaises(CheckError):
             check(parse(CAPTURING))
 
-    def test_inline_function_is_refused_at_run_time(self) -> None:
-        # The checker accepts the non-capturing form but the runtime cannot
-        # execute it. That gap is asserted here so it stays visible instead of
-        # being discovered in production.
-        with self.assertRaises(RuntimeError) as caught:
-            run(parse(INLINE), "main", None)
-        self.assertIn("unsupported expression", str(caught.exception))
+    def test_inline_function_runs_and_is_named_the_same_twice(self) -> None:
+        # The runtime names an anonymous function literal itself, and that
+        # name reaches the trace. Two runs of the same program must name it
+        # the same, or the run stops being repeatable.
+        self.assertEqual(run(parse(INLINE), "main", None), {"value": 10})
+        names: list[list[str]] = []
+        with tempfile.TemporaryDirectory() as directory:
+            for index in range(2):
+                trace = Path(directory) / f"trace{index}.jsonl"
+                run(parse(INLINE), "main", trace)
+                text = trace.read_text(encoding="utf-8")
+                names.append(sorted(set(re.findall(r"__inline_\d+", text))))
+        self.assertEqual(names[0], names[1], "a run named its literal differently")
+        self.assertEqual(names[0], ["__inline_1"])
 
     def test_no_synthetic_function_name_reaches_a_trace(self) -> None:
         # Guards the determinism guarantee: a function value in a trace must
@@ -145,6 +154,70 @@ class MethodCallGapTests(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(run(parse(source), "main", None), {"value": 1})
+
+
+class TheFailureNamesTheRepairTests(unittest.TestCase):
+    """A refusal is only useful if it says what to write instead.
+
+    Each of these was a wrong first line a model wrote while following the
+    coder's guide; the message it got back sent it one more step away from the
+    right program, so the hint is the fix and is pinned here.
+    """
+
+    def error_of(self, source: str) -> str:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "main.kos"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaises(CheckError) as caught:
+                load_program(path)
+        return str(caught.exception)
+
+    def test_a_call_on_a_recalled_value_names_the_field_to_read(self) -> None:
+        said = self.error_of(
+            "record Note { visits: Number }\n"
+            "memory people of Note\n"
+            "fn next(known: PeopleRecalled) -> Note {\n"
+            "  return {visits: known.value().visits}\n"
+            "}\n"
+        )
+        self.assertIn("'value' is a field of 'PeopleRecalled'", said)
+        self.assertIn("record has no methods", said)
+        self.assertIn("known.value.value()", said)
+        self.assertIn("known.value.or(default: ...)", said)
+
+    def test_a_missing_declaration_says_to_declare_it(self) -> None:
+        said = self.error_of(
+            'tool find {\n'
+            '  source system "files"\n'
+            "  operation: \"search\"\n"
+            "  access: observe\n"
+            "  input: Look\n"
+            "  output: Hits\n"
+            "}\n"
+        )
+        self.assertIn("declare it first", said)
+        self.assertIn("record Hits { ... }", said)
+
+    def test_a_duplicate_declaration_names_the_name(self) -> None:
+        said = self.error_of(
+            "record Q { path: Text }\n"
+            "workflow main(q: Q) -> Q {\n  result = q\n}\n"
+            "workflow main(q: Q) -> Q {\n  result = q\n}\n"
+        )
+        self.assertEqual(
+            said,
+            "Duplicate workflow declaration: 'main' is declared twice; a file "
+            "declares each workflow once, so merge the two declarations or "
+            "rename one",
+        )
+
+    def test_a_choice_field_says_what_choice_is(self) -> None:
+        said = self.error_of(
+            "record Answer { kind: Choice text: Text }\n"
+            "workflow main(t: Text) -> Answer {\n  result = {kind: t, text: t}\n}\n"
+        )
+        self.assertIn("Unknown field type 'Choice'", said)
+        self.assertIn("what a thinking step", said)
 
 
 class ParseErrorIsNotACheckErrorTests(unittest.TestCase):

@@ -1,0 +1,4 @@
+PASS  the nearest come first, each with its score
+PASS  words not kept find nothing
+PASS  an empty question finds nothing
+3 passed, 0 failed

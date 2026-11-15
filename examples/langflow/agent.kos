@@ -1,0 +1,31 @@
+// An agent whose model is a Langflow flow instead of a model endpoint.
+//
+//     export LANGFLOW_API_KEY=...
+//
+//     kosika agent examples/langflow/agent.kos --agent narrator \
+//       --task "explain Langflow" \
+//       --input examples/langflow/agent.input.json \
+//       --models examples/langflow/agent.models.json \
+//       --trace agent-trace.jsonl
+//
+//     kosika replay agent-trace.jsonl
+//
+// `agent.models.json` points the model called `flow` at `kosika-langflow`, the
+// bridge that runs `kosika-model` (Chat Input, Ollama, Chat Output) and prints
+// the text it answered with. The flow is given the whole conversation as one
+// prompt and is told nowhere else what shape to answer in, so the instructions
+// below ask for the `Reply` record as JSON. Kosika checks that it is really
+// that record: a flow that answers in prose fails the run like any other bad
+// model answer.
+//
+// A command-line model is never given tools, so this agent declares none. An
+// agent that calls tools needs an HTTP model; the flow itself may still call
+// whatever it likes, and Kosika sees one answer.
+
+model flow
+
+agent narrator {
+  model: flow
+  max_steps: 1
+  instructions: "You explain things briefly and plainly. Answer in one or two sentences. Reply with one JSON object and nothing else, in this shape: {\"text\": \"your answer\"}."
+}

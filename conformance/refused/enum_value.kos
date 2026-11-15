@@ -1,0 +1,5 @@
+// An enum has only the values it lists.
+
+enum Size { small, large }
+
+fn biggest() -> Size { return Size.huge }

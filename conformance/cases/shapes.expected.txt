@@ -1,0 +1,3 @@
+PASS  every record that is a shape may stand for it
+PASS  a workflow takes shapes from outside, told apart by their fields
+2 passed, 0 failed

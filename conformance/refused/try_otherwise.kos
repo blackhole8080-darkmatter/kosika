@@ -1,0 +1,5 @@
+// Refused: what a try gives and what its otherwise gives must agree.
+
+fn parse(text: Text) -> Number {
+  return try { text.to_number().value() } otherwise { "none" }
+}

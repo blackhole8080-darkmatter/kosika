@@ -212,8 +212,8 @@ class MethodTests(unittest.TestCase):
     def test_split_is_bounded_and_needs_a_separator(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "non-empty separator"):
             result(out(items='"abc".split(separator: "")'))
-        long_text = "," * 600
-        with self.assertRaisesRegex(RuntimeError, "more than 512 parts"):
+        long_text = "," * 100_000
+        with self.assertRaisesRegex(RuntimeError, "more than 100000 parts"):
             result(out(items=f'"{long_text}".split(separator: ",")'))
 
     def test_method_names_are_unique_per_receiver(self) -> None:

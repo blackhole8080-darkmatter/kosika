@@ -1,0 +1,9 @@
+// Refused: a summary writes new text, so there is nothing to quote.
+
+record Note { text: Text }
+
+model assistant
+
+workflow main(note: Note) -> Summary {
+  brief = summarize note.text with evidence
+}

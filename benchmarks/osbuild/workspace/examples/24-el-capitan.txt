@@ -1,0 +1,5 @@
+The os-tutorial's own code for lesson 24-el-capitan (Carlos Fenollosa, BSD 3-Clause).
+It uses i386-elf-gcc and i386-elf-ld; use the commands in your rules instead.
+
+=== Makefile ===
+../23-fixes/Makefile

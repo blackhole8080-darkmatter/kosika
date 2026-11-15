@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import math
 import re
+import weakref
 from dataclasses import fields, is_dataclass, replace
 from typing import Any
 
 from .ast import (
+    PLAN_FILE_FIELDS,
     AgentCall,
+    AgentDecl,
     ArrayExpr,
     Assignment,
     BinaryExpr,
@@ -14,6 +17,7 @@ from .ast import (
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
+    EnumValueExpr,
     FailExpr,
     Field,
     FieldExpr,
@@ -51,6 +55,7 @@ from .builtin_methods import resolve as resolve_method
 from .builtin_methods import return_type as method_return_type
 from .function_types import (
     NEVER,
+    SHAPES,
     assignable,
     function_type,
     is_map,
@@ -59,6 +64,7 @@ from .function_types import (
     signature,
     unify,
 )
+from .schema import implements
 from .sugar import VALUE_CALL, resolve_unnamed
 from .sugar import call_output as _call_output
 from .system_tools import declaration_problem
@@ -77,6 +83,85 @@ def _record_fields(program: Program, record_name: str) -> dict[str, str]:
         if record.name == record_name:
             return {field.name: field.type_name for field in record.fields}
     raise CheckError(f"Unknown record type {record_name!r}")
+
+
+def _check_stores(program: Program) -> None:
+    """A store declares the tables a program means, so its words are checked.
+
+    What is checked here needs no file: a column holds one of the three
+    `Text`, `Number` and `Bool`, nothing is declared twice, and the file a
+    store names is a path beside the program rather than an absolute one.
+    Whether the file agrees is a preflight, before the first step of a run
+    (see `kosika.database.check_stores`), since only the host knows the file.
+    """
+
+    from .database import ROW_FIELD_TYPES
+
+    seen: set[str] = set()
+    files: dict[str, str] = {}
+    for store in program.stores:
+        if store.name in seen:
+            raise CheckError(f"Store {store.name!r} is declared more than once")
+        seen.add(store.name)
+        if not store.tables:
+            raise CheckError(
+                f"Store {store.name!r} declares no table; a store says which "
+                "tables a program means"
+            )
+        if not store.file.strip():
+            raise CheckError(
+                f"Store {store.name!r} names an empty file; say which database "
+                "it means, as `at \"./notes.db\"`"
+            )
+        named = store.file.replace("\\", "/")
+        if named.startswith("/") or (
+            len(named) > 1 and named[0].isalpha() and named[1] == ":"
+        ):
+            raise CheckError(
+                f"Store {store.name!r} names the file {store.file!r}; a store's "
+                "file is a path beside the program, as `at \"./notes.db\"`"
+            )
+        if store.file in files:
+            raise CheckError(
+                f"Stores {files[store.file]!r} and {store.name!r} both name "
+                f"{store.file!r}; one store says what a file holds"
+            )
+        files[store.file] = store.name
+        tables = [table.name for table in store.tables]
+        if len(set(tables)) != len(tables):
+            raise CheckError(
+                f"Store {store.name!r} declares the table "
+                f"{_repeated_name(tables)!r} twice"
+            )
+        for table in store.tables:
+            if not table.columns:
+                raise CheckError(
+                    f"Table {store.name}.{table.name} declares no column; a "
+                    "table says which columns a program means"
+                )
+            columns = [column.name for column in table.columns]
+            if len(set(columns)) != len(columns):
+                raise CheckError(
+                    f"Table {store.name}.{table.name} declares the column "
+                    f"{_repeated_name(columns)!r} twice"
+                )
+            for column in table.columns:
+                if column.type_name not in ROW_FIELD_TYPES:
+                    raise CheckError(
+                        f"Store {store.name!r} declares "
+                        f"{table.name}.{column.name} as {column.type_name!r}; a "
+                        "column of a store is one of: "
+                        f"{', '.join(ROW_FIELD_TYPES)}"
+                    )
+
+
+def _repeated_name(names: list[str]) -> str:
+    """The first name declared more than once."""
+
+    counted: dict[str, int] = {}
+    for name in names:
+        counted[name] = counted.get(name, 0) + 1
+    return min(name for name, count in counted.items() if count > 1)
 
 
 def _validate_type_name(program: Program, type_name: str) -> None:
@@ -99,8 +184,152 @@ def _validate_type_name(program: Program, type_name: str) -> None:
             raise CheckError(f"Unknown field type {type_name!r}")
         _validate_type_name(program, type_name[:-1])
         return
-    if type_name not in {record.name for record in program.records}:
+    if type_name not in {record.name for record in program.records} | {
+        enum.name for enum in program.enums
+    } | {shape.name for shape in program.shapes} | {
+        choice.name for choice in program.choices
+    }:
+        if type_name == "Choice":
+            # Choice is the built-in a thinking step gives; it is a type in a
+            # program that has one, and no record may hold it otherwise.
+            raise CheckError(
+                f"Unknown field type {type_name!r}: Choice is what a thinking "
+                "step (classify, extract, summarize, decide) gives, and it is "
+                "a type only in a program that has one; keep the record's "
+                "fields Text, or add the step that produces it"
+            )
         raise CheckError(f"Unknown field type {type_name!r}")
+
+
+def _choice_named(program: Program, type_name: str):
+    """The `choice` a type name names, or None."""
+
+    for choice in program.choices:
+        if choice.name == type_name:
+            return choice
+    return None
+
+
+def _choice_alternative(program: Program, name: str):
+    """The choice and alternative a constructor name names, or (None, None)."""
+
+    for choice in program.choices:
+        for alternative in choice.alternatives:
+            if alternative.name == name:
+                return choice, alternative
+    return None, None
+
+
+def _enum_values(program: Program, type_name: str) -> tuple[str, ...] | None:
+    for enum in program.enums:
+        if enum.name == type_name:
+            return enum.values
+    return None
+
+
+def _check_shapes(program: Program) -> None:
+    taken = {record.name for record in program.records} | {
+        enum.name for enum in program.enums
+    } | {choice.name for choice in program.choices}
+    seen: set[str] = set()
+    for shape in program.shapes:
+        if shape.name in seen:
+            raise CheckError(f"Shape {shape.name!r} is declared more than once")
+        if shape.name in taken or shape.name in _PRIMITIVE_TYPES:
+            raise CheckError(
+                f"Shape {shape.name!r} has the name of a record, an enum or a type"
+            )
+        seen.add(shape.name)
+        if not shape.methods:
+            raise CheckError(f"Shape {shape.name!r} needs at least one function")
+        names = [method.name for method in shape.methods]
+        if len(set(names)) != len(names):
+            raise CheckError(f"Shape {shape.name!r} names a function twice")
+        for method in shape.methods:
+            for parameter in method.parameters:
+                _validate_type_name(program, parameter.type_name)
+            _validate_type_name(program, method.output_type)
+    SHAPES.set(
+        {
+            shape.name: frozenset(
+                record.name
+                for record in program.records
+                if implements(program, record.name, shape.name)
+            )
+            for shape in program.shapes
+        }
+    )
+
+
+def _check_enums(program: Program) -> None:
+    taken = {record.name for record in program.records} | {
+        choice.name for choice in program.choices
+    }
+    seen: set[str] = set()
+    for enum in program.enums:
+        if enum.name in seen:
+            raise CheckError(f"Enum {enum.name!r} is declared more than once")
+        if enum.name in taken or enum.name in _PRIMITIVE_TYPES:
+            raise CheckError(f"Enum {enum.name!r} has the name of a record or a type")
+        seen.add(enum.name)
+        if not enum.values:
+            raise CheckError(f"Enum {enum.name!r} needs at least one value")
+        if len(set(enum.values)) != len(enum.values):
+            raise CheckError(f"Enum {enum.name!r} names a value twice")
+
+
+def _check_choices(program: Program) -> None:
+    taken = {record.name for record in program.records} | {
+        enum.name for enum in program.enums
+    } | {shape.name for shape in program.shapes}
+    seen: set[str] = set()
+    choice_names = {choice.name for choice in program.choices}
+    constructors: dict[str, str] = {}
+    function_names = {function.name for function in program.functions}
+    for choice in program.choices:
+        if choice.name in seen:
+            raise CheckError(f"Choice {choice.name!r} is declared more than once")
+        if choice.name in taken or choice.name in _PRIMITIVE_TYPES:
+            raise CheckError(
+                f"Choice {choice.name!r} has the name of a record, enum, shape "
+                "or type"
+            )
+        seen.add(choice.name)
+        if not choice.alternatives:
+            raise CheckError(f"Choice {choice.name!r} needs at least one alternative")
+        names = [alternative.name for alternative in choice.alternatives]
+        if len(set(names)) != len(names):
+            raise CheckError(f"Choice {choice.name!r} names an alternative twice")
+        for alternative in choice.alternatives:
+            if alternative.name in {"true", "false", "null", "_"}:
+                raise CheckError(
+                    f"Choice {choice.name!r} cannot name an alternative "
+                    f"{alternative.name!r}"
+                )
+            if alternative.name in constructors:
+                raise CheckError(
+                    f"Choice alternatives {constructors[alternative.name]!r} and "
+                    f"{choice.name!r} both name {alternative.name!r}; "
+                    "constructors are written unqualified, so their names must "
+                    "be unique"
+                )
+            if (
+                alternative.name in taken
+                or alternative.name in function_names
+                or alternative.name in choice_names
+            ):
+                raise CheckError(
+                    f"Choice alternative {alternative.name!r} has the name of a "
+                    "record, enum, shape, function or type"
+                )
+            constructors[alternative.name] = choice.name
+            fields = [field.name for field in alternative.fields]
+            if len(set(fields)) != len(fields):
+                raise CheckError(
+                    f"Choice alternative {alternative.name!r} names a field twice"
+                )
+            for field in alternative.fields:
+                _validate_type_name(program, field.type_name)
 
 
 def _literal_type(value: object) -> str:
@@ -355,29 +584,87 @@ def _expression_type(
         subject_type = _expression_type(
             expression.subject, bindings, program, step_name=step_name
         )
-        if subject_type not in _PRIMITIVE_TYPES:
-            raise CheckError("Match subjects must be scalar values")
+        values = _enum_values(program, subject_type)
+        choice = _choice_named(program, subject_type)
+        if (
+            subject_type not in _PRIMITIVE_TYPES
+            and values is None
+            and choice is None
+        ):
+            raise CheckError("Match subjects must be scalar values or a choice")
         seen: list[object] = []
+        seen_alternatives: set[str] = set()
         exhaustive = False
         result_type = expected_type
         for arm in expression.arms:
             if exhaustive:
                 raise CheckError("Unreachable match arm")
-            if arm.pattern is None:
-                exhaustive = True
-            else:
-                pattern = arm.pattern.value
-                if _literal_type(pattern) != subject_type:
-                    raise CheckError("Match pattern type differs from subject")
-                if pattern in seen:
-                    raise CheckError("Duplicate match pattern")
-                seen.append(pattern)
-                exhaustive = subject_type == "Null" or (
-                    subject_type == "Bool" and len(seen) == 2
+            arm_bindings = bindings
+            if arm.alternative is not None:
+                if choice is None:
+                    raise CheckError(
+                        f"Match alternative {arm.alternative!r} needs a choice "
+                        "subject"
+                    )
+                alternative = next(
+                    (
+                        item
+                        for item in choice.alternatives
+                        if item.name == arm.alternative
+                    ),
+                    None,
                 )
+                if alternative is None:
+                    raise CheckError(
+                        f"Choice {choice.name!r} has no alternative "
+                        f"{arm.alternative!r}; it has: "
+                        f"{', '.join(item.name for item in choice.alternatives)}"
+                    )
+                if arm.alternative in seen_alternatives:
+                    raise CheckError("Duplicate match alternative")
+                if len(arm.bindings) != len(alternative.fields):
+                    raise CheckError(
+                        f"Alternative {arm.alternative!r} carries "
+                        f"{len(alternative.fields)} values, so its case binds "
+                        f"that many names, got {len(arm.bindings)}"
+                    )
+                if len(set(arm.bindings)) != len(arm.bindings):
+                    raise CheckError("Match alternative binds a name twice")
+                seen_alternatives.add(arm.alternative)
+                arm_bindings = bindings.child()
+                for field, binding in zip(alternative.fields, arm.bindings):
+                    arm_bindings[binding] = field.type_name
+                exhaustive = len(seen_alternatives) == len(choice.alternatives)
+            else:
+                if choice is not None:
+                    raise CheckError(
+                        f"Match on choice {choice.name!r} must name its "
+                        "alternatives, not a literal"
+                    )
+                if arm.pattern is None:
+                    exhaustive = True
+                else:
+                    pattern = arm.pattern.value
+                    if values is not None:
+                        # An enum is matched by the text of its values.
+                        if not isinstance(pattern, str) or pattern not in values:
+                            raise CheckError(
+                                f"Enum {subject_type!r} has no value {pattern!r}; "
+                                f"it has: {', '.join(values)}"
+                            )
+                    elif _literal_type(pattern) != subject_type:
+                        raise CheckError("Match pattern type differs from subject")
+                    if pattern in seen:
+                        raise CheckError("Duplicate match pattern")
+                    seen.append(pattern)
+                    exhaustive = (
+                        subject_type == "Null"
+                        or (subject_type == "Bool" and len(seen) == 2)
+                        or (values is not None and len(seen) == len(values))
+                    )
             arm_type = _expression_type(
                 arm.value,
-                bindings,
+                arm_bindings,
                 program,
                 step_name=step_name,
                 expected_type=result_type,
@@ -386,14 +673,41 @@ def _expression_type(
             if merged is None:
                 raise CheckError("Match branches must have the same result type")
             result_type = merged
-        if not exhaustive or result_type is None:
+        if not exhaustive:
+            if choice is not None:
+                missing = [
+                    alternative.name
+                    for alternative in choice.alternatives
+                    if alternative.name not in seen_alternatives
+                ]
+                choices = ", ".join(f"case {name}" for name in missing)
+                raise CheckError(f"Non-exhaustive match: add {choices}")
+            raise CheckError("Non-exhaustive match: add a final case _")
+        if result_type is None:
             raise CheckError("Non-exhaustive match: add a final case _")
         return result_type
+    if isinstance(expression, EnumValueExpr):
+        values = _enum_values(program, expression.enum_name) or ()
+        if expression.value not in values:
+            raise CheckError(
+                f"Enum {expression.enum_name!r} has no value {expression.value!r}; "
+                f"it has: {', '.join(values)}"
+            )
+        return expression.enum_name
     if isinstance(expression, LiteralExpr):
         return _literal_type(expression.value)
     if isinstance(expression, VariableExpr):
         value_type = bindings.get(expression.name)
         if value_type is None:
+            choice, alternative = _choice_alternative(program, expression.name)
+            if alternative is not None and not alternative.fields:
+                return choice.name
+            if alternative is not None:
+                raise CheckError(
+                    f"Choice alternative {expression.name!r} carries "
+                    f"{len(alternative.fields)} values; write "
+                    f"{expression.name}(...)"
+                )
             raise CheckError(
                 f"Step {step_name!r} references unknown variable {expression.name!r}."
                 f"{did_you_mean(expression.name, bindings)}"
@@ -566,12 +880,77 @@ def _expression_type(
                 program,
                 step_name=step_name,
             )
+        shape = next(
+            (item for item in program.shapes if item.name == receiver_type), None
+        )
+        if shape is not None:
+            # A shape's function: the one of whichever record the value is.
+            shape_method = next(
+                (item for item in shape.methods if item.name == expression.method),
+                None,
+            )
+            if shape_method is None:
+                raise CheckError(
+                    f"Step {step_name!r} shape {shape.name!r} has no function "
+                    f"{expression.method!r}; it has: "
+                    f"{', '.join(item.name for item in shape.methods)}"
+                )
+            rest = resolve_unnamed(
+                expression.arguments, [parameter.name for parameter in shape_method.parameters]
+            )
+            _check_arguments(
+                program,
+                None,
+                (("self", expression.target), *rest),
+                bindings,
+                step_name=step_name,
+                expected_fields={
+                    "self": shape.name,
+                    **{p.name: p.type_name for p in shape_method.parameters},
+                },
+            )
+            return shape_method.output_type
         if (
             isinstance(expression.target, VariableExpr)
             and expression.target.name in bindings.present
             and expression.method in ("exists", "value", "or")
         ):
             receiver_type += "?"
+        field_type = next(
+            (
+                fields[expression.method]
+                for fields in (
+                    {field.name: field.type_name for field in record.fields}
+                    for record in program.records
+                    if record.name == receiver_type
+                )
+                if expression.method in fields
+            ),
+            None,
+        )
+        if field_type is not None:
+            # A record has no methods, so `known.value()` is a call on the
+            # record, not on its `value` field. Naming the field and the line
+            # that reads it saves the guess of which `.value` is missing.
+            shown = (
+                f"{expression.target.name}.{expression.method}"
+                if isinstance(expression.target, VariableExpr)
+                else "the field"
+            )
+            if field_type.endswith("?"):
+                raise CheckError(
+                    f"Step {step_name!r} unknown method: {expression.method!r} "
+                    f"is a field of {receiver_type!r}, not a method, and a "
+                    f"record has no methods; {expression.method!r} holds "
+                    f"{field_type!r}, so write {shown}.value() to require it, "
+                    f"{shown}.or(default: ...) for a fallback, or "
+                    f"{shown}.exists() to test it"
+                )
+            raise CheckError(
+                f"Step {step_name!r} unknown method: {expression.method!r} "
+                f"is a field of {receiver_type!r}, not a method, and a record "
+                f"has no methods; read it as {shown}"
+            )
         try:
             method = resolve_method(receiver_type, expression.method)
         except MethodError as exc:
@@ -626,6 +1005,11 @@ def _expression_type(
             raise CheckError(
                 f"Step {step_name!r} cannot access field {expression.field_name!r} "
                 f"on {base_type!r}: {_absent_hint(base_type)}"
+            )
+        if any(shape.name == base_type for shape in program.shapes):
+            raise CheckError(
+                f"Step {step_name!r} cannot read field {expression.field_name!r} "
+                f"of shape {base_type!r}; a shape has only its functions"
             )
         fields = _record_fields(program, base_type)
         field_type = fields.get(expression.field_name)
@@ -768,7 +1152,7 @@ def _expression_type(
                 f"Step {step_name!r} has unknown record fields {sorted(unknown)!r}."
                 f"{did_you_mean(sorted(unknown)[0], fields)}"
             )
-        missing = set(fields) - set(names)
+        missing = set(fields) - set(names)  # type: ignore[assignment]
         if missing:
             raise CheckError(
                 f"Step {step_name!r} is missing record fields {sorted(missing)!r}"
@@ -819,6 +1203,12 @@ def _expression_type(
             expected_type=left_type,
         )
         operator = expression.operator
+        if operator == "+":
+            # An enum's value is text, and may be joined to text.
+            if _enum_values(program, left_type) is not None and right_type == "Text":
+                left_type = "Text"
+            if _enum_values(program, right_type) is not None and left_type == "Text":
+                right_type = "Text"
         if operator in {"+", "-", "*", "/", "%", "<", "<=", ">", ">="}:
             if left_type == "Number" and right_type == "Number":
                 return "Bool" if operator in {"<", "<=", ">", ">="} else "Number"
@@ -918,6 +1308,25 @@ def _expression_type(
                 expected_fields={p.name: p.type_name for p in parameters},
             )
             return output
+        choice, alternative = _choice_alternative(
+            program, expression.function_name
+        )
+        if alternative is not None:
+            arguments = resolve_unnamed(
+                expression.arguments,
+                [field.name for field in alternative.fields],
+            )
+            _check_arguments(
+                program,
+                None,
+                arguments,
+                bindings,
+                step_name=step_name,
+                expected_fields={
+                    field.name: field.type_name for field in alternative.fields
+                },
+            )
+            return choice.name
         function = next(
             (
                 item
@@ -993,6 +1402,35 @@ def _check_arguments(
             )
 
 
+def _check_learn(program: Program, step: Step, bindings: _Env) -> None:
+    """`learn` keeps a model's answers; only a model step has them."""
+
+    asked = (
+        next((m for m in program.models if m.name == step.call.model_name), None)
+        if isinstance(step.call, ModelCall) and not step.branches
+        else None
+    )
+    if asked is None:
+        raise CheckError(
+            f"Step {step.name!r} cannot learn: only a model step "
+            "(use_model or a thinking step) has answers to keep"
+        )
+    if asked.evidence is not None:
+        raise CheckError(
+            f"Step {step.name!r} cannot learn: an answer given again from what "
+            "was learned has no quotes from the new text to check"
+        )
+    if step.learn_by is not None:
+        known_by = _expression_type(
+            step.learn_by, _Env(bindings), program, step_name=step.name
+        )
+        if known_by != "Text":
+            raise CheckError(
+                f"Step {step.name!r} learns by {known_by!r}; what a question is "
+                "known by must be Text"
+            )
+
+
 def _check_fallbacks(program: Program) -> None:
     """Check `otherwise` by checking the program each fallback would make.
 
@@ -1038,6 +1476,8 @@ def _check_fallbacks(program: Program) -> None:
                         retries=step.retries if step.fallback is None else 0,
                         votes=step.votes if step.fallback is None else 0,
                         escalate=step.escalate if step.fallback is None else None,
+                        learns=step.learns if step.fallback is None else False,
+                        learn_by=step.learn_by if step.fallback is None else None,
                     )
                     for step in workflow.steps
                 ),
@@ -1061,6 +1501,30 @@ def _check_fallbacks(program: Program) -> None:
                     f"but the step returns {first!r}"
                 )
     check(swapped)
+
+
+def _plan_check_fits(program: Program, agent: AgentDecl) -> bool:
+    """Whether an agent's `check` has the shape a plan check must have.
+
+    The check is an ordinary function of the program. It is given the
+    request and every file the plan would write, and gives back what is
+    wrong, one sentence each: `fn NAME(request: Text, files: R[]) -> Text[]`
+    where R is a record with exactly the fields of `PLAN_FILE_FIELDS`.
+    """
+
+    function = next((f for f in program.functions if f.name == agent.check), None)
+    if function is None:
+        return False
+    if len(function.parameters) != 2 or function.output_type != "Text[]":
+        return False
+    first, second = function.parameters
+    if first.type_name != "Text" or not second.type_name.endswith("[]"):
+        return False
+    record = next((r for r in program.records if r.name == second.type_name[:-2]), None)
+    return (
+        record is not None
+        and {field.name: field.type_name for field in record.fields} == PLAN_FILE_FIELDS
+    )
 
 
 def _check_verify(program: Program) -> None:
@@ -1147,11 +1611,15 @@ def _check_branches(program: Program) -> None:
                 continue
             most = max(most, len(step.branches))
             patterns = [pattern for pattern, _ in step.branches]
-            if patterns[-1] is not None or None in patterns[:-1]:
+            # A match on an enum that names every value needs no `case _`;
+            # that is checked with the subject's type.
+            if None in patterns[:-1]:
                 raise CheckError(
                     f"Step {step.name!r} match must end with exactly one `case _`"
                 )
-            seen = [(type(pattern), pattern) for pattern in patterns[:-1]]
+            seen = [
+                (type(pattern), pattern) for pattern in patterns if pattern is not None
+            ]
             if len(seen) != len(set(seen)):
                 raise CheckError(f"Step {step.name!r} match lists a value twice")
             outputs = set()
@@ -1182,7 +1650,19 @@ def _check_branches(program: Program) -> None:
                                 call=step.branches[min(index, len(step.branches) - 1)][
                                     1
                                 ],
-                                branches=(),
+                                # Each case now makes this one call, so the
+                                # program is checked with it, and its cases
+                                # are still there to be checked against the
+                                # subject.
+                                branches=tuple(
+                                    (
+                                        pattern,
+                                        step.branches[
+                                            min(index, len(step.branches) - 1)
+                                        ][1],
+                                    )
+                                    for pattern, _ in step.branches
+                                ),
                             )
                             if step.branches
                             else step
@@ -1198,6 +1678,53 @@ def _check_branches(program: Program) -> None:
 #: Names a record's own function may not take, because a map already
 #: answers to them and a record and a map look alike when a program runs.
 _MAP_METHODS = ("get", "has", "set", "remove", "keys", "values", "length")
+
+
+def _default_kind(value: Any) -> str:
+    """What a default written out is: Text, Number, Bool, Null, or a list."""
+
+    if isinstance(value, ArrayExpr):
+        return "[]"
+    if isinstance(value, UnaryExpr):
+        return "Number"
+    held = value.value
+    if held is None:
+        return "Null"
+    if isinstance(held, bool):
+        return "Bool"
+    return "Text" if isinstance(held, str) else "Number"
+
+
+def _default_fits(kind: str, type_name: str) -> bool:
+    plain = type_name[:-1] if type_name.endswith("?") else type_name
+    if kind == "Null":
+        return type_name.endswith("?")
+    if kind == "[]":
+        return plain.endswith("[]")
+    return plain == kind
+
+
+def _check_defaults(program: Program) -> None:
+    """A default must be a value of the type it stands for."""
+
+    owners = [
+        (f"Record {record.name!r} field", record.fields) for record in program.records
+    ] + [
+        (f"Function {function.name!r} parameter", function.parameters)
+        for function in program.functions
+        if not any(function.name == record.name for record in program.records)
+    ]
+    for owner, items in owners:
+        for item in items:
+            if item.default_value is None:
+                continue
+            kind = _default_kind(item.default_value)
+            if not _default_fits(kind, item.type_name):
+                said = "an empty list" if kind == "[]" else repr(kind)
+                raise CheckError(
+                    f"{owner} {item.name!r} is {item.type_name!r}, so its "
+                    f"default cannot be {said}"
+                )
 
 
 def _check_record_methods(program: Program) -> None:
@@ -1316,9 +1843,19 @@ def plain_names(message: str) -> str:
     return _MADE_NAME_RE.sub(said, message)
 
 
+#: Programs already found sound, by identity, with the shapes they set. A
+#: program is never changed once made, so one that passed passes again;
+#: checking it again on every run is what made a short request slow.
+_CHECKED: dict[int, tuple[weakref.ref[Program], dict[str, frozenset[str]]]] = {}
+
+
 def check(program: Program) -> None:
     """Check a program, saying any fault in the words its writer used."""
 
+    known = _CHECKED.get(id(program))
+    if known is not None and known[0]() is program:
+        SHAPES.set(known[1])
+        return
     try:
         _check(program)
     except CheckError as exc:
@@ -1326,11 +1863,42 @@ def check(program: Program) -> None:
         if plain == str(exc):
             raise
         raise CheckError(plain) from exc
+    key = id(program)
+    _CHECKED[key] = (weakref.ref(program, lambda _ref: _CHECKED.pop(key, None)), SHAPES.get())
 
 
 def _check(program: Program) -> None:
     for workflow in program.workflows:
+        # What a value step may name: the inputs and the earlier steps whose
+        # type is known.
+        seen = {field.name: field.type_name for field in workflow.parameters}
         for step in workflow.steps:
+            if (
+                isinstance(step.call, FunctionCall)
+                and step.call.function_name == VALUE_CALL
+                and not step.branches
+            ):
+                # Left as a value, its type could not be told. A fault in the
+                # value itself, as `n + "x"`, is the one to report.
+                try:
+                    _expression_type(
+                        step.call.arguments[0][1],
+                        _Env(dict(seen)),
+                        program,
+                        step_name=step.name,
+                    )
+                except CheckError as fault:
+                    if "cannot infer" in str(fault):
+                        pass
+                    elif "unknown variable" not in str(fault) or not any(
+                        f"unknown variable {earlier.name!r}" in str(fault)
+                        for earlier in workflow.steps
+                    ):
+                        raise
+            else:
+                found = step.binding_type or _call_output(program, step.call)
+                if found is not None:
+                    seen[step.name] = found
             calls = [step.call, step.fallback, *(c for _, c in step.branches)]
             # Only a value with no call beside it is reported here. Beside a
             # call that is itself wrong, that call's own fault is the one to
@@ -1341,10 +1909,14 @@ def _check(program: Program) -> None:
                 for call in calls
             ):
                 raise CheckError(
-                    f"Step {step.name!r} has a value where a call is needed; a "
-                    "value may stand after 'otherwise' or in a 'case', beside a "
-                    "call whose result type it takes"
+                    f"Step {step.name!r} is a value whose type cannot be told; "
+                    f"write it out, as `{step.name}: Type = ...`, or check the "
+                    "names it uses are earlier steps or the workflow's inputs"
                 )
+    _check_enums(program)
+    _check_choices(program)
+    _check_shapes(program)
+    _check_defaults(program)
     _check_record_methods(program)
     _check_parallel(program)
     if any(
@@ -1434,7 +2006,11 @@ def _check(program: Program) -> None:
     if any(step.verify for workflow in program.workflows for step in workflow.steps):
         _check_verify(program)
         return
-    if any(step.branches for workflow in program.workflows for step in workflow.steps):
+    if any(
+        any(call != step.call for _, call in step.branches)
+        for workflow in program.workflows
+        for step in workflow.steps
+    ):
         _check_branches(program)
         return
     if any(
@@ -1451,6 +2027,7 @@ def _check(program: Program) -> None:
     if program.imports:
         raise CheckError("Unresolved imports: use load_program(path)")
     records = {record.name for record in program.records}
+    choices = {choice.name for choice in program.choices}
     tools = {tool.name: tool for tool in program.tools}
     agents = {agent.name: agent for agent in program.agents}
     workflows = {workflow.name: workflow for workflow in program.workflows}
@@ -1460,12 +2037,34 @@ def _check(program: Program) -> None:
     if len(models) != len(program.models):
         raise CheckError("Duplicate model declaration")
     for model in program.models:
-        if model.input not in records or model.output not in records:
+        if model.input not in records or (
+            model.output not in records and model.output not in choices
+        ):
             raise CheckError(
-                f"Model {model.name!r} requires known input and output records"
+                f"Model {model.name!r} requires a known input record and an "
+                "output record or choice"
             )
         if model.deployment is not None and not model.deployment:
             raise CheckError(f"Model {model.name!r} deployment must not be empty")
+        if model.plain:
+            written = next(
+                (r for r in program.records if r.name == model.output), None
+            )
+            if (
+                written is None
+                or len(written.fields) != 1
+                or written.fields[0].type_name != "Text"
+            ):
+                raise CheckError(
+                    f"Model {model.name!r} answers as text, so its output "
+                    f"{model.output!r} must be a record with exactly one "
+                    "field, of type Text"
+                )
+        if model.evidence is not None and model.output not in records:
+            raise CheckError(
+                f"Model {model.name!r} answers with a choice, so it cannot "
+                "give evidence"
+            )
         temperature = model.parameters.temperature
         if temperature is not None and (
             type(temperature) not in (int, float)
@@ -1510,19 +2109,21 @@ def _check(program: Program) -> None:
                 "non-empty strings of at most 256 characters"
             )
 
-    if len(records) != len(program.records):
-        raise CheckError("Duplicate record declaration")
-    if len(tools) != len(program.tools):
-        raise CheckError("Duplicate tool declaration")
-    if len(agents) != len(program.agents):
-        raise CheckError("Duplicate agent declaration")
-    swarms = {swarm.name: swarm for swarm in program.swarms}
-    if len(swarms) != len(program.swarms):
-        raise CheckError("Duplicate swarm declaration")
-    if len(workflows) != len(program.workflows):
-        raise CheckError("Duplicate workflow declaration")
-    if len(functions) != len(program.functions):
-        raise CheckError("Duplicate function declaration")
+    for kind, named, declared in (
+        ("record", records, program.records),
+        ("tool", tools, program.tools),
+        ("agent", agents, program.agents),
+        ("swarm", {swarm.name: swarm for swarm in program.swarms}, program.swarms),
+        ("workflow", workflows, program.workflows),
+        ("function", functions, program.functions),
+    ):
+        if len(named) != len(declared):
+            repeated = _repeated_name([item.name for item in declared])
+            raise CheckError(
+                f"Duplicate {kind} declaration: {repeated!r} is declared "
+                f"twice; a file declares each {kind} once, so merge the two "
+                "declarations or rename one"
+            )
 
     def workflow_agents(name: str, seen: set[str]) -> set[str]:
         """Return agents used by a workflow, following nested workflow calls."""
@@ -1604,8 +2205,26 @@ def _check(program: Program) -> None:
 
     visited_functions: dict[str, int] = {}
     active_functions: list[str] = []
+    # A constructor is written like a call but is not a function, so it
+    # names no function to recurse into or to reach.
+    constructors = {
+        alternative.name
+        for choice in program.choices
+        for alternative in choice.alternatives
+    }
+
+    def function_calls(function):
+        return tuple(
+            call
+            for call in static_function_references(function)
+            if not (
+                isinstance(call, FunctionCallExpr)
+                and call.function_name in constructors
+            )
+        )
+
     function_graph = {
-        name: tuple(call.function_name for call in static_function_references(function))
+        name: tuple(call.function_name for call in function_calls(function))
         for name, function in functions.items()
     }
     # Check every unannotated vertex, including cycles hidden by DFS memoization.
@@ -1640,7 +2259,7 @@ def _check(program: Program) -> None:
             raise CheckError("Function call depth exceeds 32")
         active_functions.append(name)
         height = 1
-        for call in static_function_references(functions[name]):
+        for call in function_calls(functions[name]):
             height = max(height, 1 + visit_function(call.function_name))
         active_functions.pop()
         if height > 32:
@@ -1726,9 +2345,10 @@ def _check(program: Program) -> None:
             raise CheckError(
                 f"Tool {tool.name!r} has invalid access level {tool.access!r}"
             )
-        if tool.output not in records:
+        if tool.output not in records and tool.output not in choices:
             raise CheckError(
-                f"Tool {tool.name!r} returns unknown record {tool.output!r}"
+                f"Tool {tool.name!r} returns unknown record or choice "
+                f"{tool.output!r}"
             )
         if tool.input is not None and tool.input not in records:
             raise CheckError(
@@ -1737,6 +2357,8 @@ def _check(program: Program) -> None:
         system_problem = declaration_problem(program, tool)
         if system_problem is not None:
             raise CheckError(f"Invalid system tool: {system_problem}")
+
+    _check_stores(program)
 
     for agent in program.agents:
         if agent.model is not None and agent.model not in models:
@@ -1771,6 +2393,19 @@ def _check(program: Program) -> None:
                 raise CheckError(
                     f"Agent {agent.name!r} plans first, so max_steps must be at "
                     "least 2: one turn to plan and one to answer"
+                )
+        if agent.check is not None:
+            if not any(f.name == agent.check for f in program.functions):
+                raise CheckError(
+                    f"Agent {agent.name!r} check {agent.check!r} is not a "
+                    "function declared in the program"
+                )
+            if not _plan_check_fits(program, agent):
+                raise CheckError(
+                    f"Agent {agent.name!r} check {agent.check!r} must be a "
+                    "function `fn NAME(request: Text, files: R[]) -> Text[]`, "
+                    "where R is a record with exactly the fields {path: Text, "
+                    "text: Text, before: Text, exists: Bool}"
                 )
         if (
             type(agent.max_tool_calls) is not int
@@ -1844,14 +2479,32 @@ def _check(program: Program) -> None:
         call_input: str | None
         for step in workflow.steps:
             expected_fields = None
+            if step.learns:
+                _check_learn(program, step, bindings)
             if step.subject is not None:
                 subject_type = _expression_type(
                     step.subject, _Env(bindings), program, step_name=step.name
                 )
-                if subject_type not in ("Text", "Number", "Bool"):
+                values = _enum_values(program, subject_type)
+                if subject_type not in ("Text", "Number", "Bool") and values is None:
                     raise CheckError(
                         f"Step {step.name!r} match expects Text, Number, or "
                         f"Bool, got {subject_type!r}"
+                    )
+                patterns = [pattern for pattern, _ in step.branches]
+                for pattern in patterns:
+                    if values is not None and pattern is not None and (
+                        not isinstance(pattern, str) or pattern not in values
+                    ):
+                        raise CheckError(
+                            f"Enum {subject_type!r} has no value {pattern!r}; "
+                            f"it has: {', '.join(values)}"
+                        )
+                if patterns and patterns[-1] is not None and (
+                    values is None or set(patterns) != set(values)
+                ):
+                    raise CheckError(
+                        f"Step {step.name!r} match must end with exactly one `case _`"
                     )
             if isinstance(step.call, WorkflowCall):
                 child = workflows[step.call.workflow_name]

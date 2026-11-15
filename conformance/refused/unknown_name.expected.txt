@@ -1,0 +1,1 @@
+Check failed: Step 'function area' references unknown variable 'heigth'. Did you mean 'height'?

@@ -1,0 +1,1 @@
+Check failed: Step 'function count statement' cannot assign to 'seen': declare it with 'var' to make it assignable

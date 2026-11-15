@@ -13,8 +13,8 @@ from .ast import Program, ToolDecl
 from .model_steps import strict_json
 from .schema import (
     SchemaValidationError,
-    schema_for_record,
     schema_for_tool_input,
+    schema_for_type,
     schemas_equal,
     validate,
 )
@@ -28,7 +28,9 @@ MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_TIMEOUT_MS = 600_000
 
 _ACCESS_LEVELS = frozenset({"observe", "analyze", "prepare", "execute"})
-_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
+# Tool names and operations are also Kosika identifiers, which may begin with
+# an underscore; ids keep the same bounded, namespaced shape.
+_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,127}$")
 _VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 _AUTHORITY_RE = re.compile(r"^[a-z][a-z0-9_.-]*:[a-z][a-z0-9_.-]*$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -622,7 +624,7 @@ def bind_component(
     if tool.access != contract.access:
         raise ComponentContractError("Component access does not match the Kosika tool")
     input_schema = schema_for_tool_input(program, tool.input)
-    output_schema = schema_for_record(program, tool.output)
+    output_schema = schema_for_type(program, tool.output)
     if not schemas_equal(input_schema, contract.input_schema):
         raise ComponentContractError(
             "Component input schema does not match the Kosika tool input record"

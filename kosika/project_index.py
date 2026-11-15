@@ -1,7 +1,7 @@
 """Everything in a folder of Kosika programs, in one list, with suggestions.
 
 Studio shows one agent at a time. This is the view across all of them:
-every agent, workflow, model, tool, memory, board and record, each with the
+every agent, workflow, model, tool, memory, board, record and choice, each with the
 program it belongs to and its line, so a name can be searched for in one
 place.
 
@@ -17,6 +17,7 @@ from typing import Any
 
 from .ast import AgentCall, ModelCall, Program, ToolCall, WorkflowCall
 from .modules import load_program
+from .parser import parse
 from .project_map import NOTE_FILE, _lines, _step_lines, _tool_item
 
 #: Declarations the language adds for itself, which nobody wrote.
@@ -41,6 +42,10 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
     def add(kind: str, name: str, detail: str, declared: str | None = None) -> None:
+        if (declared or kind, name) not in lines:
+            # Imported from another file, such as the standard library:
+            # that file lists it.
+            return
         items.append(
             {
                 "kind": kind,
@@ -51,6 +56,9 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
         )
 
     for workflow in program.workflows:
+        if ("workflow", workflow.name) not in lines:
+            # Imported from another file: that file lists it.
+            continue
         given = ", ".join(f"{p.name}: {p.type_name}" for p in workflow.parameters)
         add(
             "workflow",
@@ -77,6 +85,12 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
         fields = ", ".join(f"{f.name}: {f.type_name}" for f in record.fields)
         if (("record", record.name)) in lines:
             add("record", record.name, fields)
+    for choice in program.choices:
+        alternatives = ", ".join(
+            alternative.name for alternative in choice.alternatives
+        )
+        if (("choice", choice.name)) in lines:
+            add("choice", choice.name, alternatives)
     for swarm in program.swarms:
         add("swarm", swarm.name, "agents: " + ", ".join(swarm.agents))
     return items
@@ -143,6 +157,13 @@ def _suggestions(program: Program, source: str, folder: Path) -> list[dict[str, 
     }
     used_models.update(step.escalate for _, step, _ in calls if step.escalate)
     used_models.update(agent.model for agent in program.agents if agent.model)
+    # A thinking step that names its model (`classify ... using judge`) is
+    # lowered to a generated model whose provider is the one it named.
+    used_models.update(
+        model.provider
+        for model in program.models
+        if model.provider and model.name in used_models
+    )
     for model in program.models:
         if (
             model.provider is None
@@ -159,8 +180,18 @@ def _suggestions(program: Program, source: str, folder: Path) -> list[dict[str, 
         call.workflow_name for _, _, call in calls if isinstance(call, WorkflowCall)
     }
     called.update(swarm.workflow for swarm in program.swarms)
+    # The loaded program is the whole import tree; what this file exports is
+    # read from the file itself.
+    exported = set(parse(source).exports)
     for workflow in program.workflows:
-        if workflow.name != "main" and workflow.name not in called:
+        # An exported workflow is there for others to run, and an imported one
+        # is its own file's business.
+        if (
+            workflow.name != "main"
+            and workflow.name not in called
+            and workflow.name not in exported
+            and ("workflow", workflow.name) in lines
+        ):
             say(
                 "unused-workflow",
                 f"Workflow {workflow.name} is never run by another workflow.",

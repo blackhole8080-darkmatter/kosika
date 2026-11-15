@@ -40,20 +40,6 @@ function skillArguments(root) {
   ]);
 }
 
-function modelArguments() {
-  const configuration = vscode.workspace.getConfiguration("kosika");
-  const model = configuration.get("modelName", "").trim();
-  if (!model) {
-    return [];
-  }
-  return [
-    "--model-url",
-    configuration.get("modelUrl", "http://localhost:11434/v1"),
-    "--model",
-    model,
-  ];
-}
-
 function runKosika(filePath, argumentsList) {
   const configuration = vscode.workspace.getConfiguration("kosika");
   const pythonPath = configuration.get("pythonPath", "python");
@@ -516,32 +502,6 @@ async function checkFile() {
   }
 }
 
-async function explainFile() {
-  try {
-    const filePath = activeKosikaFile();
-    const task = await vscode.window.showInputBox({
-      prompt: "What should Kosika explain?",
-      value: "Explain this Kosika file and its agent permissions.",
-    });
-    if (!task) {
-      return;
-    }
-    await runKosika(filePath, [
-      "assistant",
-      filePath,
-      "--task",
-      task,
-      "--json",
-      ...modelArguments(),
-    ]);
-    vscode.window.showInformationMessage("Kosika explanation is available in the Kosika output panel.");
-    output.show(true);
-  } catch (error) {
-    vscode.window.showErrorMessage(`Kosika explanation failed: ${error.message}`);
-    output.show(true);
-  }
-}
-
 async function generateMindmap() {
   try {
     const filePath = activeKosikaFile();
@@ -553,29 +513,6 @@ async function generateMindmap() {
     await vscode.window.showTextDocument(document, { preview: false });
   } catch (error) {
     vscode.window.showErrorMessage(`Kosika mindmap failed: ${error.message}`);
-    output.show(true);
-  }
-}
-
-async function generateUnifiedMindmap() {
-  try {
-    const filePath = activeKosikaFile();
-    const root = workspaceRoot(filePath);
-    const mermaid = await runKosika(filePath, [
-      "unified",
-      filePath,
-      "--project",
-      root,
-      "--format",
-      "mermaid",
-    ]);
-    const document = await vscode.workspace.openTextDocument({
-      language: "markdown",
-      content: `\`\`\`mermaid\n${mermaid}\n\`\`\`\n`,
-    });
-    await vscode.window.showTextDocument(document, { preview: false });
-  } catch (error) {
-    vscode.window.showErrorMessage(`Kosika unified mindmap failed: ${error.message}`);
     output.show(true);
   }
 }
@@ -628,9 +565,7 @@ function activate(context) {
     vscode.workspace.onDidSaveTextDocument(saveDocument),
     vscode.workspace.onDidCloseTextDocument(closeDocument),
     vscode.commands.registerCommand("kosika.check", checkFile),
-    vscode.commands.registerCommand("kosika.explain", explainFile),
     vscode.commands.registerCommand("kosika.mindmap", generateMindmap),
-    vscode.commands.registerCommand("kosika.unifiedMindmap", generateUnifiedMindmap),
     vscode.commands.registerCommand("kosika.skills", inspectSkills),
   );
   registerWorkspaceWatcher(context);

@@ -1,0 +1,1 @@
+Check failed: Function 'greet' parameter 'loud' is 'Bool', so its default cannot be 'Text'

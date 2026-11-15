@@ -1,0 +1,12 @@
+// Refused: a vote is won by more than half, so the count is odd.
+
+record Msg { text: Text }
+
+model fast {
+  input: Msg
+  output: Msg
+}
+
+workflow main(m: Msg) -> Msg {
+  said = use_model fast(m.text) vote 4
+}

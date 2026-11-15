@@ -1,5 +1,7 @@
 """Canonical named-argument signatures for pure function values."""
 
+from contextvars import ContextVar
+
 from .ast import Field, FunctionDecl
 
 
@@ -26,7 +28,10 @@ def signature(type_name: str) -> tuple[tuple[Field, ...], str] | None:
                     parts.append(type_name[start:index])
                 if type_name[index + 1 : index + 3] != "->":
                     raise ValueError("Invalid function type")
-                fields = tuple(Field(*part.split(":", 1)) for part in parts)
+                fields = tuple(
+                    Field(name, kind)
+                    for name, kind in (part.split(":", 1) for part in parts)
+                )
                 return fields, type_name[index + 3 :]
         elif char == "," and depth == 1:
             parts.append(type_name[start:index])
@@ -66,16 +71,35 @@ def is_array(type_name: str) -> bool:
     return type_name.endswith("[]") and signature(type_name) is None
 
 
+#: Which records each shape of the program being checked is: shape name to
+#: record names. Set by the checker for the program it checks.
+SHAPES: ContextVar[dict[str, frozenset[str]]] = ContextVar("SHAPES", default={})
+
+
 def assignable(actual: str, expected: str) -> bool:
     """Whether a value of type ``actual`` may be stored where ``expected`` is.
 
-    Types match exactly, with one widening: an optional `T?` also accepts a
-    plain `T` and `null`.
+    Types match exactly, with two widenings: an optional `T?` also accepts a
+    plain `T` and `null`, and a shape accepts every record that is it, alone,
+    in a list or optional.
     """
 
     if actual == expected:
         return True
-    return is_optional(expected) and actual in ("Null", expected[:-1])
+    shapes = SHAPES.get()
+    if actual in shapes.get(expected, ()):
+        return True
+    if (
+        shapes
+        and is_array(actual)
+        and is_array(expected)
+        and expected[:-2] in shapes
+        and assignable(actual[:-2], expected[:-2])
+    ):
+        return True
+    return is_optional(expected) and (
+        actual in ("Null", expected[:-1]) or assignable(actual, expected[:-1])
+    )
 
 
 #: The type of `break` and `continue`, which leave the loop instead of

@@ -1,0 +1,24 @@
+// Refused: a step that changes the world has no fallback; after it fails,
+// whether it happened is not known.
+
+record Change { id: Text }
+record Done { id: Text }
+
+tool apply {
+  source mcp "shop"
+  operation: "apply"
+  access: execute
+  input: Change
+  output: Done
+}
+
+agent clerk {
+  can: [apply]
+}
+
+fn skip(change: Change) -> Done { return {id: change.id} }
+
+workflow main(change: Change) -> Done {
+  require approval
+  done = execute clerk.apply(id: change.id) otherwise skip(change)
+}

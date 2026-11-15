@@ -1,0 +1,5 @@
+PASS  most answers win
+PASS  listed models take turns
+PASS  answers that do not agree fall to otherwise
+PASS  a refused answer goes to the stronger model
+4 passed, 0 failed

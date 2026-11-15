@@ -1,0 +1,7 @@
+// Refused: a call that leaves out an argument the function takes.
+
+fn between(n: Number, low: Number, high: Number) -> Bool {
+  return n >= low and n <= high
+}
+
+test "never runs" { expect between(n: 5, low: 1) }

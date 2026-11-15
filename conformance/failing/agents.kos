@@ -1,0 +1,84 @@
+// Conformance: what a failing agent step says.
+
+record Question { text: Text }
+record Answer { text: Text did: Text[] }
+record Found { text: Text }
+record Change { text: Text }
+
+tool notes {
+  source mcp "notes"
+  operation: "search"
+  access: observe
+  input: Question
+  output: Found
+}
+
+tool write {
+  source mcp "notes"
+  operation: "write"
+  access: execute
+  input: Change
+  output: Found
+}
+
+model thinker {
+  input: Question
+  output: Answer
+}
+
+agent reader {
+  model: thinker
+  can: [notes]
+}
+
+agent writer {
+  model: thinker
+  can: [write]
+}
+
+agent plain {
+  model: thinker
+  can: []
+}
+
+workflow read(question: Question) -> Answer {
+  answer = ask reader(question.text)
+}
+
+workflow change(question: Question) -> Answer {
+  require approval
+  answer = ask writer(question.text)
+}
+
+workflow simple(question: Question) -> Answer {
+  answer = ask plain(question.text)
+}
+
+test "an agent tool the test does not answer" {
+  answers thinker: [{text: "hi", did: []}]
+  r = read({text: "x"})
+  expect r.text == "hi"
+}
+
+test "an agent that can change the world needs an approval" {
+  answers thinker: [{text: "hi", did: []}]
+  r = change({text: "x"})
+  expect r.text == "hi"
+}
+
+test "an answer in the wrong shape twice" {
+  answers thinker: [{words: "a"}, {words: "b"}]
+  r = simple({text: "x"})
+  expect r.text == "b"
+}
+
+test "an answer in the wrong shape, and nothing left to ask" {
+  answers thinker: [{words: "a"}]
+  r = simple({text: "x"})
+  expect r.text == "a"
+}
+
+test "an agent with no answer" {
+  r = simple({text: "x"})
+  expect r.text == "x"
+}

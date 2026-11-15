@@ -22,7 +22,8 @@ What a fetch is, exactly:
 * Nothing is sent but the request itself: no cookies, no login, no form, no
   body. It cannot post, submit, or sign in to anything.
 * A redirect is followed only to another allowed address, at most five times.
-* At most 2 MiB is read, only `text/html` or `text/plain`, within 20 seconds.
+* At most 2 MiB is read, only `text/html`, `text/plain` or a feed (Atom or
+  RSS, such as arXiv's lists of new papers), within 20 seconds.
 * The page is reduced to its readable text, at most 20,000 characters, with
   scripts, styles, and markup removed. The address actually read is returned
   with it, so an answer can say where it came from.
@@ -40,6 +41,7 @@ from __future__ import annotations
 
 import html.parser
 import ipaddress
+import zlib
 import re
 import urllib.error
 import urllib.request
@@ -163,6 +165,117 @@ class _Text(html.parser.HTMLParser):
             self._add(data)
 
 
+#: Feeds: what a site lists as new, such as arXiv's newest papers.
+FEED_TYPES = (
+    "application/atom+xml",
+    "application/rss+xml",
+    "application/xml",
+    "text/xml",
+)
+
+
+def _bare(tag: str) -> str:
+    """A tag without its namespace prefix: dc:date reads as date, as RDF
+    feeds such as bioRxiv's write their authors and dates."""
+
+    return tag.split(":")[-1]
+
+
+_CDATA = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.S)
+
+
+class _Feed(html.parser.HTMLParser):
+    """A feed as plain lines: each entry begins with `---`, then one line for
+    each of its title, date, authors, link and summary that it has. Atom
+    gives the link as an attribute, RSS as the link tag's own words, and an
+    RDF feed as the item's about attribute; all three are read, and the same
+    line is not said twice in one entry, as feeds that say a field two ways
+    (a title and a dc:title) are read once."""
+
+    _ENTRY = frozenset(("entry", "item"))
+    _LABELS = {
+        "title": "Title",
+        "published": "Published",
+        "pubdate": "Published",
+        "date": "Published",
+        "updated": "Updated",
+        "name": "Author",
+        "creator": "Author",
+        "summary": "Summary",
+        "description": "Summary",
+        "link": "Link",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.lines: list[str] = []
+        self._entry = 0
+        self._label: str | None = None
+        self._text: list[str] = []
+        self._said: list[str] = []
+
+    def _say(self, line: str) -> None:
+        if line not in self._said:
+            self._said.append(line)
+            self.lines.append(line)
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        bare = _bare(tag)
+        if bare in self._ENTRY:
+            self._entry += 1
+            self.lines.append("---")
+            self._said = []
+            about = dict(attrs).get("rdf:about", "")
+            if about:
+                self._say(f"Link: {about}")
+        elif self._entry and bare == "link":
+            found = dict(attrs)
+            href = found.get("href", "")
+            rel = found.get("rel", "alternate")
+            if href and rel == "alternate":
+                self._say(f"Link: {href}")
+            elif not href:
+                self._label, self._text = "Link", []
+        elif self._entry and bare in self._LABELS:
+            self._label, self._text = self._LABELS[bare], []
+
+    def handle_endtag(self, tag: str) -> None:
+        bare = _bare(tag)
+        if bare in self._ENTRY and self._entry:
+            self._entry -= 1
+        elif self._label is not None and self._LABELS.get(bare) == self._label:
+            said = " ".join("".join(self._text).split())
+            if said:
+                self._say(f"{self._label}: {said}")
+            self._label = None
+
+    def handle_data(self, data: str) -> None:
+        if self._label is not None:
+            # Newer Pythons (3.13.4, 3.12.11 and on) hand a CDATA section to
+            # handle_data whole, its wrapper included; the words are inside.
+            self._text.append(_CDATA.sub(lambda found: found.group(1), data))
+
+    def unknown_decl(self, data: str) -> None:
+        # A feed may wrap a field's words in <![CDATA[...]]>; the words are
+        # the field's. In an HTML page such a section stays dropped, as
+        # browsers treat it as nothing.
+        if data.startswith("CDATA["):
+            self.handle_data(data[len("CDATA[") :])
+
+    def handle_comment(self, data: str) -> None:
+        # ... and some read it as a bogus comment, "[CDATA[ words ]]".
+        if data.startswith("[CDATA[") and data.endswith("]]"):
+            self.handle_data(data[len("[CDATA[") : -2])
+
+
+def readable_feed(body: str) -> str:
+    """The entries of an Atom or RSS feed, one labelled line each."""
+
+    parser = _Feed()
+    parser.feed(body)
+    return "\n".join(parser.lines)
+
+
 def _tidy(parts: list[str]) -> str:
     lines = [" ".join(line.split()) for line in "".join(parts).splitlines()]
     return "\n".join(line for line in lines if line)
@@ -172,13 +285,13 @@ def readable(body: str, is_html: bool) -> tuple[str, str]:
     """(title, text) of a page body."""
 
     if not is_html:
-        return "", body.strip()[:MAX_CHARACTERS]
+        return "", body.strip()
     parser = _Text()
     parser.feed(body)
     main = _tidy(parser.main)
     # A page that marks its content gets just that; others get everything.
     text = main if len(main) >= 200 else _tidy(parser.parts)
-    return " ".join("".join(parser.title).split()), text[:MAX_CHARACTERS]
+    return " ".join("".join(parser.title).split()), text
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -189,7 +302,11 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 def _open(url: str) -> tuple[int, dict[str, str], bytes]:
     opener = urllib.request.build_opener(_NoRedirect())
     request = urllib.request.Request(
-        url, headers={"User-Agent": USER_AGENT, "Accept": "text/html, text/plain"}
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html, text/plain, application/atom+xml, application/rss+xml",
+        },
     )
     try:
         with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
@@ -209,7 +326,36 @@ def _open(url: str) -> tuple[int, dict[str, str], bytes]:
 
 
 def fetch(url: str, sites: Sequence[str], opener: Opener = _open) -> dict[str, str]:
-    """Read one page from an allowed site as `{url, title, text}`."""
+    """Read one page from an allowed site as `{url, title, text}`: the first
+    MAX_CHARACTERS of its text."""
+
+    page = _whole(url, sites, opener)
+    return {**page, "text": page["text"][:MAX_CHARACTERS]}
+
+
+def fetch_from(
+    url: str, start: Any, sites: Sequence[str], opener: Opener = _open
+) -> dict[str, Any]:
+    """One part of a long page, as `{url, title, text, next}`: at most
+    MAX_CHARACTERS of its text from character `start`, and where the part
+    after it begins, or -1 when this one ends the page. A paper of 80,000
+    characters is read in four calls."""
+
+    if isinstance(start, bool) or not isinstance(start, (int, float)) or start < 0 or start != int(start):
+        raise WebError(f"start must be a whole number from 0, got {start!r}")
+    page = _whole(url, sites, opener)
+    begin = int(start)
+    end = begin + MAX_CHARACTERS
+    return {
+        "url": page["url"],
+        "title": page["title"],
+        "text": page["text"][begin:end],
+        "next": end if end < len(page["text"]) else -1,
+    }
+
+
+def _whole(url: str, sites: Sequence[str], opener: Opener) -> dict[str, str]:
+    """The whole readable text of one page from an allowed site."""
 
     current = allowed_address(url, sites)
     for _ in range(MAX_REDIRECTS + 1):
@@ -223,8 +369,15 @@ def fetch(url: str, sites: Sequence[str], opener: Opener = _open) -> dict[str, s
         if status != 200:
             raise WebError(f"{current} answered with status {status}")
         kind = headers.get("content-type", "").split(";")[0].strip().lower()
-        if kind not in ("text/html", "text/plain", "application/xhtml+xml"):
+        if kind not in ("text/html", "text/plain", "application/xhtml+xml", *FEED_TYPES):
             raise WebError(f"{current} is {kind or 'of unknown type'}, not a text page")
+        if headers.get("content-encoding", "").strip().lower() in ("gzip", "x-gzip"):
+            # Sent packed although nothing asked for it, as some sites do.
+            unpacker = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            try:
+                body = unpacker.decompress(body, MAX_BYTES + 1)
+            except zlib.error as exc:
+                raise WebError(f"{current} sent a packed page that cannot be read") from exc
         if len(body) > MAX_BYTES:
             raise WebError(f"{current} is larger than 2 MiB")
         match = re.search(r"charset=([\w-]+)", headers.get("content-type", ""))
@@ -234,7 +387,10 @@ def fetch(url: str, sites: Sequence[str], opener: Opener = _open) -> dict[str, s
             )
         except LookupError:
             decoded = body.decode("utf-8", errors="replace")
-        title, text = readable(decoded, kind != "text/plain")
+        if kind in FEED_TYPES:
+            title, text = "", readable_feed(decoded)
+        else:
+            title, text = readable(decoded, kind != "text/plain")
         return {"url": current, "title": title, "text": text}
     raise WebError(f"{url} redirected more than {MAX_REDIRECTS} times")
 
@@ -244,7 +400,9 @@ def bind_web_tool(
 ) -> Callable[[ToolDecl, dict[str, Any]], Any]:
     allowed = tuple(clean_site(site) for site in sites)
 
-    def run(_tool: ToolDecl, arguments: dict[str, Any]) -> Any:
+    def run(tool: ToolDecl, arguments: dict[str, Any]) -> Any:
+        if tool.operation == "fetch_from":
+            return fetch_from(arguments["url"], arguments["start"], allowed, opener)
         return fetch(arguments["url"], allowed, opener)
 
     return run

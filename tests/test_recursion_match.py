@@ -49,7 +49,8 @@ class RecursionMatchTests(unittest.TestCase):
             run(parse(runnable(function, "compute(n: 3)")), "main", None)
         function = function.replace("recurse 3", "recurse 128")
         self.assertEqual(
-            run(parse(runnable(function, "compute(n: 126)")), "main", None), {"value": 9}
+            run(parse(runnable(function, "compute(n: 126)")), "main", None),
+            {"value": 9},
         )
         with self.assertRaisesRegex(RuntimeError, "Function call depth exceeds 128"):
             run(parse(runnable(function, "compute(n: 127)")), "main", None)

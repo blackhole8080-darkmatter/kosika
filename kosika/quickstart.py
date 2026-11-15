@@ -20,7 +20,7 @@ from .starter import StarterError, create_starter
 
 OLLAMA = "http://localhost:11434"
 #: Starter agents made in a new folder, in this order.
-STARTERS = ("support", "expense", "notes")
+STARTERS = ("support", "expense", "notes", "researcher")
 #: Models tried first when several are installed: known to follow the
 #: structured answers Kosika asks for, largest first.
 PREFERRED = ("qwen2.5:14b", "qwen2.5:7b", "llama3.1:8b", "qwen2.5:3b", "llama3.2:3b")
@@ -141,8 +141,7 @@ def start_plan(
         ]
     lines += [
         "  Granted: nothing. No agent can read your files, start programs or reach the web.",
-        "  To let agents read one folder, stop this and run:",
-        f'    kosika studio "{folder}" --allow-folder YOUR_FOLDER'
-        + (f" --model {chosen} --model-protocol ollama" if chosen else ""),
+        "  To let agents work in one folder, open Permissions in Studio and",
+        "  press Choose a folder. You pick it in this computer's own folder window.",
     ]
     return arguments, lines

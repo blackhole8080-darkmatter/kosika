@@ -1,0 +1,106 @@
+// Smart Agent using Tools to Access Frameworks
+// This uses actual Kosika syntax with tools that call the Python frameworks
+
+// Define input/output records
+record QueryInput {
+  query: Text
+  max_results: Number
+}
+
+record SearchResult {
+  title: Text
+  url: Text
+  snippet: Text
+}
+
+record PlanningInput {
+  initial_state: Text
+  goal_state: Text
+  actions: Text[]
+}
+
+record PlanningResult {
+  path: Text[]
+  cost: Number
+}
+
+record KnowledgeInput {
+  entity_id: Text
+  relation_type: Text
+}
+
+record KnowledgeResult {
+  related_entities: Text[]
+  path: Text[]
+}
+
+// Tool declarations for accessing Python frameworks
+tool use_skill {
+  source python "kosika.skills_framework"
+  operation: "execute_skill"
+  access: execute
+  input: QueryInput
+  output: SearchResult[]
+}
+
+tool run_search {
+  source python "kosika.algorithms"
+  operation: "search"
+  access: execute
+  input: PlanningInput
+  output: PlanningResult
+}
+
+tool query_knowledge {
+  source python "kosika.knowledge_graph"
+  operation: "query_graph"
+  access: observe
+  input: KnowledgeInput
+  output: KnowledgeResult
+}
+
+// Agent that uses algorithmic planning
+workflow planning_agent(problem: PlanningInput) -> PlanningResult {
+  step plan {
+    let result = execute run_search(input: problem)
+    return result
+  }
+}
+
+// Agent that uses knowledge graph
+workflow knowledge_agent(query: KnowledgeInput) -> KnowledgeResult {
+  step query {
+    let result = execute query_knowledge(input: query)
+    return result
+  }
+}
+
+// Composite agent that uses multiple tools
+workflow smart_composite_agent(query: Text) -> Text {
+  step plan_approach {
+    let planning_input: PlanningInput = {
+      initial_state: "start",
+      goal_state: query,
+      actions: ["search", "reason", "act"]
+    }
+
+    let plan = execute run_search(input: planning_input)
+    return plan.path[0]
+  }
+
+  step get_knowledge {
+    let knowledge_input: KnowledgeInput = {
+      entity_id: query,
+      relation_type: "related_to"
+    }
+
+    let knowledge = execute query_knowledge(input: knowledge_input)
+    return knowledge.related_entities[0]
+  }
+
+  step combine {
+    let approach = plan_approach
+    let context = get_knowledge
+    return "Using " + approach + " with context: " + context
+  }
+}

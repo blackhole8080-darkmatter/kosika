@@ -1,0 +1,8 @@
+PASS  measuring and reaching in
+PASS  a list is never changed; a new one is made
+PASS  parts and order
+PASS  finding
+PASS  a loop that gathers, filters and returns early
+PASS  a loop that makes a new list
+PASS  lists of lists
+7 passed, 0 failed

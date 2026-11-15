@@ -1,0 +1,12 @@
+// Refused: only a model step is asked again.
+
+record Question { text: Text }
+record Answer { text: Text }
+
+fn echo(question: Question) -> Answer {
+  return {text: question.text}
+}
+
+workflow main(question: Question) -> Answer {
+  answer = echo(question) retry 2
+}

@@ -1,0 +1,19 @@
+FAIL  an answer that is never asked for
+      line 43: 1 answer(s) for 'stock_of' were never asked for
+FAIL  a tool with no answer left
+      line 52: Scripted tool 'stock_of' has no answer left
+FAIL  an answer without a field the tool gives
+      line 58: $: missing required property 'left'
+FAIL  an answer of the wrong kind
+      line 64: $.left: expected number, got str
+FAIL  an answer with a field the tool does not give
+      line 70: $: unknown properties ['colour']
+FAIL  a tool with no scripted answers
+      line 75: Mock MCP operation is not allowlisted: shop/stock_of
+FAIL  a step that fails
+      line 81: stock cannot be below zero
+FAIL  a tool that changes the world needs an approval
+      line 86: Workflow tool 'set_stock' requires a verified approval record
+FAIL  a workflow whose result is not what was expected
+      line 93: expected r == {left: 4} (left is {"left": 3}, right is {"left": 4})
+0 passed, 9 failed

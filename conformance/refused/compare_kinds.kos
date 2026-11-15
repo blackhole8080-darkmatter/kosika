@@ -1,0 +1,5 @@
+// Refused: a text and a number are never compared.
+
+fn is_ten(text: Text) -> Bool {
+  return text == 10
+}

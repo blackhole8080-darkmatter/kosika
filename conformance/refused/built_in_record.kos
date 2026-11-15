@@ -1,0 +1,5 @@
+// Refused: a record the language supplies may be declared only as it is.
+
+record Reply { text: Text words: Number }
+
+model assistant

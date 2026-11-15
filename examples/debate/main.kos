@@ -1,0 +1,307 @@
+// Ananta-style debate system: adversarial multi-agent reasoning
+//
+// A proposer, critic, and multiple judges debate a question to a
+// grounded answer, bounded by round limits, cost ceilings, and a
+// five-part Constitution.
+//
+// Usage:
+//   kosika run main.kos --input debate_input.json --model-fixture debate_responses.json
+//   kosika run main.kos --input debate_input.json --model YOUR_MODEL
+
+import "std/text.kos"
+
+// Input: the question to debate, context, and limits
+record DebateInput {
+  question: Text
+  context: Text
+  max_rounds: Number
+  max_cost: Number
+}
+
+// One argument in the debate
+record Argument {
+  agent: Text
+  role: Text
+  claim: Text
+  evidence: Text[]
+  reasoning: Text
+  confidence: Number
+}
+
+// One round of the debate
+record Round {
+  number: Number
+  proposal: Argument
+  critique: Argument
+  judgments: Argument[]
+}
+
+// The final consensus
+record Consensus {
+  answer: Text
+  confidence: Number
+  reasoning: Text
+  evidence: Text[]
+  rounds: Number
+  total_cost: Number
+  agreement_score: Number
+}
+
+// Model for all reasoning agents
+model reasoner {
+  input: DebateInput
+  output: Argument
+}
+
+// The proposer presents an initial solution
+agent proposer {
+  model: reasoner
+  max_steps: 1
+}
+
+// The critic challenges the proposal
+agent critic {
+  model: reasoner
+  max_steps: 1
+}
+
+// Judges evaluate the arguments
+agent judge {
+  model: reasoner
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- Constitution rules
+
+fn check_groundedness(arg: Argument) -> Bool {
+  // Rule 1: Every claim must cite evidence
+  return arg.evidence.length() > 0
+}
+
+fn check_relevance(arg: Argument, question: Text) -> Bool {
+  // Rule 2: Arguments must address the core question: the claim names
+  // something the question is about.
+  let claim = arg.claim.lower()
+  for word in keywords(question, 3) {
+    if claim.contains(word) { return true }
+  }
+  return false
+}
+
+fn check_coherence(arg: Argument) -> Bool {
+  // Rule 3: Claims must be logically consistent
+  // Simplified: no contradictions within the argument
+  return arg.confidence >= 0 and arg.confidence <= 1
+}
+
+fn check_charity(critique: Argument, proposal: Argument) -> Bool {
+  // Rule 4: Interpret opposing arguments fairly
+  // Simplified: the critique names something the proposal said
+  let reasoning = critique.reasoning.lower()
+  for word in keywords(proposal.claim, 3) {
+    if reasoning.contains(word) { return true }
+  }
+  return false
+}
+
+fn check_transparency(arg: Argument) -> Bool {
+  // Rule 5: Clearly state uncertainties
+  return arg.reasoning.lower().contains("uncertain") or arg.reasoning.lower().contains("may") or arg.confidence < 1.0
+}
+
+// ---------------------------------------------------------------- Debate workflow
+
+// NOTE: This is a simplified single-step version demonstrating multi-agent structure.
+// One model call stands in for the whole round: the critic and judge agents are
+// declared above but not yet exercised, so the answer is the proposer's own.
+
+workflow main(input: DebateInput) -> Consensus {
+  budget 120 seconds
+  proposal = use_model reasoner(input.question, input.context, input.max_rounds, input.max_cost)
+  result = compute_full_consensus(input, proposal)
+}
+
+fn compute_full_consensus(input: DebateInput, proposal: Argument) -> Consensus {
+  // For this simplified version, use the proposal as the consensus
+  // In a full implementation, this would call critic and judge agents
+  return {
+    answer: proposal.claim,
+    confidence: proposal.confidence,
+    reasoning: proposal.reasoning,
+    evidence: proposal.evidence,
+    rounds: 1,
+    total_cost: 0.05,
+    agreement_score: proposal.confidence
+  }
+}
+
+fn compute_consensus(rounds: Round[], input: DebateInput) -> Consensus {
+  if rounds.length() == 0 {
+    return {
+      answer: "No debate occurred",
+      confidence: 0.0,
+      reasoning: "Rounds limit or cost ceiling reached without completing any round",
+      evidence: [],
+      rounds: 0,
+      total_cost: 0.0,
+      agreement_score: 0.0
+    }
+  }
+  
+  // Gather all final judgments from the last round
+  let last_round = rounds[rounds.length() - 1]
+  var confidences: Number[] = []
+  
+  for judgment in last_round.judgments {
+    confidences = confidences.concat([judgment.confidence])
+  }
+  
+  // Average confidence as agreement score
+  var sum = 0.0
+  for c in confidences { sum = sum + c }
+  let agreement_score = sum / confidences.length()
+  
+  // Use the most confident judgment as the answer
+  var best_judgment = last_round.judgments[0]
+  var best_confidence = best_judgment.confidence
+  
+  for judgment in last_round.judgments {
+    if judgment.confidence > best_confidence {
+      best_judgment = judgment
+      best_confidence = judgment.confidence
+    }
+  }
+  
+  // Collect all evidence
+  var all_evidence: Text[] = []
+  for round in rounds {
+    all_evidence = all_evidence.concat(round.proposal.evidence)
+    all_evidence = all_evidence.concat(round.critique.evidence)
+    for judgment in round.judgments {
+      all_evidence = all_evidence.concat(judgment.evidence)
+    }
+  }
+  
+  return {
+    answer: best_judgment.claim,
+    confidence: agreement_score,
+    reasoning: best_judgment.reasoning,
+    evidence: all_evidence,
+    rounds: rounds.length(),
+    total_cost: rounds.length() * 0.05,
+    agreement_score: agreement_score
+  }
+}
+
+// ---------------------------------------------------------------- Tests
+
+test "constitution rules are enforced" {
+  valid_arg: Argument = {
+    agent: "test",
+    role: "proposer",
+    claim: "The answer is X",
+    evidence: ["Source A says X"],
+    reasoning: "This is uncertain but likely",
+    confidence: 0.8
+  }
+  
+  expect check_groundedness(valid_arg) == true
+  expect check_relevance(valid_arg, "What is the answer?") == true
+  expect check_relevance(valid_arg, "How tall is the tower?") == false
+  expect check_coherence(valid_arg) == true
+  expect check_transparency(valid_arg) == true
+}
+
+test "charity rule requires acknowledgment" {
+  proposal: Argument = {
+    agent: "proposer",
+    role: "proposer",
+    claim: "The solution is X",
+    evidence: ["Evidence"],
+    reasoning: "Reasoning here",
+    confidence: 0.9
+  }
+  
+  charitable_critique: Argument = {
+    agent: "critic",
+    role: "critic",
+    claim: "However, X has issues",
+    evidence: ["Counter-evidence"],
+    reasoning: "The solution is X has issues",
+    confidence: 0.7
+  }
+  
+  uncharitable_critique: Argument = {
+    agent: "critic",
+    role: "critic",
+    claim: "This is wrong",
+    evidence: ["Counter-evidence"],
+    reasoning: "This is completely wrong",
+    confidence: 0.7
+  }
+  
+  expect check_charity(charitable_critique, proposal) == true
+  expect check_charity(uncharitable_critique, proposal) == false
+}
+
+test "consensus computation aggregates judgments" {
+  round: Round = {
+    number: 1,
+    proposal: {
+      agent: "proposer",
+      role: "proposer",
+      claim: "Proposal A",
+      evidence: ["E1"],
+      reasoning: "Reasoning",
+      confidence: 0.8
+    },
+    critique: {
+      agent: "critic",
+      role: "critic",
+      claim: "Critique",
+      evidence: ["E2"],
+      reasoning: "Reasoning",
+      confidence: 0.7
+    },
+    judgments: [
+      {
+        agent: "judge1",
+        role: "judge",
+        claim: "Answer X",
+        evidence: ["E3"],
+        reasoning: "Reasoning",
+        confidence: 0.9
+      },
+      {
+        agent: "judge2",
+        role: "judge",
+        claim: "Answer X",
+        evidence: ["E4"],
+        reasoning: "Reasoning",
+        confidence: 0.8
+      },
+      {
+        agent: "judge3",
+        role: "judge",
+        claim: "Answer Y",
+        evidence: ["E5"],
+        reasoning: "Reasoning",
+        confidence: 0.7
+      }
+    ]
+  }
+  
+  input: DebateInput = {
+    question: "Test question",
+    context: "Test context",
+    max_rounds: 3,
+    max_cost: 1.0
+  }
+  
+  consensus = compute_consensus([round], input)
+  expect consensus.answer == "Answer X"
+  expect consensus.confidence > 0.8
+  expect consensus.confidence < 0.9
+  expect consensus.rounds == 1
+  expect consensus.evidence.length() == 5
+}

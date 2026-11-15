@@ -1,0 +1,33 @@
+// Render: one drawn paper's figures as a page and as the words a phone
+// note would carry. No model, no web, no memory: the drawing arrives as
+// the input, and everything is drawn here by code.
+//
+//   kosika run render.kos --workflow render --input sheet.json
+//
+// where sheet.json holds {"s": {title, field, published, authors, link,
+// drawing}} as the digest's read_and_draw produced it.
+
+import "figures.kos"
+
+record Rendered { page: Text outline: Text text: Text }
+
+workflow render(s: Sheet) -> Rendered {
+  shown = for figure in s.drawing.figures where drawable(figure) { figure }
+  kept: Drawing = {question: s.drawing.question, figures: shown}
+  sheet: Sheet = {title: s.title, field: s.field, published: s.published, authors: s.authors, link: s.link, drawing: kept}
+  page_out   = page(s.title, [sheet])
+  outline    = outline_text(kept, 1200)
+  said       = if shown.is_empty() { "Nothing survived the checks." } else { f"Drew {s.title} as {shown.length()} figures.\n{s.link}" }
+  out = {page: page_out, outline: outline, text: said}
+}
+
+test "the renderer draws a sample sheet" {
+  sample: Sheet = {title: "T", field: "arXiv", published: "", authors: "", link: "https://arxiv.org/abs/1", drawing: {question: "q", figures: [
+    {look: Look.numbers, title: "Key number", section: "Abstract", center: "", items: [{label: "30%", value: "faster", note: "", group: ""}]},
+    {look: Look.scatter, title: "Dose and score", section: "Fig 2", center: "dose vs score", items: [{label: "", value: "1 2", note: "", group: ""}, {label: "", value: "2 4", note: "", group: ""}, {label: "", value: "3 6", note: "", group: ""}]}
+  ]}}
+  out = render(sample)
+  expect out.text.starts_with("Drew T as 2 figures.")
+  expect out.page.contains("30%")
+  expect out.outline.contains("r = 1 (computed)")
+}

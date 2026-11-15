@@ -1,0 +1,92 @@
+// Conformance: a step with a fallback, and a step that chooses its call.
+
+record Ask { text: Text kind: Text urgent: Bool }
+record Found { text: Text from: Text }
+record Count { n: Number }
+
+tool search {
+  source mcp "web"
+  operation: "search"
+  access: observe
+  input: Ask
+  output: Found
+}
+
+agent finder {
+  can: [search]
+}
+
+fn strict(ask: Ask) -> Found {
+  if ask.text.is_empty() { fail "nothing to look for" }
+  return {text: ask.text.upper(), from: "strict"}
+}
+
+fn gentle(ask: Ask) -> Found {
+  return {text: ask.text, from: "gentle"}
+}
+
+fn shout(ask: Ask) -> Found {
+  return {text: ask.text.upper() + "!", from: "shout"}
+}
+
+fn length_of(found: Found) -> Count {
+  return {n: found.text.length()}
+}
+
+workflow look(ask: Ask) -> Found {
+  found = execute finder.search(text: ask.text, kind: ask.kind, urgent: ask.urgent) otherwise gentle(ask)
+}
+
+workflow main(ask: Ask) -> Count {
+  first = strict(ask) otherwise {text: "(empty)", from: ask.kind}
+  routed = match ask.kind {
+    case "loud" { shout(ask) }
+    case "web" { call look(ask) }
+    case _ { gentle(ask) }
+  }
+  urgent = match ask.urgent {
+    case true { shout(ask) }
+    case _ { {text: first.text, from: "first"} }
+  }
+  counted = length_of(routed)
+}
+
+workflow sized(ask: Ask) -> Count {
+  size = match ask.text.length() {
+    case 0 { length_of({text: "", from: "none"}) }
+    case 3 { length_of({text: "three", from: "three"}) }
+    case _ { length_of({text: ask.text, from: "other"}) }
+  }
+}
+
+test "a fallback is taken when the call fails" {
+  r = main({text: "", kind: "quiet", urgent: false})
+  expect r.n == 0
+}
+
+test "a match step makes the call its subject picks" {
+  loud = main({text: "hey", kind: "loud", urgent: false})
+  quiet = main({text: "hey", kind: "quiet", urgent: true})
+  expect loud.n == 4
+  expect quiet.n == 3
+}
+
+test "a tool that fails hands its step to the fallback" {
+  r = main({text: "cats", kind: "web", urgent: false})
+  expect r.n == 4
+}
+
+test "a tool that answers is used" {
+  answers search: [{text: "dogs and more", from: "web"}]
+  r = main({text: "dogs", kind: "web", urgent: false})
+  expect r.n == 13
+}
+
+test "numbers are matched by value" {
+  none = sized({text: "", kind: "", urgent: false})
+  three = sized({text: "abc", kind: "", urgent: false})
+  other = sized({text: "abcd", kind: "", urgent: false})
+  expect none.n == 0
+  expect three.n == 5
+  expect other.n == 4
+}

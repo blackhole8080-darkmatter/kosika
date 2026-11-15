@@ -1,0 +1,1 @@
+Check failed: Step 'function f' shape 'Priced' has no function 'cost'; it has: price

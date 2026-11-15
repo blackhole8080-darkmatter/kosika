@@ -13,8 +13,14 @@ from .ast import (
     Block,
     BoardDecl,
     BreakExpr,
+    ChoiceAlternative,
+    ChoiceDecl,
+    ChoiceExpr,
+    ChoiceField,
+    ColumnDecl,
     ConditionalExpr,
     ContinueExpr,
+    EnumDecl,
     Expression,
     FailExpr,
     Field,
@@ -40,8 +46,12 @@ from .ast import (
     RecordExpr,
     RepeatExpr,
     ReturnExpr,
+    ShapeDecl,
+    ShapeMethod,
     Step,
+    StoreDecl,
     SwarmDecl,
+    TableDecl,
     TestDecl,
     TestStep,
     ThinkCall,
@@ -68,6 +78,29 @@ _COMPOUND = ("+=", "-=", "*=", "/=")
 #: A `while` is a repeat with more passes than any run's loop budget allows,
 #: so a loop that never ends is stopped by the budget, never silently.
 WHILE_PASSES = 1_000_000_000
+
+
+#: Words that, followed by a name, can only begin a step's call.
+_CALL_WORDS = frozenset(
+    {"classify", "extract", "summarize", "decide", "use_model", "ask", "execute"}
+    | {"recall", "remember", "call", "post", "fetch", "read", "write", "list"}
+)
+
+#: What may follow a step's call on its line: its modifiers, or the end of a
+#: block.
+_AFTER_A_CALL = frozenset(
+    {"verify", "vote", "retry", "escalate", "learn", "otherwise", "}"}
+)
+
+def _is_value_call(call: object) -> bool:
+    return isinstance(call, FunctionCall) and call.function_name == VALUE_CALL
+
+
+#: Words that begin a workflow step. Written where a value is expected, they
+#: are reported as such; see `parse_primary_expression`.
+_STEP_WORDS = frozenset(
+    {"classify", "extract", "summarize", "decide", "use_model", "ask", "execute", "recall", "remember", "call"}
+)
 
 
 class Parser:
@@ -120,6 +153,19 @@ class Parser:
         if self.current.kind != "IDENT" or self.index + 1 >= len(self.tokens):
             return False
         following = self.tokens[self.index + 1]
+        if following.value == ":" and following.kind in {"SYMBOL", "OP"}:
+            # `tally: Tally = ...`: a step whose result type is written out.
+            depth = 0
+            for token in self.tokens[self.index + 2 : self.index + 12]:
+                if token.value in ("[", "("):
+                    depth += 1
+                elif token.value in ("]", ")"):
+                    depth -= 1
+                elif token.value == "=" and depth == 0 and token.kind in {"SYMBOL", "OP"}:
+                    return True
+                elif token.line != following.line or token.value in ("{", "}"):
+                    return False
+            return False
         return following.value == "=" and following.kind in {"SYMBOL", "OP"}
 
     def parse_binding(self) -> LocalBinding:
@@ -313,8 +359,31 @@ class Parser:
                         pattern = LiteralExpr(
                             {"true": True, "false": False, "null": None}[token.value]
                         )
+                    elif token.kind == "IDENT" and not negative:
+                        # `case filed(invoice) { ... }`: one alternative of a
+                        # choice, carrying its fields by position. A nullary
+                        # alternative is `case pending { ... }`.
+                        self.advance()
+                        bindings: list[str] = []
+                        if self.accept("("):
+                            if not self.accept(")"):
+                                while True:
+                                    bindings.append(self.identifier())
+                                    if self.accept(")"):
+                                        break
+                                    self.expect(",")
+                        self.expect("{")
+                        value = self.expression()
+                        self.expect("}")
+                        arms.append(
+                            MatchArm(None, value, token.value, tuple(bindings))
+                        )
+                        continue
                     else:
-                        raise ParseError("Match patterns must be scalar literals or _")
+                        raise ParseError(
+                            "Match patterns must be scalar literals, a choice "
+                            "alternative, or _"
+                        )
                 self.expect("{")
                 value = self.expression()
                 self.expect("}")
@@ -453,10 +522,23 @@ class Parser:
                 value = LiteralExpr(token.value)
             elif token.kind == "NUMBER":
                 self.advance()
-                number = float(token.value) if "." in token.value else int(token.value)
+                number = float(token.value) if any(ch in token.value for ch in ".eE") else int(token.value)
                 value = LiteralExpr(number)
             elif token.kind == "IDENT":
                 self.advance()
+                if (
+                    token.value in _STEP_WORDS
+                    and self.current.kind in ("IDENT", "STRING", "NUMBER")
+                    and self.current.line == token.line
+                ):
+                    # `return classify t.text into [...]` inside a function:
+                    # said plainly, because "expected }" helps nobody.
+                    raise ParseError(
+                        f"'{token.value}' at {token.line}:{token.column} is a workflow "
+                        "step, not a value: write it in a workflow as its own line, "
+                        f"such as `answer = {token.value} ...`, and pass the answer "
+                        "to the function"
+                    )
                 if token.value in {"true", "false", "null"}:
                     literal = {"true": True, "false": False, "null": None}
                     value = LiteralExpr(literal[token.value])
@@ -628,6 +710,13 @@ class Parser:
             fields.append((name, self.expression()))
             if self.accept("}"):
                 return RecordExpr(tuple(fields), base)
+            if (
+                self.current.kind in ("IDENT", "STRING")
+                and self.peek().value == ":"
+            ):
+                # `{title: t field: f}`: fields need no comma between them,
+                # as in a record's declaration.
+                continue
             self.expect(",")
 
     def parse(self) -> Program:
@@ -660,11 +749,26 @@ class Parser:
             elif keyword == "default" and self.peek().value == "model":
                 self.advance()
                 program.models.append(replace(self.parse_model(), default=True))
+            elif keyword == "shape" and self.peek().kind == "IDENT":
+                program.shapes.append(self.parse_shape())
+            elif keyword == "choice" and self.peek().kind == "IDENT":
+                program.choices.append(self.parse_choice())
+            elif keyword == "enum" and self.peek().kind == "IDENT":
+                self.advance()
+                enum_name = self.identifier()
+                self.expect("{")
+                values: list[str] = []
+                while not self.accept("}"):
+                    values.append(self.identifier())
+                    self.accept(",")
+                program.enums.append(EnumDecl(enum_name, tuple(values)))
             elif keyword == "board" and self.peek().kind == "IDENT":
                 self.advance()
                 board_name = self.identifier()
                 self.expect("of")
                 program.boards.append(BoardDecl(board_name, self.identifier()))
+            elif keyword == "store" and self.peek().kind == "IDENT":
+                program.stores.append(self.parse_store())
             elif keyword == "memory" and self.peek().kind == "IDENT":
                 self.advance()
                 memory_name = self.identifier()
@@ -739,6 +843,7 @@ class Parser:
         deployment: str | None = None
         parameters = ModelParameters()
         seen: set[str] = set()
+        plain = False
         while not self.accept("}"):
             key = self.identifier()
             if key in seen:
@@ -755,13 +860,17 @@ class Parser:
                 deployment = self.string_or_identifier()
             else:
                 values[key] = self.identifier()
+                if key == "output" and self.check("as") and self.peek().value == "text":
+                    self.advance()
+                    self.advance()
+                    plain = True
         if not values:
             # Only a deployment or parameters: still a general text model.
             values = {"input": GENERAL_INPUT, "output": GENERAL_OUTPUT}
         if set(values) != {"input", "output"}:
             raise ParseError(f"Model {name!r} requires input and output records")
         return ModelDecl(
-            name, values["input"], values["output"], deployment, parameters
+            name, values["input"], values["output"], deployment, parameters, plain=plain
         )
 
     def parse_model_parameters(self) -> ModelParameters:
@@ -904,7 +1013,7 @@ class Parser:
             field_name = self.identifier()
             self.expect(":")
             type_name = self.parse_type_name()
-            fields.append(Field(field_name, type_name))
+            fields.append(Field(field_name, type_name, self.parse_default()))
             self.accept(",")
         return RecordDecl(name, tuple(fields), tuple(methods))
 
@@ -939,6 +1048,52 @@ class Parser:
             values.get("input"),
         )
 
+    def parse_store(self) -> StoreDecl:
+        """Parse `store NAME at "FILE" { table notes { id: Number } }`.
+
+        A store says which tables and columns a program means to use in one
+        database file. The file is a quoted path relative to the program, and
+        each column is a name and one of `Text`, `Number` and `Bool`; the
+        checker says so (see `kosika.checker._check_stores`), and the file
+        itself is checked before a run starts.
+        """
+
+        self.expect("store")
+        name = self.identifier()
+        self.expect("at")
+        if self.current.kind != "STRING":
+            token = self.current
+            raise ParseError(
+                f"A store needs a quoted file, as `store {name} at './notes.db'` "
+                f"at {token.line}:{token.column}"
+            )
+        file = self.advance().value
+        self.expect("{")
+        tables: list[TableDecl] = []
+        while not self.accept("}"):
+            self.expect("table")
+            table_name = self.identifier()
+            self.expect("{")
+            columns: list[ColumnDecl] = []
+            while not self.accept("}"):
+                column_name = self.identifier()
+                self.expect(":")
+                columns.append(ColumnDecl(column_name, self.parse_type_name()))
+                if self.check("="):
+                    # A store says which column a program means, and the file
+                    # is where a default lives; a column that carried one here
+                    # would be a promise nothing checks.
+                    token = self.current
+                    raise ParseError(
+                        f"Column {column_name!r} has a default value at "
+                        f"{token.line}:{token.column}; a store declares the "
+                        "columns it means, and a default belongs in the "
+                        "database, so write it where the column is created"
+                    )
+                self.accept(",")
+            tables.append(TableDecl(table_name, tuple(columns)))
+        return StoreDecl(name, file, tuple(tables))
+
     def parse_name_list(self) -> tuple[str, ...]:
         self.expect("[")
         values: list[str] = []
@@ -960,6 +1115,7 @@ class Parser:
         instructions: str | None = None
         deadline_seconds: float | None = None
         plan: str | None = None
+        check: str | None = None
         seen: set[str] = set()
         while not self.accept("}"):
             key = self.identifier()
@@ -995,6 +1151,8 @@ class Parser:
                 plan = self.identifier()
                 if plan not in ("first", "off"):
                     raise ParseError("Agent plan must be `first` or `off`")
+            elif key == "check":
+                check = self.identifier()
             else:
                 raise ParseError(f"Unknown agent field {key!r}")
         return AgentDecl(
@@ -1008,6 +1166,7 @@ class Parser:
             instructions,
             deadline_seconds,
             plan,
+            check,
         )
 
     def parse_swarm(self) -> SwarmDecl:
@@ -1141,6 +1300,84 @@ class Parser:
             if not self.accept(","):
                 return items
 
+    def parse_choice(self) -> ChoiceDecl:
+        """`choice Filing { filed(invoice: Invoice) refused(reason: Text) }`:
+        a value that is exactly one of these alternatives."""
+
+        self.expect("choice")
+        name = self.identifier()
+        self.expect("{")
+        alternatives: list[ChoiceAlternative] = []
+        while not self.accept("}"):
+            alternative_name = self.identifier()
+            fields: list[ChoiceField] = []
+            if self.accept("("):
+                if not self.accept(")"):
+                    while True:
+                        field_name = self.identifier()
+                        self.expect(":")
+                        fields.append(
+                            ChoiceField(field_name, self.parse_type_name())
+                        )
+                        if self.accept(")"):
+                            break
+                        self.expect(",")
+            alternatives.append(
+                ChoiceAlternative(alternative_name, tuple(fields))
+            )
+            self.accept(",")
+        return ChoiceDecl(name, tuple(alternatives))
+
+    def parse_shape(self) -> ShapeDecl:
+        """`shape Priced { fn price(self) -> Number ... }`: functions
+        without bodies, each taking the value first as `self`."""
+
+        self.expect("shape")
+        name = self.identifier()
+        self.expect("{")
+        methods: list[ShapeMethod] = []
+        while not self.accept("}"):
+            self.expect("fn")
+            method = self.identifier()
+            self.expect("(")
+            self.expect("self")
+            parameters: list[Field] = []
+            if not self.check(")"):
+                self.expect(",")
+            while not self.accept(")"):
+                parameter_name = self.identifier()
+                self.expect(":")
+                parameters.append(Field(parameter_name, self.parse_type_name()))
+                if not self.check(")"):
+                    self.expect(",")
+            self.expect("->")
+            methods.append(ShapeMethod(method, tuple(parameters), self.parse_type_name()))
+        return ShapeDecl(name, tuple(methods))
+
+    def parse_default(self) -> Expression | None:
+        """`= value` after a parameter or a field: what it is when left out."""
+
+        if not self.accept("="):
+            return None
+        token = self.current
+        value = self.expression()
+        constant = (
+            isinstance(value, LiteralExpr)
+            or (
+                isinstance(value, UnaryExpr)
+                and value.operator == "-"
+                and isinstance(value.operand, LiteralExpr)
+                and type(value.operand.value) in (int, float)
+            )
+            or (isinstance(value, ArrayExpr) and not value.items)
+        )
+        if not constant:
+            raise ParseError(
+                f"A default value at {token.line}:{token.column} must be written "
+                "out: a number, text, true, false, null or []"
+            )
+        return value
+
     def parse_function(self, depth: int = 0, owner: str | None = None) -> FunctionDecl:
         if depth >= 32:
             raise ParseError("Function declaration nesting exceeds 32")
@@ -1158,7 +1395,17 @@ class Parser:
         while not self.accept(")"):
             parameter_name = self.identifier()
             self.expect(":")
-            parameters.append(Field(parameter_name, self.parse_type_name()))
+            type_name = self.parse_type_name()
+            default = self.parse_default()
+            if default is not None and owner is not None:
+                raise ParseError(
+                    "A record's function cannot give a parameter a default value yet"
+                )
+            if default is not None and depth > 0:
+                raise ParseError(
+                    "A nested function cannot give a parameter a default value yet"
+                )
+            parameters.append(Field(parameter_name, type_name, default))
             if not self.check(")"):
                 self.expect(",")
         self.expect("->")
@@ -1266,64 +1513,136 @@ class Parser:
         """
 
         name = self.identifier()
+        written_type = self.parse_type_name() if self.accept(":") else None
         self.expect("=")
-        if self.accept("match"):
-            # The step makes one of several calls, chosen by a value.
-            subject = self.parse_or_expression()
-            self.expect("{")
-            branches: list[tuple[Any, Any]] = []
-            while not self.accept("}"):
-                self.expect("case")
-                pattern: Any = None
-                if not self.accept("_"):
-                    token = self.advance()
-                    if token.kind == "STRING":
-                        pattern = token.value
-                    elif token.kind == "NUMBER":
-                        pattern = (
-                            float(token.value)
-                            if "." in token.value
-                            else int(token.value)
-                        )
-                    elif token.kind == "IDENT" and token.value in ("true", "false"):
-                        pattern = token.value == "true"
-                    else:
-                        raise ParseError(
-                            f"Expected 'value' at {token.line}:{token.column}, "
-                            f"got {token.value!r}"
-                        )
-                self.expect("{")
-                branches.append((pattern, self.parse_step_call()))
-                self.expect("}")
-            if not branches:
-                self.expect("case")
-            return Step(
-                name,
-                branches[0][1],
-                name,
-                None,
-                name,
-                subject=subject,
-                branches=tuple(branches),
-            )
-        call = self.parse_step_call()
+        if written_type is None and self.check("match"):
+            step = self.parse_match_step(name)
+            if step is not None:
+                return step
+        call = self.parse_step_or_value()
         verify = self.parse_step_call() if self.accept("verify") else None
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
+        learns, learn_by = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         return Step(
             name,
             call,
             name,
-            None,
+            written_type,
             name,
             fallback,
             retries,
             votes,
             verify=verify,
             escalate=escalate,
+            learns=learns,
+            learn_by=learn_by,
         )
+
+    def parse_match_step(self, name: str) -> Step | None:
+        """A step that makes one of several calls, chosen by a value. A case
+        may give a value instead of a call, typed from the calls beside it.
+
+        When no case makes a call, as `size = match n { case 1 { "one" }
+        case _ { "many" } }`, the step is a plain value, an ordinary `match`;
+        None is given back and the parser is where it was."""
+
+        start = self.index
+        try:
+            step = self._match_step(name)
+        except ParseError:
+            step = None
+        if step is None or all(_is_value_call(call) for _, call in step.branches):
+            self.index = start
+            return None
+        return step
+
+    def _match_step(self, name: str) -> Step:
+        self.expect("match")
+        subject = self.parse_or_expression()
+        self.expect("{")
+        branches: list[tuple[Any, Any]] = []
+        while not self.accept("}"):
+            self.expect("case")
+            pattern: Any = None
+            if not self.accept("_"):
+                token = self.advance()
+                if token.kind == "STRING":
+                    pattern = token.value
+                elif token.kind == "NUMBER":
+                    pattern = (
+                        float(token.value)
+                        if "." in token.value
+                        else int(token.value)
+                    )
+                elif token.kind == "IDENT" and token.value in ("true", "false"):
+                    pattern = token.value == "true"
+                else:
+                    raise ParseError(
+                        f"Expected 'value' at {token.line}:{token.column}, "
+                        f"got {token.value!r}"
+                    )
+            self.expect("{")
+            branches.append((pattern, self.parse_step_or_value()))
+            self.expect("}")
+        if not branches:
+            self.expect("case")
+        return Step(
+            name,
+            branches[0][1],
+            name,
+            None,
+            name,
+            subject=subject,
+            branches=tuple(branches),
+        )
+
+    def parse_step_or_value(
+        self,
+    ) -> ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall:
+        """A step's call, or else a plain value: `count = before + 1`,
+        `size = if big { 2 } else { 1 }`, `tally = {count: count}`.
+
+        A value is worked out by code, like a function the step calls;
+        `kosika.sugar` makes it one. What reads as a call followed by more of
+        an expression on the same line, as `f(x) + 1`, is a value too."""
+
+        start = self.index
+        first, following = self.current, self.peek()
+        if (
+            first.kind == "IDENT"
+            and first.value in _CALL_WORDS
+            and following.kind in ("IDENT", "STRING")
+            and following.line == first.line
+        ):
+            # `recall notes under k`: a call however it is written, so a
+            # mistake in it is reported as one.
+            return self.parse_step_call()
+        try:
+            call = self.parse_step_call()
+            after = self.current
+            ended = self.tokens[self.index - 1]
+            if (
+                after.line != ended.line
+                or after.kind == "EOF"
+                or after.value in _AFTER_A_CALL
+            ):
+                return call
+        except ParseError:
+            pass
+        self.index = start
+        return FunctionCall(VALUE_CALL, (("value", self.expression()),))
+
+    def parse_learn(self) -> tuple[bool, Expression | None]:
+        """An optional `learn` or `learn by EXPRESSION` after a step's call.
+        `learn` followed by `=` or `:` is the name of the next step."""
+
+        if not self.check("learn") or self.peek().value in ("=", ":"):
+            return False, None
+        self.advance()
+        return True, (self.expression() if self.accept("by") else None)
 
     def parse_step_count(self, word: str) -> int:
         """Parse an optional `vote N` or `retry N` after a step's call."""
@@ -1351,6 +1670,7 @@ class Parser:
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
+        learns, learn_by = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         self.expect("return")
         return_name = self.identifier()
@@ -1366,6 +1686,8 @@ class Parser:
             votes,
             verify=verify,
             escalate=escalate,
+            learns=learns,
+            learn_by=learn_by,
         )
 
     def parse_think_call(self) -> ThinkCall:
@@ -1477,6 +1799,11 @@ class Parser:
         if self.check("recall") and self.peek().value != "(":
             self.advance()
             memory_name = self.identifier()
+            if self.accept("like"):
+                # `recall notes like question`: the entries nearest to it.
+                return ToolCall(
+                    "memory", f"like_{memory_name}", (("text", self.expression()),)
+                )
             self.expect("under")
             return ToolCall(
                 "memory", f"recall_{memory_name}", (("key", self.expression()),)

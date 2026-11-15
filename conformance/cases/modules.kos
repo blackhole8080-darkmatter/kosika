@@ -1,0 +1,25 @@
+// A program in several files. Each file sees its own declarations and
+// what the files it imports export.
+
+import "lib/shapes.kos"
+import "./lib/labels.kos"
+
+record Sized { box: Box label: Text area: Number }
+
+fn sized(box: Box) -> Sized { return {box: box, label: label(box), area: area(box)} }
+
+workflow size(box: Box) -> Sized {
+  bigger = grown(box)
+  done   = sized(bigger)
+}
+
+test "what an import exports can be used" {
+  expect area({width: 2, height: 3}) == 6
+  expect label({width: 2, height: 3}) == "2 by 3"
+}
+
+test "a workflow uses functions from two files" {
+  s = size({width: 1, height: 2})
+  expect s.area == 8
+  expect s.label == "2 by 4"
+}

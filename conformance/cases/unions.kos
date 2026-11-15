@@ -1,0 +1,62 @@
+// requires: choice
+// Choices: a value that is exactly one of its alternatives, and each
+// alternative carries only the fields it needs.
+
+choice Delivery {
+  handed_to(person: Text)
+  left_at(place: Text)
+  waiting
+}
+
+choice Status {
+  delivered(delivery: Delivery)
+  lost(reason: Text)
+}
+
+fn describe(delivery: Delivery) -> Text {
+  return match delivery {
+    case handed_to(person) { "handed to " + person }
+    case left_at(place) { "left at " + place }
+    case waiting { "waiting" }
+  }
+}
+
+fn status_text(status: Status) -> Text {
+  return match status {
+    case delivered(delivery) { describe(delivery) }
+    case lost(reason) { "lost: " + reason }
+  }
+}
+
+fn forwarding(delivery: Delivery) -> Status {
+  return delivered(delivery)
+}
+
+record Parcel { status: Status }
+record Report { text: Text }
+
+fn parcel_for(delivery: Delivery) -> Parcel {
+  return {status: delivered(delivery)}
+}
+
+workflow main(parcel: Parcel) -> Report {
+  said = status_text(parcel.status)
+  out = {text: said}
+}
+
+test "one value is exactly one alternative" {
+  expect describe(handed_to("Ana")) == "handed to Ana"
+  expect describe(left_at("the desk")) == "left at the desk"
+  expect describe(waiting) == "waiting"
+  expect status_text(delivered(left_at("the desk"))) == "left at the desk"
+  expect status_text(forwarding(handed_to("Cy"))) == "handed to Cy"
+  expect status_text(parcel_for(waiting).status) == "waiting"
+  expect status_text(lost("rain")) == "lost: rain"
+  expect handed_to("Ana") == handed_to("Ana")
+  expect handed_to("Ana") != handed_to("Bo")
+}
+
+test "a workflow carries a nested choice in and out" {
+  report = main({status: delivered(handed_to("Bo"))})
+  expect report.text == "handed to Bo"
+}

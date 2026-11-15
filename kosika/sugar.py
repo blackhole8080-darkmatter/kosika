@@ -29,10 +29,11 @@ long form it stands for, so the checker and runtime never see it.
 from __future__ import annotations
 
 from dataclasses import fields, is_dataclass, replace
-from typing import Any
+from typing import Any, Mapping
 
 from .ast import (
     AgentCall,
+    EnumValueExpr,
     Field,
     FieldExpr,
     FunctionCall,
@@ -40,6 +41,7 @@ from .ast import (
     FunctionDecl,
     ModelCall,
     Program,
+    RecordExpr,
     Step,
     ToolCall,
     VariableExpr,
@@ -311,6 +313,19 @@ def lower_values(program: Program) -> Program:
             )
             prefix = f"{workflow.name}${step.name}$"
             changes: dict[str, Any] = {}
+            if _is_value(step.call) and not step.branches:
+                # `count = before + 1`: a step that is a value. Its type is
+                # the one written, `tally: Tally = ...`, or else the type of
+                # the value itself.
+                known = step.binding_type or _value_type(
+                    program, step.call.arguments[0][1], seen
+                )
+                if known is None:
+                    known = _type_from_use(program, workflow, step.name)
+                if known is None and step is workflow.steps[-1]:
+                    # The last step is what the workflow returns.
+                    known = workflow.output_type
+                changes["call"] = stand_in(step.call, f"{prefix}value", known)
             if step.branches:
                 branches = tuple(
                     (pattern, stand_in(call, f"{prefix}case{index + 1}", known))
@@ -333,5 +348,208 @@ def lower_values(program: Program) -> Program:
     return replace(program, workflows=workflows, functions=[*program.functions, *made])
 
 
+def _parameter_for(parameters: Any, arguments: Any, index: int) -> str | None:
+    """The type of the parameter an argument stands for, as the checker
+    matches them: by the argument's name, else by its variable's name, else
+    by its place when as many arguments as parameters are given."""
+
+    argument, value = arguments[index]
+    if len(parameters) == 1 and len(arguments) == 1:
+        # A sole argument is not yet named for its parameter.
+        return parameters[0].type_name
+    for wanted in (argument, getattr(value, "name", None)):
+        for parameter in parameters:
+            if wanted and parameter.name == wanted:
+                return parameter.type_name
+    if not argument and len(arguments) == len(parameters):
+        return parameters[index].type_name
+    return None
+
+
+def _type_from_use(program: Program, workflow: Any, name: str) -> str | None:
+    """The type a value step must have, read from where a later step hands
+    it on whole: `remember tally in counts under k`, `f(tally)` or
+    `call w(tally)`."""
+
+    functions = {item.name: item for item in program.functions}
+    workflows = {item.name: item for item in program.workflows}
+    tools = {item.name: item for item in program.tools}
+    records = {item.name: item for item in program.records}
+    for later in workflow.steps:
+        for call in [later.call, later.fallback, *(c for _, c in later.branches)]:
+            arguments = tuple(getattr(call, "arguments", ()))
+            for index, (argument, value) in enumerate(arguments):
+                if not (isinstance(value, VariableExpr) and value.name == name):
+                    continue
+                if isinstance(call, FunctionCall) and call.function_name in functions:
+                    found = _parameter_for(functions[call.function_name].parameters, arguments, index)
+                    if found:
+                        return found
+                if isinstance(call, WorkflowCall) and call.workflow_name in workflows:
+                    found = _parameter_for(workflows[call.workflow_name].parameters, arguments, index)
+                    if found:
+                        return found
+                if isinstance(call, ToolCall) and call.tool_name in tools:
+                    shape = records.get(tools[call.tool_name].input)  # type: ignore[arg-type]
+                    for field_ in shape.fields if shape else ():
+                        if field_.name == argument:
+                            return field_.type_name
+    return None
+
+
+def _value_type(program: Program, value: Any, seen: Mapping[str, str]) -> str | None:
+    """The type of a value a step is, worked out as the checker would; None
+    when it cannot be told, so the checker says what to write."""
+
+    from .checker import _Env, _expression_type
+
+    try:
+        found = _expression_type(value, _Env(dict(seen)), program, step_name="value")
+    except Exception:  # noqa: BLE001 - any fault is reported by the checker
+        return None
+    return found if isinstance(found, str) and found not in ("Null", "") else None
+
+
+def _calls_by_name(value: Any, found: set[str]) -> set[str]:
+    """The names called as functions anywhere in a part of a program."""
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _calls_by_name(item, found)
+    elif is_dataclass(value) and not isinstance(value, type):
+        if isinstance(value, (FunctionCallExpr, FunctionCall)):
+            found.add(value.function_name)
+        for item in fields(value):
+            _calls_by_name(getattr(value, item.name), found)
+    return found
+
+
+def fill_defaults(program: Program) -> Program:
+    """Give each call the parameters it leaves out that have a default.
+
+    A record called like a function, `Item(name: "pen")`, is made: Kosika
+    adds a function of the record's name that takes each field, with the
+    field's default when it has one, and gives the record. A program with
+    neither is returned unchanged, so it keeps its tree and its hash.
+    """
+
+    parts = [program.functions, program.workflows, program.tests]
+    declared = {function.name for function in program.functions}
+    called = _calls_by_name(parts, set())
+    made = [
+        FunctionDecl(
+            record.name,
+            record.fields,
+            record.name,
+            RecordExpr(tuple((item.name, VariableExpr(item.name)) for item in record.fields)),
+        )
+        for record in program.records
+        if record.name in called and record.name not in declared
+    ]
+    functions = [*program.functions, *made]
+    defaults = {
+        function.name: [
+            (parameter.name, parameter.default_value)
+            for parameter in function.parameters
+            if parameter.default_value is not None
+        ]
+        for function in functions
+    }
+    defaults = {name: given for name, given in defaults.items() if given}
+    order = {
+        function.name: [parameter.name for parameter in function.parameters]
+        for function in functions
+    }
+    if not defaults:
+        return replace(program, functions=functions) if made else program
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, tuple):
+            return tuple(rewrite(item) for item in value)
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if not is_dataclass(value) or isinstance(value, type):
+            return value
+        changes = {}
+        for item in fields(value):
+            current = getattr(value, item.name)
+            updated = rewrite(current)
+            if updated != current:
+                changes[item.name] = updated
+        node = replace(value, **changes) if changes else value
+        if not isinstance(node, (FunctionCallExpr, FunctionCall)):
+            return node
+        given = defaults.get(node.function_name)
+        if not given:
+            return node
+        arguments = node.arguments
+        names = order[node.function_name]
+        if (
+            arguments
+            and all(name == UNNAMED for name, _ in arguments)
+            and len(arguments) < len(names)
+            and set(names[len(arguments) :]) <= {name for name, _ in given}
+        ):
+            # Written in order, with the ones that have defaults left off
+            # the end: `greet("Ann")` for `greet(name, loud = false)`.
+            arguments = tuple(
+                (name, value) for name, (_, value) in zip(names, arguments)
+            )
+            node = replace(node, arguments=arguments)
+        named = {name for name, _ in node.arguments}
+        if UNNAMED in named:
+            return node
+        missing = tuple((name, value) for name, value in given if name not in named)
+        return replace(node, arguments=node.arguments + missing) if missing else node
+
+    return replace(
+        program,
+        functions=rewrite(functions),
+        workflows=rewrite(program.workflows),
+        tests=rewrite(program.tests),
+    )
+
+
+def lower_enums(program: Program) -> Program:
+    """Make each `Size.small` an enum value. A program with no enum is
+    returned unchanged."""
+
+    enums = {enum.name for enum in program.enums}
+    if not enums:
+        return program
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, tuple):
+            return tuple(rewrite(item) for item in value)
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if not is_dataclass(value) or isinstance(value, type):
+            return value
+        if (
+            isinstance(value, FieldExpr)
+            and isinstance(value.base, VariableExpr)
+            and value.base.name in enums
+        ):
+            return EnumValueExpr(value.field_name, value.base.name)
+        changes = {}
+        for item in fields(value):
+            current = getattr(value, item.name)
+            updated = rewrite(current)
+            if updated is not current:
+                changes[item.name] = updated
+        return replace(value, **changes) if changes else value
+
+    return replace(
+        program,
+        functions=rewrite(program.functions),
+        workflows=rewrite(program.workflows),
+        tests=rewrite(program.tests),
+    )
+
+
 def lower_sugar(program: Program) -> Program:
-    return add_main_workflow(name_sole_arguments(lower_values(program)))
+    return add_main_workflow(
+        fill_defaults(
+            name_sole_arguments(lower_values(name_sole_arguments(lower_enums(program))))
+        )
+    )

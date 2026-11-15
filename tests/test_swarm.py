@@ -14,12 +14,6 @@ from unittest.mock import patch
 from kosika import cli
 from kosika.ast import SwarmDecl
 from kosika.checker import CheckError, check
-from kosika.design import build_design_from_program, render_design
-from kosika.explain import (
-    build_explanation,
-    to_explanation_outsider,
-    to_explanation_text,
-)
 from kosika.mindmap import build_mindmap
 from kosika.modules import load_program
 from kosika.parser import ParseError, parse
@@ -220,51 +214,6 @@ class SwarmVisualisationTests(unittest.TestCase):
         program = load_program(EXAMPLE)
         self.assertEqual(build_mindmap(program), build_mindmap(program))
 
-    def test_outsider_view_states_the_group_and_its_human_gate(self) -> None:
-        outsider = to_explanation_outsider(build_explanation(load_program(EXAMPLE)))
-        self.assertIn("How the agents work together:", outsider)
-        self.assertIn("EditorialBoard brings together editor, researcher", outsider)
-        self.assertIn("A person must approve this group before it starts.", outsider)
-        self.assertNotIn("Swarm EditorialBoard", outsider)
-
-    def test_developer_view_reports_swarm_fields(self) -> None:
-        text = to_explanation_text(build_explanation(load_program(EXAMPLE)))
-        self.assertIn(
-            "Swarm EditorialBoard declares review with editor, researcher", text
-        )
-        self.assertIn("max_rounds=3", text)
-        self.assertIn("approval required: True", text)
-        self.assertIn("a swarm is not a workflow entry point", text)
-        self.assertNotIn("EditorialBoard runs review", text)
-
-    def test_design_contains_a_swarm_node_and_an_approval_edge(self) -> None:
-        manifest = build_design_from_program(
-            load_program(EXAMPLE), "swarm.design", "Editorial Board"
-        )
-        kinds = {node["id"]: node["kind"] for node in manifest.nodes}
-        self.assertEqual(kinds["swarm.EditorialBoard"], "swarm")
-        self.assertEqual(kinds["approval.swarm.EditorialBoard"], "approval")
-        edges = {
-            (edge["source"], edge["kind"], edge["target"]) for edge in manifest.edges
-        }
-        self.assertIn(
-            (
-                "swarm.EditorialBoard",
-                "requires_approval",
-                "approval.swarm.EditorialBoard",
-            ),
-            edges,
-        )
-        self.assertIn(("swarm.EditorialBoard", "uses", "agent.researcher"), edges)
-        self.assertIn(("swarm.EditorialBoard", "invokes", "workflow.review"), edges)
-
-    def test_design_renders_every_format_with_a_swarm(self) -> None:
-        manifest = build_design_from_program(
-            load_program(EXAMPLE), "swarm.design", "Editorial Board"
-        )
-        for output_format in ("text", "json", "mermaid", "svg"):
-            self.assertTrue(render_design(manifest, output_format, "workflow", "lab"))
-
 
 class SwarmCliTests(unittest.TestCase):
     def run_cli(self, argv: list[str]) -> tuple[int, str, str]:
@@ -309,18 +258,12 @@ class SwarmCliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("never uses", err)
 
-    def test_cli_mindmap_and_explain_include_the_swarm(self) -> None:
+    def test_cli_mindmap_includes_the_swarm(self) -> None:
         code, out, _ = self.run_cli(
             ["kosika", "mindmap", str(EXAMPLE), "--format", "json"]
         )
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["summary"]["swarm_count"], 1)
-
-        code, out, _ = self.run_cli(
-            ["kosika", "explain", str(EXAMPLE), "--format", "outsider"]
-        )
-        self.assertEqual(code, 0)
-        self.assertIn("A person must approve this group", out)
 
 
 if __name__ == "__main__":

@@ -396,8 +396,9 @@ class StudioSceneTests(unittest.TestCase):
         self.assertTrue(brand["ok"], brand)
         root = ET.fromstring(brand["svg"])
         ids = [g.get("id") for g in root.iter(f"{SVG}g") if g.get("id")]
-        self.assertEqual(len(ids), 12)
-        self.assertEqual(ids[-2:], ["tile", "letter"])
+        # Halo, photon ring, twelve particles, the core, then the K.
+        self.assertEqual(len(ids), 16)
+        self.assertEqual(ids[-2:], ["core", "letter"])
         # It sits on Studio's own background, so it brings none of its own.
         self.assertEqual(list(root.findall(f"{SVG}rect")), [])
         self.assertIn("<rect", to_svg(SCENE).split("\n")[1])
@@ -436,9 +437,12 @@ class StudioSceneTests(unittest.TestCase):
             'event.key.toLowerCase() === "k"',
         ):
             self.assertIn(needed, page)
-        # Each set of dark colours is written for both cases.
-        self.assertEqual(page.count(':root[data-theme="dark"] {'), 2)
-        self.assertEqual(page.count(':root:not([data-theme="light"]) {'), 2)
+        # Each set of dark colours is written for both cases: once for the
+        # computer's setting, once for a theme the person chose. The Cinema
+        # look brought its own pair, so this asks for both cases, not a
+        # particular number of them.
+        self.assertGreaterEqual(page.count(':root[data-theme="dark"] {'), 2)
+        self.assertGreaterEqual(page.count(':root:not([data-theme="light"]) {'), 2)
 
     def test_a_scene_a_model_took_part_in_is_checked_and_drawn_the_same(self) -> None:
         drawn = self.app.draw_scene("logo.kos", SCENE)

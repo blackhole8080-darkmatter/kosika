@@ -24,6 +24,7 @@ from .ast import (
     AgentCall,
     FunctionCall,
     ModelCall,
+    ModelDecl,
     Program,
     Step,
     ToolCall,
@@ -43,6 +44,7 @@ _FILE_WORDS = {
     "find": "searches the folder by meaning",
     "write": "writes a file",
     "create": "creates a new file, never over an old one",
+    "write_all": "writes several files in one step",
 }
 
 
@@ -70,7 +72,7 @@ def _lines(source: str) -> dict[tuple[str, str], int]:
 
     found: dict[tuple[str, str], int] = {}
     pattern = re.compile(
-        r"^\s*(?:default\s+)?(tool|model|agent|workflow|memory|board|record|fn|swarm)"
+        r"^\s*(?:default\s+)?(tool|model|agent|workflow|memory|board|record|choice|fn|swarm)"
         r"\s+([A-Za-z_]\w*)"
     )
     for number, line in enumerate(source.splitlines(), 1):
@@ -250,18 +252,32 @@ def beginner_map(
     for tool in program.tools:
         if tool.source.startswith(("memory:", "board:", "world:", "direct:")):
             continue
+        if ("tool", tool.name) not in lines:
+            # Declared in an imported file, such as the standard library.
+            continue
         group, item = _tool_item(tool, lines.get(("tool", tool.name)))
         groups[group].append(item)
+    def answers(model: ModelDecl) -> str:
+        choice = next((c for c in program.choices if c.name == model.output), None)
+        if choice is None:
+            return "answers when the program asks it"
+        return "answers with one of: " + ", ".join(
+            alternative.name for alternative in choice.alternatives
+        )
+
     models = [
         {
             "name": model.name,
             "line": lines.get(("model", model.name)),
             "source": "checked",
-            "does": "answers when the program asks it"
-            + (" (the default)" if model.default else ""),
+            "does": answers(model) + (" (the default)" if model.default else ""),
         }
         for model in program.models
-        if model.provider is None and not model.verb
+        if model.provider is None
+        and not model.verb
+        # One declared in an imported file, such as the standard library's
+        # Designs, belongs to that file's map.
+        and ("model", model.name) in lines
     ]
     thinking = sorted({model.verb for model in program.models if model.verb})
     memories = [
@@ -272,6 +288,7 @@ def beginner_map(
             "does": f"remembers {memory.record} values between runs",
         }
         for memory in program.memories
+        if ("memory", memory.name) in lines
     ]
     entry = next((w for w in program.workflows if w.name == "main"), None)
     steps: list[dict[str, Any]] = []

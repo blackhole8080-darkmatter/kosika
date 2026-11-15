@@ -1,0 +1,72 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "results": [
+    {
+      "id": "py-bpe",
+      "passed": true,
+      "state": "done",
+      "seconds": 13.8,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote bpe.py, test_bpe.py, one whole file at a time.\nWrote: bpe.py, test_bpe.py\nThe tests for bpe pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "bpe.py",
+        "calc.py",
+        "test_bpe.py",
+        "test_calc.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-vm5jjh6p\\py"
+    },
+    {
+      "id": "py-astar",
+      "passed": true,
+      "state": "done",
+      "seconds": 21.8,
+      "approvals": 4,
+      "failures": [],
+      "error": "",
+      "said": "My first try failed its tests, so I read what they printed and put it right.\nWrote astar.py, test_astar.py, one whole file at a time.\nWrote: astar.py, test_astar.py\nThe tests for astar pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "astar.py",
+        "calc.py",
+        "test_astar.py",
+        "test_calc.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-pcpytiwa\\py"
+    },
+    {
+      "id": "kosika-paper-agent",
+      "passed": false,
+      "state": "done",
+      "seconds": 55.9,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('papers/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed, getattr(x,'message','')) for x in r]\ns=open('papers/main.kos', encoding='utf-8').read()\nassert 'extract' in s and 'decide' in s and 'memory' in s: kosika.parser.ParseError: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-amjrd5df\\agents\\papers\\main.kos: Unexpected workflow item '{' at 23:34"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote papers/main.kos, one whole file at a time.\nWrote: papers/main.kos\nThe tests failed.\nCheck failed: C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-amjrd5df\\agents\\papers\\main.kos: Unexpected workflow item '{' at 23:34\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "papers\\main.kos"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-amjrd5df\\agents"
+    },
+    {
+      "id": "dashboard",
+      "passed": true,
+      "state": "done",
+      "seconds": 68.3,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-xv_a4oeu\\site"
+    }
+  ]
+}

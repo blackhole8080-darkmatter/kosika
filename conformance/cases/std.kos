@@ -1,0 +1,96 @@
+// The standard library: Kosika modules shipped with every engine, imported
+// as "std/NAME.kos" from any program.
+
+import "std/text.kos"
+import "std/stats.kos"
+import "std/search.kos"
+import "std/evidence.kos"
+import "std/db.kos"
+
+test "the standard library" {
+  expect words_of("Hello, World! It's me.") == ["hello", "world", "it's", "me"]
+  expect chunks("a b c d e f g", 3, 1) == ["a b c", "c d e", "e f g"]
+  expect keywords("Kosika agents learn. Kosika agents remember. Agents act.", 2) == ["agents", "kosika"]
+  expect likeness("the cat sat", "the cat ran") == 0.5
+  expect sentences("One. Two! Three?") == ["One.", "Two!", "Three?"]
+  expect shorten("abcdefghij", 5) == "abcd…"
+  expect clean_answer("```python\nprint(1)\n```") == "print(1)"
+  expect median([3, 1, 2]).or(0) == 2
+  expect median([4, 1, 2, 3]).or(0) == 2.5
+  expect variance([2, 4, 4, 4, 5, 5, 7, 9]).or(0) == 4
+  expect deviation([2, 4, 4, 4, 5, 5, 7, 9]).or(0) == 2
+  expect percentile([1, 2, 3, 4, 5], 50).or(0) == 3
+  expect normalized([10, 20, 30]) == [0, 0.5, 1]
+  expect correlation([1, 2, 3], [2, 4, 6]).or(0) == 1
+  hits = rank("how do I reset my password", ["Billing questions and invoices", "Reset your password from the login page", "Password rules for new accounts"], 2)
+  expect hits[0].index == 1
+  expect hits.length() == 2
+  expect best("refund", ["no match here"]).exists() == false
+}
+
+test "text that does not fit the rules" {
+  expect words_of("") == []
+  expect chunks("", 3, 1) == []
+  expect chunks("one two", 5, 0) == ["one two"]
+  expect keywords("the and for", 3) == []
+  expect likeness("", "") == 1
+  expect shorten("short", 10) == "short"
+  expect clean_answer("  plain  ") == "plain"
+}
+
+test "numbers that do not fit the rules" {
+  expect not median([]).exists()
+  expect not variance([]).exists()
+  expect normalized([5, 5]) == [0, 0]
+  expect zscores([1, 1, 1]) == [0, 0, 0]
+  expect not correlation([1], [2]).exists()
+  expect percentile([10], 90).or(0) == 10
+}
+
+test "a ranking keeps the earlier of two equal texts first" {
+  hits = rank("cat", ["a cat", "a cat", "no"], 5)
+  expect hits.length() == 2
+  expect hits[0].index == 0
+  expect hits[1].index == 1
+  expect hits[0].text == "a cat"
+}
+
+test "a quote is proved only by a line that holds it" {
+  lines = ["a.md:3: The rent is 900 euros a month", "b.md:9: Rent is due on the 1st"]
+  expect found_in(lines, "rent is due on the 1st") == "b.md:9: Rent is due on the 1st"
+  expect found_in(lines, "The rent is 950 euros") == ""
+  expect found_in(lines, "rent") == ""
+  expect found_in(["h.md:3: Rent is 900 euros a month, due on the 1st."], "\"Rent is 900 euros a month.\"") == "h.md:3: Rent is 900 euros a month, due on the 1st."
+  expect plain_quote(" ...\"Due on the 1st!\" ") == "due on the 1st"
+  expect hit_source("a.md:3: The rent is 900 euros a month") == "a.md, line 3"
+  expect hit_text("notes/a.md:3: Due: the 1st.") == "Due: the 1st."
+  expect search_words("When is the demo with Ravi?", false) == "demo ravi"
+  expect search_words("find invoice 2026", true) == "invoice 2026"
+  expect search_words("What does calc.py do?", false) == "calc.py"
+  expect search_words("what is it?", false) == ""
+  expect says_in("Tom", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
+  expect not says_in("the friend", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
+}
+
+test "a grid is read by column name" {
+  columns = ["id", "title"]
+  rows = [["1", "first"], ["2", "second"]]
+  expect column(columns, "title") == 1
+  expect column(columns, "gone") == -1
+  expect cell(rows[1], columns, "title") == "second"
+  expect as_number(cell(rows[0], columns, "id")) == 1
+  keyed = grid_rows(columns, rows)
+  expect keyed.length() == 2
+  expect keyed[1].get("title").or("") == "second"
+  expect keyed[0].keys() == ["id", "title"]
+  expect keyed[0].get("gone").exists() == false
+  expect grid_rows(columns, []).length() == 0
+}
+
+test "a long text, such as a paper, splits whole" {
+  long = "word ".repeat(3000).trim()
+  pieces = chunks(long, 1000, 100)
+  expect pieces.length() == 4
+  expect words_of(long).length() == 3000
+  expect pieces[3].words().length() == 300
+}

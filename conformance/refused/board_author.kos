@@ -1,0 +1,9 @@
+// A post on a board is signed with a name that is no agent.
+record Note { text: Text }
+record Ask { text: Text }
+board desk of Note
+fn n(a: Ask) -> Note { return {text: a.text} }
+workflow w(a: Ask) -> BoardPosted {
+  x = n(a)
+  p = post x to desk as nobody
+}

@@ -29,13 +29,22 @@ from .checker import CheckError, check
 from .direct import lower_direct
 from .direct import supplied_names as direct_names
 from .function_types import base_type, referenced_types
-from .memory import MemoryError_, lower_memory, supplied_names
+from .memory import MemoryError_, lower_memory, recalled_record, supplied_names
 from .parser import ParseError, parse
 from .sugar import VALUE_CALL, lower_sugar
 from .thinking import BUILT_IN_RECORDS, ThinkingError, lower_thinking
 
+#: The standard library: Kosika modules shipped with the engine, imported
+#: as `import "std/NAME.kos"` from any program. They are read only.
+STD_ROOT = Path(__file__).resolve().parent / "std"
+STD_PREFIX = "std/"
+
 CATEGORIES = (
     "records",
+    "choices",
+    "enums",
+    "shapes",
+    "stores",
     "tools",
     "agents",
     "swarms",
@@ -100,6 +109,13 @@ def _references(program: Program) -> set[str]:
             # contributes no type reference here.
             if binding.type_name:
                 names.update(referenced_types(binding.type_name))
+    for choice in program.choices:
+        for alternative in choice.alternatives:
+            names.update(
+                type_name
+                for field in alternative.fields
+                for type_name in referenced_types(field.type_name)
+            )
     for workflow in program.workflows:
         names.add(workflow.output_type)
         names.update(field.type_name for field in workflow.parameters)
@@ -198,7 +214,7 @@ def load_program(
             raise
         if (
             candidate.is_symlink()
-            or not resolved.is_relative_to(boundary)
+            or not (resolved.is_relative_to(boundary) or resolved.is_relative_to(STD_ROOT))
             or resolved.suffix != ".kos"
         ):
             mark_error(resolved)
@@ -254,18 +270,42 @@ def load_program(
             if relative.is_absolute() or relative.drive:
                 mark_error(resolved)
                 raise CheckError("Import paths must be relative")
-            dependency_path = resolved.parent / relative
+            dependency_path = (
+                # `std/NAME.kos` is the standard library, wherever it is
+                # written; a program's own folder named std is not reached
+                # this way.
+                STD_ROOT / name[len(STD_PREFIX) :]
+                if name.startswith(STD_PREFIX)
+                else resolved.parent / relative
+            )
             dependency = load(dependency_path)
             visible.update(dependency.exports)
+            for choice in dependency.choices:
+                if choice.name in dependency.exports:
+                    # A choice is used through its constructors, so exporting
+                    # the choice exports them too.
+                    visible.update(
+                        alternative.name for alternative in choice.alternatives
+                    )
+            found = dependency_path.resolve(strict=True)
             direct_imports.append(
-                dependency_path.resolve(strict=True).relative_to(boundary).as_posix()
+                STD_PREFIX + found.relative_to(STD_ROOT).as_posix()
+                if found.is_relative_to(STD_ROOT)
+                else found.relative_to(boundary).as_posix()
             )
-        local = {
+        declared = {
             item.name for category in CATEGORIES for item in getattr(module, category)
+        }
+        # Constructors are written unqualified, so a module's own alternatives
+        # are names it may use even though they are not declarations.
+        local = declared | {
+            alternative.name
+            for choice in module.choices
+            for alternative in choice.alternatives
         }
         if (
             len(module.exports) != len(set(module.exports))
-            or set(module.exports) - local
+            or set(module.exports) - declared
         ):
             mark_error(resolved)
             raise CheckError(f"{resolved}: exports must name unique local declarations")
@@ -285,8 +325,32 @@ def load_program(
         if hidden:
             mark_error(resolved)
             hint = did_you_mean(
-                sorted(hidden)[0], local | visible | {"Text", "Number", "Bool"}
+                sorted(hidden)[0],
+                local
+                | visible
+                | {"Text", "Number", "Bool"}
+                | set(supplied_names(module.memories)),
             )
+            # A name that is used as a type and never declared is a record the
+            # file still needs; saying so is the whole repair.
+            unwritten = [
+                name
+                for name in sorted(hidden)
+                if name[:1].isupper() and not name.endswith("Recalled")
+            ]
+            if unwritten:
+                hint += (
+                    f" {unwritten[0]} is not declared here: declare it first, "
+                    f"as `record {unwritten[0]} {{ ... }}` for a record."
+                )
+            recalled = [name for name in sorted(hidden) if name.endswith("Recalled")]
+            if recalled and module.memories:
+                # The type of what `recall` gives is named after the memory,
+                # not after the record it keeps.
+                hint += " " + "; ".join(
+                    f"recall {memory.name} gives {recalled_record(memory.name)}"
+                    for memory in module.memories
+                ) + "."
             raise CheckError(
                 f"{resolved}: unknown names, not declared here and not exported "
                 f"by an import (unavailable or private symbols {sorted(hidden)!r})."
@@ -303,8 +367,12 @@ def load_program(
             for workflow in module.workflows:
                 for step in workflow.steps:
                     _diagnostic_context.steps.setdefault(step.name, set()).add(resolved)
-        module_key = resolved.relative_to(boundary).as_posix()
-        merged.module_declarations[module_key] = tuple(sorted(local))
+        module_key = (
+            STD_PREFIX + resolved.relative_to(STD_ROOT).as_posix()
+            if resolved.is_relative_to(STD_ROOT)
+            else resolved.relative_to(boundary).as_posix()
+        )
+        merged.module_declarations[module_key] = tuple(sorted(declared))
         merged.module_imports[module_key] = tuple(sorted(direct_imports))
         for category in CATEGORIES:
             getattr(merged, category).extend(getattr(module, category))

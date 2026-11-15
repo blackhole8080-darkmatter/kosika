@@ -1,0 +1,94 @@
+// Conformance: what a failing workflow test says.
+
+record Ask { id: Text }
+record Stock { id: Text left: Number }
+record Change { id: Text left: Number }
+record Done { left: Number }
+
+tool stock_of {
+  source mcp "shop"
+  operation: "stock_of"
+  access: observe
+  input: Ask
+  output: Stock
+}
+
+tool set_stock {
+  source mcp "shop"
+  operation: "set_stock"
+  access: execute
+  input: Change
+  output: Stock
+}
+
+agent clerk {
+  can: [stock_of, set_stock]
+}
+
+fn done(stock: Stock) -> Done {
+  if stock.left < 0 { fail "stock cannot be below zero" }
+  return {left: stock.left}
+}
+
+workflow check(ask: Ask) -> Done {
+  stock = execute clerk.stock_of(id: ask.id)
+  result = done(stock)
+}
+
+workflow restock(ask: Ask) -> Stock {
+  require approval
+  stock = execute clerk.set_stock(id: ask.id, left: 10)
+}
+
+test "an answer that is never asked for" {
+  answers stock_of: [{id: "a", left: 1}, {id: "a", left: 2}]
+  r = check({id: "a"})
+  expect r.left == 1
+}
+
+test "a tool with no answer left" {
+  answers stock_of: [{id: "a", left: 1}]
+  r = check({id: "a"})
+  again = check({id: "a"})
+  expect again.left == 1
+}
+
+test "an answer without a field the tool gives" {
+  answers stock_of: [{id: "a"}]
+  r = check({id: "a"})
+  expect r.left == 1
+}
+
+test "an answer of the wrong kind" {
+  answers stock_of: [{id: "a", left: "one"}]
+  r = check({id: "a"})
+  expect r.left == 1
+}
+
+test "an answer with a field the tool does not give" {
+  answers stock_of: [{id: "a", left: 1, colour: "red"}]
+  r = check({id: "a"})
+  expect r.left == 1
+}
+
+test "a tool with no scripted answers" {
+  r = check({id: "a"})
+  expect r.left == 1
+}
+
+test "a step that fails" {
+  answers stock_of: [{id: "a", left: -1}]
+  r = check({id: "a"})
+  expect r.left == -1
+}
+
+test "a tool that changes the world needs an approval" {
+  r = restock({id: "a"})
+  expect r.left == 10
+}
+
+test "a workflow whose result is not what was expected" {
+  answers stock_of: [{id: "a", left: 3}]
+  r = check({id: "a"})
+  expect r == {left: 4}
+}

@@ -1,0 +1,368 @@
+// Multi-Agent Orchestration in Kosika
+// Demonstrating agent teams, workflows, and coordination
+
+// Agent Definition
+record Agent {
+  id: Text
+  name: Text
+  role: Text
+  capabilities: Text[]
+  status: Text
+  current_task: Text?
+}
+
+// Task Definition
+record Task {
+  id: Text
+  name: Text
+  task_type: Text
+  required_capabilities: Text[]
+  input: Text{}
+  dependencies: Text[]
+  status: Text
+  assigned_agent: Text?
+  result: Text?
+}
+
+// Workflow Definition
+record Workflow {
+  id: Text
+  name: Text
+  description: Text
+  tasks: Task[]
+  state: Text
+}
+
+// Agent Team
+record AgentTeam {
+  id: Text
+  agents: Agent{}
+  communication_log: Text[]
+}
+
+// Add agent to team
+fn add_agent(team: AgentTeam, agent: Agent) -> AgentTeam {
+  let new_agents = team.agents
+  new_agents[agent.id] = agent
+  return {
+    id: team.id,
+    agents: new_agents,
+    communication_log: team.communication_log
+  }
+}
+
+// Get available agents for a capability
+fn get_available_agents(team: AgentTeam, capability: Text) -> Agent[] {
+  let available: Agent[] = []
+  for agent_id in team.agents.keys() {
+    let agent = team.agents[agent_id]
+    if agent.status == "idle" && agent.capabilities.contains(capability) {
+      available = available.append(agent)
+    }
+  }
+  return available
+}
+
+// Assign task to agent
+fn assign_task(team: AgentTeam, task: Task) -> AgentTeam {
+  for capability in task.required_capabilities {
+    let agents = get_available_agents(team, capability)
+    if agents.length() > 0 {
+      let agent = agents[0]
+      let updated_agent: Agent = {
+        id: agent.id,
+        name: agent.name,
+        role: agent.role,
+        capabilities: agent.capabilities,
+        status: "busy",
+        current_task: task.id
+      }
+
+      let new_agents = team.agents
+      new_agents[agent.id] = updated_agent
+
+      return {
+        id: team.id,
+        agents: new_agents,
+        communication_log: team.communication_log
+      }
+    }
+  }
+
+  return team
+}
+
+// Check if task is ready (dependencies met)
+fn is_task_ready(task: Task, completed_tasks: Text[]) -> Bool {
+  for dep in task.dependencies {
+    if !completed_tasks.contains(dep) {
+      return false
+    }
+  }
+  return true
+}
+
+// Get ready tasks from workflow
+fn get_ready_tasks(workflow: Workflow) -> Task[] {
+  let completed: Text[] = []
+  for task in workflow.tasks {
+    if task.status == "completed" {
+      completed = completed.append(task.id)
+    }
+  }
+
+  let ready: Task[] = []
+  for task in workflow.tasks {
+    if task.status == "pending" && is_task_ready(task, completed) {
+      ready = ready.append(task)
+    }
+  }
+
+  return ready
+}
+
+// Mark task as complete
+fn complete_task(workflow: Workflow, task_id: Text, result: Text{}) -> Workflow {
+  let new_tasks: Task[] = []
+  for task in workflow.tasks {
+    if task.id == task_id {
+      new_tasks = new_tasks.append({
+        id: task.id,
+        name: task.name,
+        task_type: task.task_type,
+        required_capabilities: task.required_capabilities,
+        input: task.input,
+        dependencies: task.dependencies,
+        status: "completed",
+        assigned_agent: task.assigned_agent,
+        result: result
+      })
+    } else {
+      new_tasks = new_tasks.append(task)
+    }
+  }
+
+  return {
+    id: workflow.id,
+    name: workflow.name,
+    description: workflow.description,
+    tasks: new_tasks,
+    state: workflow.state
+  }
+}
+
+// Release agent from task
+fn release_agent(team: AgentTeam, agent_id: Text) -> AgentTeam {
+  let agent = team.agents[agent_id]
+  let updated_agent: Agent = {
+    id: agent.id,
+    name: agent.name,
+    role: agent.role,
+    capabilities: agent.capabilities,
+    status: "idle",
+    current_task: null
+  }
+
+  let new_agents = team.agents
+  new_agents[agent_id] = updated_agent
+
+  return {
+    id: team.id,
+    agents: new_agents,
+    communication_log: team.communication_log
+  }
+}
+
+// Example: Building a Feature with Multi-Agent Team
+workflow build_feature_workflow() -> Text{} {
+  step create_team {
+    let team: AgentTeam = {
+      id: "dev_team",
+      agents: {},
+      communication_log: []
+    }
+
+    // Add specialists
+    team = add_agent(team, {
+      id: "coder",
+      name: "Code Generator",
+      role: "specialist",
+      capabilities: ["write_code", "refactor"],
+      status: "idle",
+      current_task: null
+    })
+
+    team = add_agent(team, {
+      id: "reviewer",
+      name: "Code Reviewer",
+      role: "reviewer",
+      capabilities: ["review", "test"],
+      status: "idle",
+      current_task: null
+    })
+
+    team = add_agent(team, {
+      id: "planner",
+      name: "Planner",
+      role: "coordinator",
+      capabilities: ["plan", "coordinate"],
+      status: "idle",
+      current_task: null
+    })
+
+    return team
+  }
+
+  step create_workflow {
+    let workflow: Workflow = {
+      id: "build_auth_feature",
+      name: "Build Authentication Feature",
+      description: "Build authentication system with code and tests",
+      tasks: [
+        {
+          id: "plan",
+          name: "Plan Architecture",
+          task_type: "planning",
+          required_capabilities: ["plan"],
+          input: {"feature": "authentication"},
+          dependencies: [],
+          status: "pending",
+          assigned_agent: null,
+          result: null
+        },
+        {
+          id: "code",
+          name: "Write Code",
+          task_type: "coding",
+          required_capabilities: ["write_code"],
+          input: {},
+          dependencies: ["plan"],
+          status: "pending",
+          assigned_agent: null,
+          result: null
+        },
+        {
+          id: "review",
+          name: "Review Code",
+          task_type: "review",
+          required_capabilities: ["review"],
+          input: {},
+          dependencies: ["code"],
+          status: "pending",
+          assigned_agent: null,
+          result: null
+        },
+        {
+          id: "test",
+          name: "Write Tests",
+          task_type: "testing",
+          required_capabilities: ["test"],
+          input: {},
+          dependencies: ["code"],
+          status: "pending",
+          assigned_agent: null,
+          result: null
+        }
+      ],
+      state: "initialized"
+    }
+
+    return workflow
+  }
+
+  step execute_workflow {
+    let team = create_team
+    let workflow = create_workflow
+    workflow.state = "running"
+
+    let completed_tasks: Text[] = []
+
+    // Execute tasks in dependency order
+    while completed_tasks.length() < workflow.tasks.length() {
+      let ready = get_ready_tasks(workflow)
+
+      if ready.length() == 0 {
+        break  // No ready tasks
+      }
+
+      for task in ready {
+        // Assign to agent
+        team = assign_task(team, task)
+
+        // Simulate execution
+        let result: Text{} = {
+          "status": "success",
+          "output": "Task completed"
+        }
+
+        // Mark as complete
+        workflow = complete_task(workflow, task.id, result)
+        completed_tasks = completed_tasks.append(task.id)
+
+        // Release agent
+        if task.assigned_agent != null {
+          team = release_agent(team, task.assigned_agent)
+        }
+      }
+    }
+
+    workflow.state = "completed"
+
+    return {
+      "workflow_id": workflow.id,
+      "state": workflow.state,
+      "completed_tasks": completed_tasks.length(),
+      "total_tasks": workflow.tasks.length()
+    }
+  }
+}
+
+// Example: Agent Communication
+workflow agent_communication() -> Text {
+  step setup {
+    let team: AgentTeam = {
+      id: "comm_team",
+      agents: {
+        "agent1": {
+          id: "agent1",
+          name: "Agent 1",
+          role: "worker",
+          capabilities: ["task"],
+          status: "idle",
+          current_task: null
+        },
+        "agent2": {
+          id: "agent2",
+          name: "Agent 2",
+          role: "worker",
+          capabilities: ["task"],
+          status: "idle",
+          current_task: null
+        }
+      },
+      communication_log: []
+    }
+
+    return team
+  }
+
+  step communicate {
+    let team = setup
+
+    // Agent 1 sends message to Agent 2
+    let log = team.communication_log.append({
+      "from": "agent1",
+      "to": "agent2",
+      "message": "Task completed",
+      "timestamp": "now"
+    })
+
+    let updated_team: AgentTeam = {
+      id: team.id,
+      agents: team.agents,
+      communication_log: log
+    }
+
+    return "Communication logged"
+  }
+}

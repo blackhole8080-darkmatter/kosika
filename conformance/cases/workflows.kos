@@ -1,0 +1,77 @@
+// Conformance: workflows, the steps they run in order, and tools whose
+// answers a test scripts.
+
+record Order { id: Text items: Text[] total: Number }
+record Summary { id: Text count: Number big: Bool }
+record Lookup { id: Text }
+record Stock { id: Text left: Number }
+record Report { summary: Summary left: Number note: Text }
+
+tool stock_of {
+  source mcp "shop"
+  operation: "stock_of"
+  access: observe
+  input: Lookup
+  output: Stock
+}
+
+agent clerk {
+  can: [stock_of]
+}
+
+fn summarize(order: Order) -> Summary {
+  return {id: order.id, count: order.items.length(), big: order.total > 100}
+}
+
+fn lookup(summary: Summary) -> Lookup {
+  return {id: summary.id}
+}
+
+fn report(summary: Summary, stock: Stock) -> Report {
+  let note = if stock.left < summary.count { "short" } else { "ok" }
+  return {summary: summary, left: stock.left, note: note}
+}
+
+workflow summary_of(order: Order) -> Summary {
+  summary = summarize(order)
+}
+
+workflow main(order: Order) -> Report {
+  budget 5 tool calls
+  summary = call summary_of(order)
+  ask = lookup(summary)
+  stock = execute clerk.stock_of(id: ask.id)
+  step finish {
+    let done: Report = report(summary, stock)
+    return done
+  }
+}
+
+test "a workflow runs its steps in order" {
+  answers stock_of: [{id: "a1", left: 1}]
+  r = main({id: "a1", items: ["pen", "ink"], total: 120})
+  expect r.note == "short"
+  expect r.left == 1
+  expect r.summary.big
+  expect r.summary.count == 2
+}
+
+test "a workflow may be run on its own" {
+  s = summary_of({id: "b2", items: [], total: 5})
+  expect s == {id: "b2", count: 0, big: false}
+}
+
+test "each scripted answer is used once, in order" {
+  answers stock_of: [{id: "c3", left: 9}, {id: "c3", left: 0}]
+  first = main({id: "c3", items: ["cup"], total: 3})
+  second = main({id: "c3", items: ["cup"], total: 3})
+  expect first.note == "ok"
+  expect second.note == "short"
+}
+
+test "functions and workflows are tested side by side" {
+  order: Order = {id: "d4", items: ["a", "b", "c"], total: 101}
+  expect summarize(order).count == 3
+  s = summary_of(order)
+  expect s.big
+}

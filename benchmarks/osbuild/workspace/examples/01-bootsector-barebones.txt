@@ -1,0 +1,10 @@
+The os-tutorial's own code for lesson 01-bootsector-barebones (Carlos Fenollosa, BSD 3-Clause).
+It uses i386-elf-gcc and i386-elf-ld; use the commands in your rules instead.
+
+=== boot_sect_simple.asm ===
+; A simple boot sector program that loops forever
+loop:
+    jmp loop
+
+times 510-($-$$) db 0
+dw 0xaa55

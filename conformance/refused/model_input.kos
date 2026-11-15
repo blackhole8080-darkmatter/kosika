@@ -1,0 +1,13 @@
+// Refused: a model is given the fields of its input record.
+
+record Question { text: Text }
+record Answer { text: Text }
+
+model writer {
+  input: Question
+  output: Answer
+}
+
+workflow main(question: Question) -> Answer {
+  answer = use_model writer(words: question.text)
+}

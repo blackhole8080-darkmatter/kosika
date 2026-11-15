@@ -1,0 +1,1 @@
+Check failed: Test 'never runs' line 4: Step 'test never runs' cannot infer the type of an array literal; annotate the binding with an array type

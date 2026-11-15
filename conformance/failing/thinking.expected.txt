@@ -1,0 +1,7 @@
+FAIL  a label that is not one of the choices
+      line 17: classify answered 'c', which is not one of the choices ['a', 'b']
+FAIL  a confidence above one
+      line 23: decide answered confidence 1.5, which is not from 0 through 1
+FAIL  a decision without its reason
+      line 29: Invalid structured model output: $: missing required property 'reason'
+0 passed, 3 failed

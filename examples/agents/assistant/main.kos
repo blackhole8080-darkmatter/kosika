@@ -1,0 +1,1651 @@
+// Kosi: an assistant you talk to by typing. It greets you, tells the time,
+// does sums exactly, keeps reminders (with a time if you give one) and the
+// things you ask it to remember, and answers questions in a few short
+// sentences meant to be heard as well as read.
+//
+//   kosika test main.kos
+//   kosika start
+//
+// It touches nothing on the computer: no files, no programs, no web. It has
+// a clock and its own memory, and that is all. Asked to open or play
+// something, it says plainly that it cannot. For work on files, use the box
+// "Not sure which agent?" above it in Studio.
+//
+// Some requests it hands to the agent made for them, which has its own
+// tools and its own limits: "watch https://..." and "my watches" go to the
+// lookout, which rings the phone when a page has news; "look up ...",
+// "search the web for ..." and "find out ..." go to the gatherer, which
+// reads the news and Wikipedia; anything "in my files" or "on my laptop"
+// goes to the desk, which only reads the folder it was given; "my
+// services", "pause lookout" and "resume lookout" go to the steward, which
+// asks your yes before it pauses or resumes anything.
+//
+// Reminders can ring on your phone. Started with --notify and an address
+// of yours (such as https://ntfy.sh/your-private-topic), "check reminders"
+// sends every reminder whose time has come to that address and nowhere
+// else. Run it every few minutes and reminders ring:
+//
+//   kosika run main.kos --input ring.json --memory memory
+//     --notify https://ntfy.sh/your-private-topic
+//
+// where ring.json holds {"msg": {"text": "check reminders"}}.
+//
+// It keeps the last few things said, so "these" and "no, I meant" have
+// something to point at. Told to forget everything, it forgets that too.
+//
+// A stronger mind, if you have allowed one. If omp is allowed as an outside
+// agent (kosika outside --allow omp), a question of five words or more is
+// put to it, and the answer ends "(answered by omp)". omp is shown no file,
+// and is sent only the question and the earlier questions and answers of
+// the talk: never your name, your reminders or what you asked Kosi to
+// remember. A question that turns on those comes back to Kosi's own model.
+// The words of the question do go to omp's company. With omp not allowed,
+// nothing leaves the computer.
+//
+// Say: hello, what time is it, what is 17 times 23, remind me at 6pm to call
+// Sam, remind me in 10 minutes to stretch, my reminders, done 1, remember
+// that my locker is 14, what do you remember, call me Aryan, call yourself
+// Nova, forget everything, or ask a question.
+
+record Msg { text: Text }
+// What it says, and a few things you might say next.
+record Said { text: Text suggest: Text[] }
+
+// due is the moment it falls due, in seconds since 1970, or 0 for no time.
+// at is that moment in words, such as "18:00".
+record Reminder { what: Text due: Number at: Text }
+// What it keeps between conversations.
+record Book { name: Text you: Text reminders: Reminder[] facts: Text[] }
+// The last things said, oldest first, so that "these" and "I meant" have
+// something to point at. Each line begins "You:" or with Kosi's name.
+// `open` holds only the questions put to a model and their answers: the
+// part of the talk that may be shown to an outside agent. What was said
+// about reminders, names and things to remember is never in it.
+record Talk { lines: Text[] open: Text[] }
+// The book after a request, what to say, and what to suggest.
+record Turn { book: Book text: Text suggest: Text[] }
+// A time found in what was said: when, in words, and the words left over.
+record When { due: Number at: Text rest: Text }
+// A sum worked out, or the reason it could not be.
+record Sum { ok: Bool value: Number problem: Text }
+
+record Folded { ok: Bool words: Text[] problem: Text }
+
+record Unit { kind: Text size: Number name: Text }
+
+record Conv { ok: Bool text: Text }
+
+record Date { ok: Bool year: Number month: Number day: Number }
+
+record Handover { agent: Text text: Text }
+
+record Handed { ok: Bool agent: Text text: Text }
+
+// A note to the person's phone, and whether it went.
+record Note { title: Text text: Text link: Text file_name: Text file: Text }
+record Sent { sent: Bool }
+// The reminders that have fallen due: the book without them, and the note
+// that tells of them.
+record Ringing { book: Book note: Note count: Number }
+
+// Another agent in the same folder, asked on the person's behalf. Handing
+// over gives that agent nothing new: it has its own tools and still asks
+// before it changes anything.
+tool hand_over {
+  source system "agents"
+  operation: "ask"
+  access: observe
+  input: Handover
+  output: Handed
+}
+
+// A stronger mind, if the owner has allowed one: an outside agent such as
+// omp, asked a question and shown no file. Its company receives the words
+// of the question, so only open questions go, and nothing Kosi keeps.
+tool think_outside {
+  source system "outside"
+  operation: "answer"
+  access: observe
+  input: Handover
+  output: Handed
+}
+
+// The person's phone. It reaches only the one address they named when
+// starting Kosi with --notify; without it, nothing is sent.
+tool tell_phone {
+  source system "notify"
+  operation: "send"
+  access: observe
+  input: Note
+  output: Sent
+}
+
+agent desk {
+  can: [hand_over, think_outside, tell_phone]
+  max_steps: 1
+}
+
+model voice {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 420
+  }
+}
+
+memory books of Book
+memory talks of Talk
+
+// ---------------------------------------------------------------- routing
+
+fn kind_of(msg: Msg) -> Text {
+  let text = msg.text.lower().trim().trim_marks("?!.")
+  let first = text.split(" ").first().or("")
+  var kind = "ask"
+  if text == "" or text == "help" or text == "what can you do" { kind = "help" }
+  else if text == "check reminders" or text == "ring" { kind = "due" }
+  else if ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "hello kosi", "hi kosi", "hey kosi"].contains(text) { kind = "hello" }
+  else if ["thanks", "thank you", "thanks kosi", "thank you kosi", "thanks a lot", "thank you so much", "ok thanks", "ok", "okay", "cool", "nice", "great", "got it"].contains(text) { kind = "thanks" }
+  else if text.starts_with("set an alarm") or text.starts_with("set alarm") or text.starts_with("alarm ") or text.starts_with("wake me ") { kind = "alarm" }
+  else if text.starts_with("set a timer") or text.starts_with("start a timer") or text.starts_with("timer ") { kind = "timer" }
+  else if text.contains("days until") or text.contains("days till") or text.contains("days to ") or text.contains("days before") or text.contains("how long until") or text.contains("how long till") { kind = "until" }
+  else if text.starts_with("what day ") and has_month(text) { kind = "weekday" }
+  else if text.contains("what time") or text == "time" or text.contains("the time") { kind = "time" }
+  else if text.contains("what day") or text.contains("the date") or text == "date" or text.contains("what is today") { kind = "date" }
+  else if hand_of(msg.text).text.length() > 0 { kind = "hand" }
+  else if text.starts_with("remind me") or text.starts_with("set a reminder") { kind = "remind" }
+  else if text == "reminders" or text.contains("my reminders") or text.contains("what are my reminders") { kind = "reminders" }
+  else if text.starts_with("done ") or text.starts_with("finished ") { kind = "done" }
+  else if text.starts_with("call me ") or text.starts_with("my name is ") { kind = "you" }
+  else if text.starts_with("call yourself ") or text.starts_with("your name is ") { kind = "rename" }
+  else if text.contains("your name") or text == "who are you" { kind = "who" }
+  else if text.starts_with("remember that ") or text.starts_with("remember ") { kind = "remember" }
+  else if text.contains("what do you remember") or text.contains("what do you know about me") { kind = "recall" }
+  else if text == "forget everything" { kind = "forget" }
+  else if convert_of(text).ok { kind = "convert" }
+  else if sum_of(text).ok { kind = "sum" }
+  else if wants_action(first) { kind = "cannot" }
+  return kind
+}
+
+// A request meant for another agent: "ask the coder to write a test",
+// "tell the researcher to find my notes on trees", "@coder fix it", or
+// "hand over: tidy my notes", which leaves the choice of agent to the app.
+// What comes back has an empty text when it is no such request.
+fn hand_of(said: Text) -> Handover {
+  let tidy = said.trim()
+  let lower = tidy.lower()
+  let words = tidy.words()
+  if lower.starts_with("@") and words.length() > 1 {
+    return {agent: words[0].drop(1).trim_marks(":,").lower(), text: words.drop(1).join(" ")}
+  }
+  for lead in ["hand over:", "hand this over:", "pass this on:", "pass on:"] {
+    if lower.starts_with(lead) { return {agent: "", text: tidy.drop(lead.length()).trim()} }
+  }
+  // "please", "kosi," and "can you" in front change nothing.
+  var rest = words
+  while rest.length() > 0 and ["please", "kosi", "kosi,", "can", "could", "would", "will", "you"].contains(rest.first().or("").lower()) {
+    rest = rest.drop(1)
+  }
+  // ask, tell, get, have, use, let or make, the agent's name, the word
+  // agent if it is said, then what it is to do: "use the coder agent to
+  // build a website", "have the researcher find my notes".
+  let asks = ["ask", "tell", "get", "have", "use", "let", "make"].contains(rest.first().or("").lower())
+  if asks and rest.length() > 3 and rest[1].lower() == "the" {
+    // The name is followed by the word agent, or by to, or both: "tell
+    // the truth about it" and "let the dog out" are not hand-overs.
+    var at = 3
+    var marked = false
+    if rest.length() > at and rest[at].lower() == "agent" {
+      at += 1
+      marked = true
+    }
+    if rest.length() > at and rest[at].lower() == "to" {
+      at += 1
+      marked = true
+    }
+    let named = rest[2].lower().trim_marks(".,:;!?")
+    let task = rest.drop(at).join(" ").trim()
+    if marked and not task.is_empty() { return {agent: named, text: task} }
+  }
+  // A request to make something that is made of code or files goes to
+  // the coder, said in any of the usual ways: "pls make a website for my
+  // portfolio", "create a researcher agent", "can you build me a game".
+  if makes_something(rest) { return {agent: "coder", text: tidy} }
+  let asked = rest.join(" ")
+  let plain = asked.lower().trim_marks(".!")
+  // Watching a page for news goes to the lookout, which rings the phone:
+  // "watch https://... for tickets", "my watches", "stop watching 2".
+  if plain.starts_with("watch https://") or plain.starts_with("tell me when https://") or plain.starts_with("keep an eye on https://") or plain == "my watches" {
+    return {agent: "lookout", text: asked}
+  }
+  if plain.starts_with("stop watching ") { return {agent: "lookout", text: "stop " + plain.drop(14).trim()} }
+  // The services that keep running are the steward's: "my services",
+  // "pause lookout", "resume lookout".
+  if ["my services", "services", "what services are running", "what is running"].contains(plain.trim_marks("?")) or ((plain.starts_with("pause ") or plain.starts_with("resume ")) and rest.length() <= 4) {
+    return {agent: "steward", text: asked}
+  }
+  // Looking something up on the web goes to the gatherer: "search the
+  // web for ...", "look up ...", "find out ...", "google ...".
+  for lead in ["search the web for ", "search the internet for ", "search online for ", "look up ", "look online for ", "find out ", "google ", "search for "] {
+    if plain.starts_with(lead) and plain.length() > lead.length() + 2 { return {agent: "gatherer", text: asked.drop(lead.length()).trim()} }
+  }
+  // Something in the person's own files goes to the desk.
+  for place in ["in my files", "in my notes", "in my documents", "on my laptop", "on my computer", "in my folder"] {
+    if plain.contains(place) and not plain.starts_with("remember") { return {agent: "desk", text: asked} }
+  }
+  return {agent: "", text: ""}
+}
+
+// Whether words ask for something to be made that the coder makes: a
+// verb of making near the start, and a thing made of code or files.
+fn makes_something(words: Text[]) -> Bool {
+  let lower = for word in words { word.lower().trim_marks(".,:;!?") }
+  let start = for word in lower.take(4) where ["make", "create", "build", "write", "design", "develop", "code", "generate", "program"].contains(word) { word }
+  if start.is_empty() { return false }
+  for thing in ["website", "webpage", "page", "site", "portfolio", "app", "application", "program", "script", "game", "function", "agent", "tool", "animation", "animations", "graphics", "code", "html", "css", "javascript", "python", "kosika", "module", "test", "tests", "file", "files", "folder", "project"] {
+    if lower.contains(thing) { return true }
+  }
+  return false
+}
+
+fn handed_said(known: BooksRecalled, got: Handed) -> Turn {
+  let text = if got.ok { "The " + got.agent + " agent says: " + got.text } else { got.text }
+  return {book: book_in(known), text: text, suggest: []}
+}
+
+// A request to do something on the computer, which this assistant cannot.
+// It is caught here, by its first word, so that the model is never given
+// the chance to say "Sure, opening it now" about something that will not
+// happen.
+fn wants_action(first: Text) -> Bool {
+  let verbs = ["open", "launch", "start", "play", "google", "search", "send", "email", "text", "call", "close", "install", "download", "delete", "shut", "restart", "turn", "set", "mute", "pause", "stop", "print"]
+  return verbs.contains(first)
+}
+
+// What it says when asked to act on the computer.
+fn cannot_text() -> Text {
+  return "I cannot do that. I have no way to open programs, play things or change settings on this computer. I can tell the time, do sums, keep reminders, remember things and answer questions. To search the web, say \"look up\" and what you want; to watch a page, say \"watch\" and its https address; to find something in your files, say \"in my files\"."
+}
+
+// A model will sometimes say it did something it has no way of doing. If
+// its answer claims an action, the honest sentence is said instead.
+fn honest(text: Text) -> Text {
+  let lower = text.lower()
+  let claims = ["i'll open", "i will open", "i've opened", "i have opened", "opening ", "i'll search", "i will search", "searching ", "i'll play", "i will play", "playing ", "i'll send", "i will send", "i've sent", "i have sent", "i'll set", "i will set", "i've set", "i'll turn", "i will turn", "i'll launch", "i will launch", "launching ", "i'll start", "i will start"]
+  for claim in claims {
+    if lower.contains(claim) { return cannot_text() }
+  }
+  return text
+}
+
+// ---------------------------------------------------------------- sums
+
+// The words of a sum, with every way of saying an operator made one sign.
+fn sum_words(text: Text) -> Text[] {
+  var t = " " + text.lower().trim().trim_marks("?=.") + " "
+  for lead in [" what is ", " what's ", " whats ", " calculate ", " work out ", " how much is "] {
+    t = t.replace(lead, " ")
+  }
+  t = t.replace(" the square root of ", " root ").replace(" square root of ", " root ").replace(" sqrt ", " root ")
+  t = t.replace(" to the power of ", " ^ ").replace(" to the power ", " ^ ").replace(" squared ", " ^ 2 ").replace(" cubed ", " ^ 3 ")
+  t = t.replace("^", " ^ ").replace("(", " ( ").replace(")", " ) ")
+  t = t.replace(" multiplied by ", " * ").replace(" times ", " * ").replace(" x ", " * ").replace("×", " * ")
+  t = t.replace(" divided by ", " / ").replace(" over ", " / ").replace("÷", " / ")
+  t = t.replace(" plus ", " + ").replace(" add ", " + ").replace(" minus ", " - ").replace(" take away ", " - ")
+  t = t.replace(" percent of ", " / 100 * ").replace("% of ", " / 100 * ")
+  t = t.replace("*", " * ").replace("/", " / ").replace("+", " + ").replace(",", "")
+  return t.words()
+}
+
+// A number multiplied by itself a whole number of times.
+fn raised(base: Number, exponent: Number) -> Sum {
+  if not exponent.is_whole() or exponent.abs() > 60 {
+    return {ok: true, value: 0, problem: "I can only raise a number to a whole power, up to 60."}
+  }
+  if exponent < 0 and base == 0 { return {ok: true, value: 0, problem: "You cannot divide by zero."} }
+  return {ok: true, value: base.power(exponent), problem: ""}
+}
+
+// Powers and square roots are worked out first, so 2 + 3 ^ 2 is 11. What
+// comes back is the sum with each of them replaced by its answer.
+fn powers(words: Text[]) -> Folded {
+  let no: Folded = {ok: false, words: [], problem: ""}
+  var out: Text[] = []
+  var root = false
+  var power = false
+  for word in words {
+    if word == "root" { root = true }
+    else if word == "^" { power = true }
+    else {
+      var text = word
+      if root {
+        let n = word.to_number()
+        if not n.exists() { return no }
+        if n.value() < 0 { return {ok: true, words: [], problem: "A negative number has no square root."} }
+        text = f"{n.value().sqrt()}"
+        root = false
+      }
+      if power {
+        let base = out.last().or("").to_number()
+        let by = text.to_number()
+        if base.exists() == false or by.exists() == false { return no }
+        let made = raised(base.value(), by.value())
+        if made.problem.length() > 0 { return {ok: true, words: [], problem: made.problem} }
+        out = out.take(out.length() - 1)
+        text = f"{made.value}"
+        power = false
+      }
+      out = out.append(text)
+    }
+  }
+  if root or power { return no }
+  return {ok: true, words: out, problem: ""}
+}
+
+// A sum with no brackets in it. Multiplying and dividing are done before
+// adding and taking away, as in school.
+fn plain_sum(given: Text[]) -> Sum {
+  let no: Sum = {ok: false, value: 0, problem: ""}
+  let folded = powers(given)
+  if folded.problem.length() > 0 { return {ok: true, value: 0, problem: folded.problem} }
+  if folded.ok == false { return no }
+  let words = folded.words
+  if words.length() % 2 == 0 { return no }
+  // First pass: numbers and signs must take turns; fold * and / as we go.
+  var terms: Number[] = []
+  var signs: Text[] = []
+  var held = 0
+  var doing = ""
+  var at = 0
+  for word in words {
+    if at % 2 == 0 {
+      let n = word.to_number()
+      if not n.exists() { return no }
+      if doing == "*" { held = held * n.value() }
+      else if doing == "/" {
+        if n.value() == 0 { return {ok: true, value: 0, problem: "You cannot divide by zero."} }
+        held = held / n.value()
+      }
+      else { held = n.value() }
+    } else {
+      if not ["*", "/", "+", "-"].contains(word) { return no }
+      if word == "+" or word == "-" {
+        terms = terms.append(held)
+        signs = signs.append(word)
+        doing = ""
+      } else { doing = word }
+    }
+    at = at + 1
+  }
+  terms = terms.append(held)
+  // Second pass: add and take away, left to right.
+  var total = terms[0]
+  var i = 1
+  for sign in signs {
+    total = if sign == "+" { total + terms[i] } else { total - terms[i] }
+    i = i + 1
+  }
+  return {ok: true, value: total, problem: ""}
+}
+
+// Works out a sum written as numbers with signs between them. What is in
+// brackets is worked out first, the innermost brackets before the rest.
+fn sum_of(text: Text) -> Sum {
+  let no: Sum = {ok: false, value: 0, problem: ""}
+  var words = sum_words(text)
+  var signed = false
+  for word in words {
+    if ["*", "/", "+", "-", "^", "root"].contains(word) { signed = true }
+  }
+  if not signed { return no }
+  var passes = 0
+  while words.contains("(") or words.contains(")") {
+    passes = passes + 1
+    if passes > 20 { return no }
+    var open = -1
+    var close = -1
+    var i = 0
+    for word in words {
+      if word == "(" and close < 0 { open = i }
+      if word == ")" and close < 0 { close = i }
+      i = i + 1
+    }
+    if open < 0 or close < open { return no }
+    let inner = plain_sum(words.slice(open + 1, close))
+    if inner.ok == false or inner.problem.length() > 0 { return inner }
+    var next: Text[] = []
+    var j = 0
+    for word in words {
+      if j < open or j > close { next = next.append(word) }
+      else if j == open { next = next.append(f"{inner.value}") }
+      j = j + 1
+    }
+    words = next
+  }
+  let sum = plain_sum(words)
+  if sum.ok == false or sum.problem.length() > 0 { return sum }
+  return {ok: true, value: (sum.value * 1000000).round() / 1000000, problem: ""}
+}
+
+// ---------------------------------------------------------------- units
+
+// What a unit is called, what kind of thing it measures, and how many of
+// that kind's base unit (metres, grams, millilitres, seconds, metres a
+// second) one of it is.
+fn unit_of(word: Text) -> Unit {
+  let w = word.lower().trim_marks(".,?")
+  if ["mm", "millimetre", "millimetres", "millimeter", "millimeters"].contains(w) { return {kind: "length", size: 0.001, name: "mm"} }
+  if ["cm", "centimetre", "centimetres", "centimeter", "centimeters"].contains(w) { return {kind: "length", size: 0.01, name: "cm"} }
+  if ["m", "metre", "metres", "meter", "meters"].contains(w) { return {kind: "length", size: 1, name: "m"} }
+  if ["km", "kms", "kilometre", "kilometres", "kilometer", "kilometers"].contains(w) { return {kind: "length", size: 1000, name: "km"} }
+  if ["in", "inch", "inches"].contains(w) { return {kind: "length", size: 0.0254, name: "inches"} }
+  if ["ft", "foot", "feet"].contains(w) { return {kind: "length", size: 0.3048, name: "feet"} }
+  if ["yd", "yard", "yards"].contains(w) { return {kind: "length", size: 0.9144, name: "yards"} }
+  if ["mi", "mile", "miles"].contains(w) { return {kind: "length", size: 1609.344, name: "miles"} }
+  if ["mg", "milligram", "milligrams"].contains(w) { return {kind: "weight", size: 0.001, name: "mg"} }
+  if ["g", "gram", "grams"].contains(w) { return {kind: "weight", size: 1, name: "g"} }
+  if ["kg", "kgs", "kilo", "kilos", "kilogram", "kilograms"].contains(w) { return {kind: "weight", size: 1000, name: "kg"} }
+  if ["oz", "ounce", "ounces"].contains(w) { return {kind: "weight", size: 28.349523125, name: "oz"} }
+  if ["lb", "lbs", "pound", "pounds"].contains(w) { return {kind: "weight", size: 453.59237, name: "lb"} }
+  if ["tonne", "tonnes"].contains(w) { return {kind: "weight", size: 1000000, name: "tonnes"} }
+  if ["ml", "millilitre", "millilitres", "milliliter", "milliliters"].contains(w) { return {kind: "volume", size: 1, name: "ml"} }
+  if ["l", "litre", "litres", "liter", "liters"].contains(w) { return {kind: "volume", size: 1000, name: "litres"} }
+  if ["s", "sec", "secs", "second", "seconds"].contains(w) { return {kind: "time", size: 1, name: "seconds"} }
+  if ["min", "mins", "minute", "minutes"].contains(w) { return {kind: "time", size: 60, name: "minutes"} }
+  if ["h", "hr", "hrs", "hour", "hours"].contains(w) { return {kind: "time", size: 3600, name: "hours"} }
+  if ["day", "days"].contains(w) { return {kind: "time", size: 86400, name: "days"} }
+  if ["week", "weeks"].contains(w) { return {kind: "time", size: 604800, name: "weeks"} }
+  if ["km/h", "kmh", "kph"].contains(w) { return {kind: "speed", size: 1000 / 3600, name: "km/h"} }
+  if ["mph"].contains(w) { return {kind: "speed", size: 0.44704, name: "mph"} }
+  if ["m/s"].contains(w) { return {kind: "speed", size: 1, name: "m/s"} }
+  if ["c", "celsius", "centigrade"].contains(w) { return {kind: "heat", size: 1, name: "C"} }
+  if ["f", "fahrenheit"].contains(w) { return {kind: "heat", size: 1, name: "F"} }
+  if ["k", "kelvin"].contains(w) { return {kind: "heat", size: 1, name: "K"} }
+  return {kind: "", size: 0, name: ""}
+}
+
+// A number kept to the places worth reading: fewer for a large number.
+fn tidy(value: Number) -> Number {
+  let size = value.abs()
+  var scale = 10000
+  if size >= 100 { scale = 100 }
+  else if size < 0.01 { scale = 100000000 }
+  return (value * scale).round() / scale
+}
+
+// "convert 5 km to miles", "5 km in miles", "how many miles is 5 km".
+fn convert_of(text: Text) -> Conv {
+  let no: Conv = {ok: false, text: ""}
+  var t = " " + text.lower().trim().trim_marks("?.!") + " "
+  for lead in [" convert ", " what is ", " what's ", " how much is "] {
+    t = t.replace(lead, " ")
+  }
+  t = t.replace(" degrees ", " ").replace(" degree ", " ").replace(" into ", " to ").replace(" are there in ", " in ").replace(" are in ", " in ")
+  t = t.replace(" a ", " 1 ").replace(" an ", " 1 ").replace(" one ", " 1 ")
+  var words = t.words()
+  // "how many miles is 5 km" is "5 km to miles" said the other way round.
+  if words.length() == 6 and words[0] == "how" and words[1] == "many" and ["is", "in"].contains(words[3]) {
+    words = [words[4], words[5], "to", words[2]]
+  }
+  // "5km" is "5 km".
+  if words.length() == 3 and words[0].to_number().exists() == false {
+    let joined = words[0]
+    var cut = 0
+    var k = joined.length() - 1
+    while k >= 1 and cut == 0 {
+      if joined.take(k).to_number().exists() { cut = k }
+      k = k - 1
+    }
+    if cut == 0 { return no }
+    words = [joined.take(cut), joined.drop(cut), words[1], words[2]]
+  }
+  if words.length() != 4 { return no }
+  if not ["to", "in", "as"].contains(words[2]) { return no }
+  let n = words[0].to_number()
+  let a = unit_of(words[1])
+  let b = unit_of(words[3])
+  if n.exists() == false or a.kind == "" or b.kind == "" { return no }
+  if a.kind != b.kind { return {ok: true, text: f"I cannot turn {a.name} into {b.name}: one measures {a.kind} and the other {b.kind}."} }
+  var value = 0
+  if a.kind == "heat" {
+    let x = n.value()
+    let c = if a.name == "F" { (x - 32) * 5 / 9 } else if a.name == "K" { x - 273.15 } else { x }
+    value = if b.name == "F" { c * 9 / 5 + 32 } else if b.name == "K" { c + 273.15 } else { c }
+  } else {
+    value = n.value() * a.size / b.size
+  }
+  let shown = tidy(value)
+  let first = if n.value() == 1 { single(a.name) } else { a.name }
+  let second = if shown == 1 { single(b.name) } else { b.name }
+  return {ok: true, text: f"{n.value()} {first} is {shown} {second}."}
+}
+
+// The name of a unit when there is one of it: 1 mile, not 1 miles.
+fn single(name: Text) -> Text {
+  if name == "inches" { return "inch" }
+  if name == "feet" { return "foot" }
+  return if name.length() > 3 and name.ends_with("s") { name.take(name.length() - 1) } else { name }
+}
+
+fn convert_said(msg: Msg, known: BooksRecalled) -> Turn {
+  return {book: book_in(known), text: convert_of(msg.text).text, suggest: []}
+}
+
+// ---------------------------------------------------------------- the book
+
+fn book_in(known: BooksRecalled) -> Book {
+  let empty: Book = {name: "Kosi", you: "", reminders: [], facts: []}
+  return if known.found { known.value.value() } else { empty }
+}
+
+// The words after a beginning such as "remind me to", tidied.
+fn after(text: Text, starts: Text[]) -> Text {
+  let tidy = text.trim().trim_marks(".!")
+  let lower = tidy.lower()
+  for start in starts {
+    if lower.starts_with(start) { return tidy.drop(start.length()).trim() }
+  }
+  return tidy
+}
+
+// The first whole number in what was said, or 0.
+fn number_in(msg: Msg) -> Number {
+  for word in msg.text.split(" ") {
+    let n = word.trim().trim_marks(".,").to_number().or(0)
+    if n >= 1 and n == n.floor() { return n }
+  }
+  return 0
+}
+
+fn two(n: Number) -> Text {
+  return f"{n}".pad_left(2, "0")
+}
+
+fn reminder_line(r: Reminder) -> Text {
+  return if r.due > 0 { r.what + ", at " + r.at } else { r.what }
+}
+
+fn numbered(items: Text[]) -> Text {
+  var lines: Text[] = []
+  var n = 1
+  for item in items {
+    lines = lines.append(f"{n}. {item}")
+    n = n + 1
+  }
+  return lines.join("\n")
+}
+
+// ---------------------------------------------------------------- times
+
+// A clock time written as 6pm, 6:30pm, 18:30 or 6, as minutes after
+// midnight, or -1 when it is not a time. `half` is a following am or pm.
+fn clock_minutes(word: Text, half: Text) -> Number {
+  var w = word.lower().trim_marks(".,")
+  var pm = half == "pm"
+  var am = half == "am"
+  if w.ends_with("pm") { pm = true  w = w.take(w.length() - 2) }
+  else if w.ends_with("am") { am = true  w = w.take(w.length() - 2) }
+  let parts = w.split(":")
+  if parts.length() > 2 { return -1 }
+  let h = parts[0].to_number().or(-1)
+  let m = if parts.length() == 2 { parts[1].to_number().or(-1) } else { 0 }
+  if h < 0 or h > 23 or m < 0 or m > 59 or h != h.floor() or m != m.floor() { return -1 }
+  var hour = h
+  if pm and h < 12 { hour = h + 12 }
+  if am and h == 12 { hour = 0 }
+  return hour * 60 + m
+}
+
+// Monday is 0 and Sunday is 6; -1 when the word is not a day.
+fn day_number(word: Text) -> Number {
+  let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+  return days.index_of(word.lower().trim_marks(".,")).or(-1)
+}
+
+fn day_name(n: Number) -> Text {
+  let names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+  return names[n % 7]
+}
+
+// Minutes after midnight as a clock reads them: 545 is 9:05.
+fn clock_text(minutes: Number) -> Text {
+  let whole = minutes.floor()
+  return f"{(whole / 60).floor()}:{two(whole % 60)}"
+}
+
+// Finds when in what was said: "at 6pm", "in 10 minutes", "tomorrow",
+// "on Friday at 9". The time is turned into the moment it falls due,
+// counted from now. A clock time already past today means tomorrow, a day
+// with no time means nine in the morning, and a day of the week that is
+// today with its time already past means a week from now.
+fn when_of(text: Text, moment: Moment) -> When {
+  let words = text.words()
+  let now_minutes = moment.hour * 60 + moment.minute
+  // The start of this minute, so a reminder falls due on the minute.
+  let base = moment.epoch - (moment.epoch - (moment.epoch / 60).floor() * 60)
+  let today = day_number(moment.weekday)
+  var clock = -1
+  var ahead = -1
+  var named = false
+  var wait = 0
+  var kept: Text[] = []
+  var skip = 0
+  var i = 0
+  for word in words {
+    let low = word.lower().trim_marks(".,")
+    let next = if i + 1 < words.length() { words[i + 1] } else { "" }
+    let after_next = if i + 2 < words.length() { words[i + 2].lower().trim_marks(".,") } else { "" }
+    let free = ahead < 0 and wait == 0
+    if skip > 0 { skip = skip - 1 }
+    else if clock < 0 and wait == 0 and low == "at" and clock_minutes(next, after_next) >= 0 {
+      clock = clock_minutes(next, after_next)
+      skip = if after_next == "am" or after_next == "pm" { 2 } else { 1 }
+    }
+    else if clock < 0 and free and low == "in" and next.to_number().or(0) > 0 and ["minute", "minutes", "min", "mins", "hour", "hours", "day", "days"].contains(after_next) {
+      let count = next.to_number().or(0)
+      wait = if after_next.starts_with("hour") { count * 60 } else if after_next.starts_with("day") { count * 1440 } else { count }
+      skip = 2
+    }
+    else if free and low == "tomorrow" { ahead = 1 }
+    else if free and low == "today" { ahead = 0 }
+    else if free and today >= 0 and ["on", "next", "this"].contains(low) and day_number(next) >= 0 {
+      ahead = (day_number(next) - today + 7) % 7
+      named = true
+      skip = 1
+    }
+    else if free and today >= 0 and i == 0 and day_number(low) >= 0 {
+      ahead = (day_number(low) - today + 7) % 7
+      named = true
+    }
+    else { kept = kept.append(word) }
+    i = i + 1
+  }
+  var due = 0
+  var at = ""
+  var gap = 0
+  if wait > 0 {
+    gap = wait
+    due = base + (wait * 60).round()
+    at = clock_text((now_minutes + wait) % 1440)
+  } else if clock >= 0 or ahead >= 0 {
+    let minutes = if clock >= 0 { clock } else { 540 }
+    gap = minutes - now_minutes
+    if ahead > 0 { gap = gap + ahead * 1440 }
+    if gap <= 0 { gap = gap + (if named { 7 * 1440 } else { 1440 }) }
+    due = base + gap * 60
+    at = clock_text(minutes)
+  }
+  // A time that is not today says which day it is.
+  let days = ((now_minutes + gap) / 1440).floor()
+  if due > 0 and days >= 1 and today >= 0 { at = at + " on " + day_name(today + days) }
+  return {due: due, at: at, rest: kept.join(" ")}
+}
+
+// ---------------------------------------------------------------- dates
+
+fn month_number(word: Text) -> Number {
+  let w = word.lower().trim_marks(".,")
+  var n = 1
+  for name in ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"] {
+    if name == w or (w.length() == 3 and name.take(3) == w) or (w == "sept" and n == 9) { return n }
+    n = n + 1
+  }
+  return 0
+}
+
+fn month_name(n: Number) -> Text {
+  let names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+  return names[n - 1]
+}
+
+fn has_month(text: Text) -> Bool {
+  for word in text.words() {
+    if month_number(word) > 0 { return true }
+  }
+  return text.contains("christmas") or text.contains("new year") or text.contains("halloween")
+}
+
+fn days_in(year: Number, month: Number) -> Number {
+  let leap = (year % 4 == 0 and year % 100 != 0) or year % 400 == 0
+  if month == 2 { return if leap { 29 } else { 28 } }
+  return if [4, 6, 9, 11].contains(month) { 30 } else { 31 }
+}
+
+// Days from the first of January 1970 to a date, which makes the days
+// between two dates a subtraction and the day of the week a remainder.
+fn day_count(year: Number, month: Number, day: Number) -> Number {
+  let y = if month <= 2 { year - 1 } else { year }
+  let era = (y / 400).floor()
+  let yoe = y - era * 400
+  let mp = if month > 2 { month - 3 } else { month + 9 }
+  let doy = ((153 * mp + 2) / 5).floor() + day - 1
+  let doe = yoe * 365 + (yoe / 4).floor() - (yoe / 100).floor() + doy
+  return era * 146097 + doe - 719468
+}
+
+// The date named in what was said: "25 December", "December 25th 2027",
+// "2026-12-25", "Christmas". With no year it is the next one to come.
+fn date_in(text: Text, moment: Moment) -> Date {
+  let no: Date = {ok: false, year: 0, month: 0, day: 0}
+  let lower = text.lower().trim().trim_marks("?.!").replace(",", " ")
+  var year = 0
+  var month = 0
+  var day = 0
+  if lower.contains("christmas") { month = 12  day = 25 }
+  else if lower.contains("new year") { month = 1  day = 1 }
+  else if lower.contains("halloween") { month = 10  day = 31 }
+  for word in lower.words() {
+    let parts = word.split("-")
+    var bare = word
+    if word.length() > 2 and ["st", "nd", "rd", "th"].contains(word.drop(word.length() - 2)) and word.take(word.length() - 2).to_number().exists() {
+      bare = word.take(word.length() - 2)
+    }
+    let n = bare.to_number().or(0)
+    if parts.length() == 3 and parts[0].to_number().or(0) >= 1000 {
+      year = parts[0].to_number().or(0)
+      month = parts[1].to_number().or(0)
+      day = parts[2].to_number().or(0)
+    }
+    else if month_number(word) > 0 and month == 0 { month = month_number(word) }
+    else if n >= 1000 and n == n.floor() and year == 0 { year = n }
+    else if n >= 1 and n <= 31 and n == n.floor() and day == 0 { day = n }
+  }
+  if month < 1 or month > 12 or day < 1 { return no }
+  if year == 0 {
+    year = moment.year
+    if month < moment.month or (month == moment.month and day < moment.day) { year = year + 1 }
+  }
+  if day > days_in(year, month) { return no }
+  return {ok: true, year: year, month: month, day: day}
+}
+
+fn until_said(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let date = date_in(msg.text, moment)
+  if date.ok == false {
+    return {book: book, text: "Tell me the date, like this: days until 25 December.", suggest: ["days until 25 December"]}
+  }
+  let count = day_count(date.year, date.month, date.day)
+  let gap = count - day_count(moment.year, moment.month, moment.day)
+  let named = f"{day_name(count + 3)}, {date.day} {month_name(date.month)} {date.year}"
+  var text = f"{gap} days until {named}."
+  if gap == 0 { text = f"That is today: {named}." }
+  else if gap == 1 { text = f"1 day until {named}." }
+  else if gap < 0 { text = f"{named} was {0 - gap} days ago." }
+  return {book: book, text: text, suggest: []}
+}
+
+fn weekday_said(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let date = date_in(msg.text, moment)
+  if date.ok == false {
+    return {book: book, text: "Tell me the date, like this: what day is 25 December.", suggest: []}
+  }
+  let count = day_count(date.year, date.month, date.day)
+  return {book: book, text: f"{date.day} {month_name(date.month)} {date.year} is a {day_name(count + 3)}.", suggest: []}
+}
+
+// ---------------------------------------------------------------- what it does
+
+fn remind(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let said = after(msg.text, ["remind me", "set a reminder"])
+  let when = when_of(said, moment)
+  let what = after(when.rest, ["to ", "that ", "for "])
+  if what.is_empty() {
+    return {book: book, text: "Tell me what to remind you of, like this: remind me at 6pm to call Sam.", suggest: []}
+  }
+  let all = book.reminders.append({what: what, due: when.due, at: when.at})
+  let timed = if when.due > 0 { " at " + when.at } else { "" }
+  return {
+    book: {name: book.name, you: book.you, reminders: all, facts: book.facts},
+    text: f"I will remind you to {what}{timed}. You have {all.length()} on the list.",
+    suggest: ["my reminders"]
+  }
+}
+
+// A timer is a reminder with nothing to say but that the time is up.
+fn timer(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let long = after(msg.text, ["set a timer for", "start a timer for", "set a timer", "start a timer", "timer for", "timer"])
+  let when = when_of("in " + long, moment)
+  if when.due == 0 or when.rest.length() > 0 {
+    return {book: book, text: "Tell me how long, like this: timer 5 minutes.", suggest: ["timer 5 minutes"]}
+  }
+  let all = book.reminders.append({what: f"your {long} timer is up", due: when.due, at: when.at})
+  return {
+    book: {name: book.name, you: book.you, reminders: all, facts: book.facts},
+    text: f"Timer set for {long}. I will tell you at {when.at}.",
+    suggest: ["my reminders"]
+  }
+}
+
+// An alarm is a reminder at a clock time: "set an alarm for 7am".
+fn alarm(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let rest = after(msg.text, ["set an alarm for", "set an alarm at", "set an alarm", "set alarm for", "alarm for", "alarm at", "alarm", "wake me up at", "wake me at"])
+  let when = when_of("at " + rest, moment)
+  if when.due == 0 or when.rest.length() > 0 {
+    return {book: book, text: "Tell me the time, like this: alarm at 7am.", suggest: ["alarm at 7am"]}
+  }
+  let all = book.reminders.append({what: "your alarm", due: when.due, at: when.at})
+  return {
+    book: {name: book.name, you: book.you, reminders: all, facts: book.facts},
+    text: f"Alarm set for {when.at}. I can only tell you while I am open on this computer.",
+    suggest: ["my reminders"]
+  }
+}
+
+fn reminders(known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  var lines: Text[] = []
+  for r in book.reminders { lines = lines.append(reminder_line(r)) }
+  let text = if lines.is_empty() { "You have no reminders." } else { "Your reminders:\n" + numbered(lines) + "\nSay done and the number when one is finished." }
+  return {book: book, text: text, suggest: if lines.is_empty() { ["remind me in 10 minutes to stretch"] } else { ["done 1"] }}
+}
+
+fn finish(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let n = number_in(msg)
+  if n < 1 or n > book.reminders.length() {
+    return {book: book, text: "Say done and the number of the reminder. Say my reminders to see the numbers.", suggest: ["my reminders"]}
+  }
+  let gone = book.reminders[n - 1]
+  var left: Reminder[] = []
+  var at = 1
+  for item in book.reminders {
+    if at != n { left = left.append(item) }
+    at = at + 1
+  }
+  return {book: {name: book.name, you: book.you, reminders: left, facts: book.facts}, text: f"Done: {gone.what}. {left.length()} left.", suggest: []}
+}
+
+fn remember(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let what = after(msg.text, ["remember that ", "remember "])
+  if what.is_empty() or what.lower() == "remember" {
+    return {book: book, text: "Tell me what to remember, like this: remember that my locker is 14.", suggest: []}
+  }
+  let all = book.facts.append(what).unique()
+  return {book: {name: book.name, you: book.you, reminders: book.reminders, facts: all}, text: f"I will remember that {what}.", suggest: ["what do you remember"]}
+}
+
+fn recall_all(known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let text = if book.facts.is_empty() { "You have not asked me to remember anything yet." } else { "I remember:\n" + numbered(book.facts) }
+  return {book: book, text: text, suggest: []}
+}
+
+fn forget(known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  return {book: {name: book.name, you: "", reminders: [], facts: []}, text: "I have forgotten everything: your name, your reminders and what you asked me to remember.", suggest: []}
+}
+
+// A name as it was typed, kept short and without marks.
+fn name_in(msg: Msg, starts: Text[]) -> Text {
+  let name = after(msg.text, starts).trim_marks("\"'.,!?").trim()
+  return if name.length() > 30 { name.take(30).trim() } else { name }
+}
+
+fn you_are(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let name = name_in(msg, ["call me ", "my name is "])
+  if name.is_empty() { return {book: book, text: "Tell me your name, like this: call me Aryan.", suggest: []} }
+  return {book: {name: book.name, you: name, reminders: book.reminders, facts: book.facts}, text: f"Nice to meet you, {name}.", suggest: ["hello"]}
+}
+
+fn rename(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let name = name_in(msg, ["call yourself ", "your name is "])
+  if name.is_empty() { return {book: book, text: "Tell me the name, like this: call yourself Nova.", suggest: []} }
+  return {book: {name: name, you: book.you, reminders: book.reminders, facts: book.facts}, text: f"From now on I am {name}.", suggest: ["what is your name"]}
+}
+
+fn who(known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  return {book: book, text: f"I am {book.name}, your assistant, written in Kosika. I run on this computer and nothing you tell me leaves it.", suggest: ["what can you do"]}
+}
+
+// The reminders whose time has come, taken out of the book. A reminder
+// with no time never falls due.
+fn due_now(known: BooksRecalled, moment: Moment) -> Ringing {
+  let book = book_in(known)
+  var left: Reminder[] = []
+  var rung: Text[] = []
+  for r in book.reminders {
+    if r.due > 0 and r.due <= moment.epoch { rung = rung.append(r.what) } else { left = left.append(r) }
+  }
+  let title = if rung.length() == 1 { "Reminder" } else { f"{rung.length()} reminders" }
+  return {
+    book: {name: book.name, you: book.you, reminders: left, facts: book.facts},
+    note: {title: title, text: rung.join("
+"), link: "", file_name: "", file: ""},
+    count: rung.length()
+  }
+}
+
+fn not_sent() -> Sent {
+  return {sent: false}
+}
+
+// What ringing said. A reminder the phone did not get stays in the book,
+// to be tried again.
+fn rung(known: BooksRecalled, ringing: Ringing, sent: Sent) -> Turn {
+  if ringing.count == 0 { return same(known, "Nothing is due.") }
+  if not sent.sent { return same(known, "Due now:
+" + ringing.note.text + "
+I could not reach your phone, so they stay on your list.") }
+  return {book: ringing.book, text: "Sent to your phone:
+" + ringing.note.text, suggest: ["my reminders"]}
+}
+
+fn same(known: BooksRecalled, text: Text) -> Turn {
+  return {book: book_in(known), text: text, suggest: []}
+}
+
+fn help_said(known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  return {
+    book: book,
+    text: f"I am {book.name}. I can tell the time, do sums, keep reminders, remember things you tell me, and answer questions.\nwhat is 17 times 23\nremind me at 6pm to call Sam\nremind me tomorrow at 9 to pack\nremind me in 10 minutes to stretch\ntimer 5 minutes\nmy reminders, then done 1\nconvert 5 km to miles\ndays until 25 December\nwhat is (2 + 3) squared\nask the coder to write a function that reverses a list\nremember that my locker is 14\nwhat do you remember\ncall me Aryan, or call yourself Nova\nforget everything\nFor work on your files, use the box above: it passes your request to the right agent.",
+    suggest: ["what time is it", "what is 17 times 23", "my reminders"]
+  }
+}
+
+fn sum_said(msg: Msg, known: BooksRecalled) -> Turn {
+  let sum = sum_of(msg.text)
+  let text = if sum.problem.length() > 0 { sum.problem } else { f"{sum.value}" }
+  return {book: book_in(known), text: text, suggest: []}
+}
+
+// ---------------------------------------------------------------- the clock
+
+fn part_of_day(moment: Moment) -> Text {
+  var part = "evening"
+  if moment.hour < 5 { part = "night" }
+  else if moment.hour < 12 { part = "morning" }
+  else if moment.hour < 18 { part = "afternoon" }
+  return part
+}
+
+fn hello_said(known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let part = part_of_day(moment)
+  let name = if book.you.is_empty() { "" } else { ", " + book.you }
+  let opening = if part == "night" { "You are up late" + name + "." } else { "Good " + part + name + "." }
+  let count = book.reminders.length()
+  let list = if count == 0 { "" } else if count == 1 { " You have 1 reminder." } else { f" You have {count} reminders." }
+  return {
+    book: book,
+    text: opening + list,
+    suggest: if book.you.is_empty() { ["call me Aryan", "what can you do"] } else if count > 0 { ["my reminders", "what time is it"] } else { ["what time is it", "what can you do"] }
+  }
+}
+
+fn time_said(known: BooksRecalled, moment: Moment) -> Turn {
+  return same(known, f"It is {moment.hour}:{two(moment.minute)}.")
+}
+
+fn date_said(known: BooksRecalled, moment: Moment) -> Turn {
+  return same(known, f"Today is {moment.weekday}, {moment.date}.")
+}
+
+// ---------------------------------------------------------------- asking the model
+
+// What the model is told: how to speak, what it cannot do, and what it knows.
+fn ask_prompt(msg: Msg, known: BooksRecalled, moment: Moment) -> Prompt {
+  let book = book_in(known)
+  let facts = if book.facts.is_empty() { "nothing yet" } else { book.facts.join("; ") }
+  var lines: Text[] = []
+  for r in book.reminders { lines = lines.append(reminder_line(r)) }
+  let list = if lines.is_empty() { "none" } else { lines.join("; ") }
+  let person = if book.you.is_empty() { "The person has not told you their name." } else { "The person's name is " + book.you + "." }
+  let about = if mentions_kosika(msg.text) { "\n" + kosika_primer() } else { "" }
+  return {text: "You are " + book.name + ", a voice assistant on a person's laptop. Answer in sentences that sound natural when read aloud: one or two for a simple question, and up to six for a question that asks for ideas, reasons, advice or a plan. Give real substance: name the things, and say why. Use plain words. No lists, no headings, no symbols. If you are not sure, say so instead of guessing. Answer what the person says now. When their words point back at something, such as these, that, it, or I meant, they mean the conversation so far. Do not mention their reminders or what they asked you to remember unless they ask about them. You cannot open programs, browse the web or see files, so never say you did.\n" + person + "\nIt is " + moment.weekday + ", " + moment.date + ", " + moment.hour + ":" + two(moment.minute) + ".\nThings the person asked you to remember: " + facts + ".\nTheir reminders: " + list + "." + about + "\n\nThe person says: " + msg.text.trim()}
+}
+
+fn mentions_kosika(text: Text) -> Bool {
+  return text.lower().contains("kosika")
+}
+
+// What Kosika is and can do, for a question about it: you are made with
+// it, and a model that has never heard of it would guess.
+fn kosika_primer() -> Text {
+  return "About Kosika, which you and the other agents here are written in: Kosika is a programming language for AI agents that are safe to trust. A Kosika program has records, functions, workflows, models, agents and tools, and is checked before it runs. It can ask a language model and get a typed answer, fetch web pages from sites the person allows (for example arxiv.org), read and write files in a folder the person grants, run programs such as python when allowed, keep memories between runs, and ask another agent. Anything that changes something waits for the person's yes. Kosika Studio runs the agents; the coder agent writes new Kosika programs and websites when asked, and Kosi passes such requests to it. Kosika has no built-in clock that starts a run at a set time; a run can be started every day by the computer's own task scheduler. When asked to build something, say that you will pass it to the coder, or that the person can say: use the coder agent to ..."
+}
+
+// How many lines of the talk are kept, and how long one may be.
+fn talk_in(past: TalksRecalled) -> Talk {
+  let none: Talk = {lines: [], open: []}
+  return if past.found { past.value.value() } else { none }
+}
+
+// The prompt with the conversation so far put before what is said now.
+fn with_talk(prompt: Prompt, past: TalksRecalled) -> Prompt {
+  let lines = talk_in(past).lines
+  if lines.is_empty() { return prompt }
+  let parts = prompt.text.split("\n\nThe person says: ")
+  return {text: parts.first().or("") + "\n\nThe conversation so far, oldest first:\n" + lines.join("\n") + "\n\nThe person says: " + parts.drop(1).join("\n\nThe person says: ")}
+}
+
+// The talk with this turn added: the last eight lines are kept, each cut
+// short. Told to forget everything, it forgets the talk as well.
+fn heard(past: TalksRecalled, msg: Msg, turn: Turn) -> Talk {
+  if kind_of(msg) == "forget" { return {lines: [], open: []} }
+  let now = ["You: " + msg.text.trim().take(300), turn.book.name + ": " + turn.text.trim().take(400)]
+  let lines = talk_in(past).lines.concat(now)
+  // Only a turn an outside agent itself answered may be shown to one
+  // again. An answer Kosi's own model gave may rest on a remembered fact.
+  let open = if kind_of(msg) == "ask" and turn.text.contains("(answered by ") { talk_in(past).open.concat(now) } else { talk_in(past).open }
+  return {
+    lines: if lines.length() > 8 { lines.drop(lines.length() - 8) } else { lines },
+    open: if open.length() > 6 { open.drop(open.length() - 6) } else { open }
+  }
+}
+
+// A question worth a stronger mind: one of five words or more. "Thanks"
+// and "how are you" stay here.
+fn is_open(msg: Msg) -> Bool {
+  return msg.text.trim().words().length() >= 5
+}
+
+// What an outside agent is asked: the question, and before it only the
+// earlier questions and answers of this talk. Not the person's name, not
+// their reminders, not what they asked to have remembered. It cannot know
+// those, so it is told to say LOCAL when the question turns on them.
+// The owner agreed to omp for this, so omp is the one asked, and no other.
+fn outside_question(msg: Msg, past: TalksRecalled) -> Handover {
+  let open = talk_in(past).open
+  let before = if open.is_empty() { "" } else { "The conversation so far, oldest first:\n" + open.join("\n") + "\n\n" }
+  let about = if mentions_kosika(msg.text) { kosika_primer() + "\n\n" } else { "" }
+  return {agent: "omp", text: about + "Questions that ask for ideas, advice, an explanation or a plan are to be answered, also when they say I, my or we. Only when the question cannot be answered without a private fact about the person that is not given here, such as where they keep something, their timetable, or what they told their assistant before, answer with the single word LOCAL and nothing more.\n\n" + before + "The question: " + msg.text.trim()}
+}
+
+fn no_help() -> Handed {
+  return {ok: false, agent: "", text: ""}
+}
+
+// Is there an answer to pass on? Not when nobody could be asked, nothing
+// was said, or the agent said the question is one for Kosi itself.
+fn usable(got: Handed) -> Bool {
+  let said = got.text.trim().trim_marks(".!\"'`*")
+  return got.ok and not said.is_empty() and said.upper() != "LOCAL"
+}
+
+// The outside agent's answer, marked so the person knows where it came from.
+fn outside_said(known: BooksRecalled, got: Handed) -> Turn {
+  return same(known, honest(got.text.trim()) + "\n(answered by " + got.agent + ")")
+}
+
+fn spoken(known: BooksRecalled, reply: Reply) -> Turn {
+  return same(known, honest(reply.text.trim()))
+}
+
+fn book_of(turn: Turn) -> Book {
+  return turn.book
+}
+
+fn say(turn: Turn) -> Said {
+  return {text: turn.text, suggest: turn.suggest}
+}
+
+// ---------------------------------------------------------------- workflows
+
+// An open question goes to an outside agent when one is allowed. When
+// none is, or it has nothing to say, Kosi's own model answers.
+workflow answer_outside(msg: Msg) -> Turn {
+  known = recall books under "me"
+  past  = recall talks under "me"
+  ask   = outside_question(msg, past)
+  got   = execute desk.think_outside(ask.agent, ask.text) otherwise no_help()
+  turn  = match usable(got) {
+    case true { outside_said(known, got) }
+    case _ { call answer_here(msg) }
+  }
+}
+
+workflow answer(msg: Msg) -> Turn {
+  turn = match is_open(msg) {
+    case true { call answer_outside(msg) }
+    case _ { call answer_here(msg) }
+  }
+}
+
+workflow answer_here(msg: Msg) -> Turn {
+  known  = recall books under "me"
+  moment = now
+  past   = recall talks under "me"
+  first  = ask_prompt(msg, known, moment)
+  prompt = with_talk(first, past)
+  reply  = use_model voice(prompt.text) retry 1 learn by standalone(msg) otherwise {text: "Sorry, I could not think of an answer just now. Please ask again."}
+  turn   = spoken(known, reply)
+}
+
+// A question that means the same whenever it is asked, said plainly, so a
+// good answer can be given again at once, with no model. A question that
+// points back at the talk, or is about the person, means something else
+// each time and is never learned: for it this is "".
+fn standalone(msg: Msg) -> Text {
+  let words = msg.text.lower().trim_marks("?!.").words()
+  if words.length() < 3 { return "" }
+  for word in words {
+    if ["it", "that", "this", "these", "those", "them", "he", "she", "they", "his", "her", "their", "my", "me", "i", "i'm", "mine", "we", "our", "us", "again", "earlier", "before", "above", "today", "tomorrow", "yesterday", "now", "latest", "news", "weather", "time", "date"].contains(word) { return "" }
+  }
+  return words.join(" ")
+}
+
+// A request for another agent is passed to it, and its answer passed back.
+workflow pass_on(msg: Msg) -> Turn {
+  known = recall books under "me"
+  ask   = hand_of(msg.text)
+  got   = execute desk.hand_over(ask.agent, ask.text) otherwise {ok: false, agent: "", text: "I have no way to reach the other agents from here. Open Kosika Studio and ask there."}
+  turn  = handed_said(known, got)
+}
+
+// Everything that needs the clock and no model.
+workflow by_clock(msg: Msg) -> Turn {
+  known  = recall books under "me"
+  moment = now
+  kind   = kind_of(msg)
+  turn   = match kind {
+    case "time" { time_said(known, moment) }
+    case "date" { date_said(known, moment) }
+    case "alarm" { alarm(msg, known, moment) }
+    case "remind" { remind(msg, known, moment) }
+    case "timer" { timer(msg, known, moment) }
+    case "until" { until_said(msg, known, moment) }
+    case "weekday" { weekday_said(msg, known, moment) }
+    case _ { hello_said(known, moment) }
+  }
+}
+
+// Reminders whose time has come go to the phone. Run every few minutes
+// with "check reminders", this is what makes a reminder ring.
+workflow ring(msg: Msg) -> Turn {
+  known   = recall books under "me"
+  moment  = now
+  ringing = due_now(known, moment)
+  sent    = match ringing.count > 0 {
+    case true { call send_note(ringing.note) }
+    case _ { not_sent() }
+  }
+  turn    = rung(known, ringing, sent)
+}
+
+workflow send_note(note: Note) -> Sent {
+  sent = execute desk.tell_phone(title: note.title, text: note.text, link: "", file_name: "", file: "") otherwise not_sent()
+}
+
+// Everything that needs neither the clock nor a model.
+workflow keep(msg: Msg) -> Turn {
+  known = recall books under "me"
+  kind  = kind_of(msg)
+  turn  = match kind {
+    case "reminders" { reminders(known) }
+    case "done" { finish(msg, known) }
+    case "remember" { remember(msg, known) }
+    case "recall" { recall_all(known) }
+    case "forget" { forget(known) }
+    case "you" { you_are(msg, known) }
+    case "rename" { rename(msg, known) }
+    case "who" { who(known) }
+    case "sum" { sum_said(msg, known) }
+    case "convert" { convert_said(msg, known) }
+    case "thanks" { same(known, "You are welcome.") }
+    case "cannot" { same(known, cannot_text()) }
+    case _ { help_said(known) }
+  }
+}
+
+// Where a message goes, for Kosika Chat: the helper agent and what to tell it,
+// or no agent when Kosi answers itself.
+workflow route(msg: Msg) -> Handover {
+  out = hand_of(msg.text)
+}
+
+workflow main(msg: Msg) -> Said {
+  // The time is long because a request handed to another agent takes as
+  // long as that agent takes.
+  budget 2 model calls, 900 seconds
+  kind = kind_of(msg)
+  turn = match kind {
+    case "ask" { call answer(msg) }
+    case "hand" { call pass_on(msg) }
+    case "time" { call by_clock(msg) }
+    case "date" { call by_clock(msg) }
+    case "alarm" { call by_clock(msg) }
+    case "remind" { call by_clock(msg) }
+    case "timer" { call by_clock(msg) }
+    case "until" { call by_clock(msg) }
+    case "weekday" { call by_clock(msg) }
+    case "hello" { call by_clock(msg) }
+    case "due" { call ring(msg) }
+    case _ { call keep(msg) }
+  }
+  book  = book_of(turn)
+  saved = remember book in books under "me"
+  past  = recall talks under "me"
+  talk  = heard(past, msg, turn)
+  kept  = remember talk in talks under "me"
+  said  = say(turn)
+}
+
+// ------------------------------------------------------------------ tests
+
+test "requests are understood" {
+  expect kind_of({text: "What time is it?"}) == "time"
+  expect kind_of({text: "what day is it"}) == "date"
+  expect kind_of({text: "Remind me to call Sam."}) == "remind"
+  expect kind_of({text: "Set a reminder to water the plants"}) == "remind"
+  expect kind_of({text: "my reminders"}) == "reminders"
+  expect kind_of({text: "done 2"}) == "done"
+  expect kind_of({text: "remember that my locker is 14"}) == "remember"
+  expect kind_of({text: "What do you remember?"}) == "recall"
+  expect kind_of({text: "forget everything"}) == "forget"
+  expect kind_of({text: "help"}) == "help"
+  expect kind_of({text: "Hello"}) == "hello"
+  expect kind_of({text: "call me Aryan"}) == "you"
+  expect kind_of({text: "Call yourself Nova"}) == "rename"
+  expect kind_of({text: "What is your name?"}) == "who"
+  expect kind_of({text: "what is 17 times 23"}) == "sum"
+  expect kind_of({text: "why is the sky blue"}) == "ask"
+  expect kind_of({text: "Thanks Kosi!"}) == "thanks"
+  thanked = main({text: "ok"})
+  expect thanked.text == "You are welcome."
+}
+
+test "sums are worked out by code, exactly" {
+  expect sum_of("what is 17 times 23").value == 391
+  expect sum_of("2 + 3 * 4").value == 14
+  expect sum_of("100 divided by 8").value == 12.5
+  expect sum_of("What is 15% of 240?").value == 36
+  expect sum_of("10 minus 4 minus 3").value == 3
+  expect sum_of("1,000 x 12").value == 12000
+  expect sum_of("7 / 0").problem == "You cannot divide by zero."
+  expect sum_of("why is the sky blue").ok == false
+  expect sum_of("call 3 friends").ok == false
+  expect sum_of("3 times").ok == false
+  a = main({text: "what is 17 times 23?"})
+  expect a.text == "391"
+}
+
+test "reminders are kept, listed and finished" {
+  a = main({text: "remind me to call Sam"})
+  b = main({text: "Remind me to buy milk."})
+  c = main({text: "my reminders"})
+  d = main({text: "done 1"})
+  e = main({text: "my reminders"})
+  f = main({text: "done 7"})
+  expect a.text == "I will remind you to call Sam. You have 1 on the list."
+  expect a.suggest == ["my reminders"]
+  expect b.text == "I will remind you to buy milk. You have 2 on the list."
+  expect c.text == "Your reminders:\n1. call Sam\n2. buy milk\nSay done and the number when one is finished."
+  expect d.text == "Done: call Sam. 1 left."
+  expect e.text.contains("1. buy milk")
+  expect f.text.starts_with("Say done and the number")
+}
+
+test "a time in a reminder is read and turned into a moment" {
+  // Twenty seconds into 09:05; a reminder falls due on the minute.
+  nine: Moment = {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000040}
+  a = when_of("at 6pm to call Sam", nine)
+  b = when_of("to call Sam at 18:30", nine)
+  c = when_of("in 10 minutes to stretch", nine)
+  d = when_of("in 2 hours to eat", nine)
+  e = when_of("at 8 am to wake", nine)
+  f = when_of("to look at the stars", nine)
+  expect a.at == "18:00"
+  expect a.rest == "to call Sam"
+  expect a.due == 1000000020 + (18 * 60 - 545) * 60
+  expect b.at == "18:30"
+  expect b.rest == "to call Sam"
+  expect c.at == "9:15"
+  expect c.due == 1000000020 + 600
+  expect d.at == "11:05"
+  expect e.at == "8:00 on Tuesday"
+  expect e.due == 1000000020 + (8 * 60 - 545 + 1440) * 60
+  expect f.due == 0
+  expect f.rest == "to look at the stars"
+  expect clock_minutes("6:15pm", "") == 18 * 60 + 15
+  expect clock_minutes("12", "am") == 0
+  expect clock_minutes("25", "") == -1
+  expect clock_minutes("soon", "") == -1
+}
+
+test "tomorrow, a day of the week, and days ahead are understood" {
+  // 09:05 on Monday 12 October 2026.
+  nine: Moment = {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}
+  a = when_of("tomorrow at 9 to pack", nine)
+  b = when_of("tomorrow to call the bank", nine)
+  c = when_of("on Friday at 5pm to hand in the essay", nine)
+  d = when_of("on Monday at 8 to go running", nine)
+  e = when_of("today at 6pm to cook", nine)
+  f = when_of("in 2 days to water the plants", nine)
+  g = when_of("to watch Friday Night Lights", nine)
+  expect a.at == "9:00 on Tuesday"
+  expect a.rest == "to pack"
+  expect a.due == 1000000020 + (1440 - 5) * 60
+  expect b.at == "9:00 on Tuesday"
+  expect c.at == "17:00 on Friday"
+  expect c.rest == "to hand in the essay"
+  expect c.due == 1000000020 + (4 * 1440 + 17 * 60 - 545) * 60
+  expect d.at == "8:00 on Monday"
+  expect d.due == 1000000020 + (7 * 1440 + 8 * 60 - 545) * 60
+  expect e.at == "18:00"
+  expect f.at == "9:05 on Wednesday"
+  expect g.due == 0
+  expect g.rest == "to watch Friday Night Lights"
+}
+
+test "a timer is a reminder that says the time is up" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}]
+  a = main({text: "Set a timer for 5 minutes"})
+  b = main({text: "timer soon"})
+  c = main({text: "my reminders"})
+  expect kind_of({text: "timer 10 min"}) == "timer"
+  expect a.text == "Timer set for 5 minutes. I will tell you at 9:10."
+  expect b.text == "Tell me how long, like this: timer 5 minutes."
+  expect c.text.contains("1. your 5 minutes timer is up, at 9:10")
+}
+
+test "an alarm is a reminder at a clock time" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}]
+  a = main({text: "Set an alarm for 7am"})
+  b = main({text: "wake me up at noonish"})
+  expect a.text == "Alarm set for 7:00 on Tuesday. I can only tell you while I am open on this computer."
+  expect b.text == "Tell me the time, like this: alarm at 7am."
+}
+
+test "brackets, powers and square roots" {
+  expect sum_of("(2 + 3) * 4").value == 20
+  expect sum_of("2 * (3 + (4 - 1))").value == 12
+  expect sum_of("2 + 3 ^ 2").value == 11
+  expect sum_of("what is 12 squared").value == 144
+  expect sum_of("2 to the power of 10").value == 1024
+  expect sum_of("what is the square root of 144").value == 12
+  expect sum_of("square root of (9 + 16)").value == 5
+  expect sum_of("2 ^ -1").value == 0.5
+  expect sum_of("square root of -4").problem == "A negative number has no square root."
+  expect sum_of("2 ^ 0.5").problem == "I can only raise a number to a whole power, up to 60."
+  expect sum_of("(2 + 3").ok == false
+  expect sum_of("2 + 3)").ok == false
+  expect sum_of("()").ok == false
+  expect sum_of("7").ok == false
+  a = main({text: "what is (2 + 3) squared?"})
+  expect a.text == "25"
+}
+
+test "units are converted by code" {
+  expect convert_of("convert 5 km to miles").text == "5 km is 3.1069 miles."
+  expect convert_of("10 miles in km").text == "10 miles is 16.0934 km."
+  expect convert_of("how many grams is 2 kg").text == "2 kg is 2000 g."
+  expect convert_of("how many minutes are in 2 hours").text == "2 hours is 120 minutes."
+  expect convert_of("100 C to F").text == "100 C is 212 F."
+  expect convert_of("What is 98.6 degrees fahrenheit in celsius?").text == "98.6 F is 37 C."
+  expect convert_of("5km to m").text == "5 km is 5000 m."
+  expect convert_of("60 mph to km/h").text == "60 mph is 96.5606 km/h."
+  expect convert_of("how many feet in a mile").text == "1 mile is 5280 feet."
+  expect convert_of("how many inches are in a foot").text == "1 foot is 12 inches."
+  expect convert_of("1000 m to km").text == "1000 m is 1 km."
+  expect convert_of("5 km to kg").text == "I cannot turn km into kg: one measures length and the other weight."
+  expect convert_of("5 minutes to midnight").ok == false
+  expect convert_of("why is the sky blue").ok == false
+  expect kind_of({text: "convert 3 feet to cm"}) == "convert"
+  a = main({text: "convert 3 feet to cm"})
+  expect a.text == "3 feet is 91.44 cm."
+}
+
+test "days until a date, and the day of the week it falls on" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}]
+  a = main({text: "How many days until Christmas?"})
+  b = main({text: "days until 1 March"})
+  c = main({text: "days until 2026-10-13"})
+  d = main({text: "what day is 25 December 2027?"})
+  e = main({text: "days until 31 February"})
+  expect day_count(1970, 1, 1) == 0
+  expect day_count(2026, 10, 12) == 20738
+  expect days_in(2028, 2) == 29
+  expect days_in(2100, 2) == 28
+  expect a.text == "74 days until Friday, 25 December 2026."
+  expect b.text == "140 days until Monday, 1 March 2027."
+  expect c.text == "1 day until Tuesday, 13 October 2026."
+  expect d.text == "25 December 2027 is a Saturday."
+  expect e.text.starts_with("Tell me the date")
+  expect kind_of({text: "what day is it"}) == "date"
+}
+
+test "a reminder with a time says when" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}]
+  a = main({text: "Remind me at 6pm to call Sam"})
+  b = main({text: "my reminders"})
+  expect a.text == "I will remind you to call Sam at 18:00. You have 1 on the list."
+  expect b.text.contains("1. call Sam, at 18:00")
+}
+
+test "names, and a greeting by the clock" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "20:00", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 20, minute: 0, epoch: 0}]
+  a = main({text: "hello"})
+  b = main({text: "call me Aryan"})
+  c = main({text: "what is your name?"})
+  d = main({text: "call yourself Nova"})
+  e = main({text: "who are you"})
+  f = main({text: "hello"})
+  expect a.text == "Good morning."
+  expect a.suggest == ["call me Aryan", "what can you do"]
+  expect b.text == "Nice to meet you, Aryan."
+  expect c.text.starts_with("I am Kosi, your assistant, written in Kosika.")
+  expect d.text == "From now on I am Nova."
+  expect e.text.starts_with("I am Nova,")
+  expect f.text == "Good evening, Aryan."
+}
+
+test "what it is told, it remembers until told to forget" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "what do you remember"})
+  c = main({text: "forget everything"})
+  d = main({text: "what do you remember"})
+  e = main({text: "my reminders"})
+  expect a.text == "I will remember that my locker is 14."
+  expect b.text == "I remember:\n1. my locker is 14"
+  expect c.text.starts_with("I have forgotten everything")
+  expect d.text == "You have not asked me to remember anything yet."
+  expect e.text == "You have no reminders."
+}
+
+test "the time and the date come from the clock, not the model" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}]
+  a = main({text: "what time is it"})
+  b = main({text: "what day is it"})
+  expect a.text == "It is 9:05."
+  expect b.text == "Today is Monday, 2026-10-12."
+}
+
+test "a question goes to the model with what it has been told" {
+  answers voice: [{text: " Your locker is number 14. "}]
+  a = main({text: "remember that my locker is 14"})
+  p = ask_prompt({text: "which locker is mine?"}, {found: true, value: {name: "Kosi", you: "Aryan", reminders: [{what: "call Sam", due: 5, at: "18:00"}], facts: ["my locker is 14"]}}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0})
+  b = main({text: "which locker is mine?"})
+  expect p.text.starts_with("You are Kosi, a voice assistant")
+  expect p.text.contains("The person's name is Aryan.")
+  expect p.text.contains("Things the person asked you to remember: my locker is 14.")
+  expect p.text.contains("Their reminders: call Sam, at 18:00.")
+  expect p.text.contains("It is Monday, 2026-10-12, 9:05.")
+  expect p.text.contains("never say you did")
+  expect b.text == "Your locker is number 14."
+}
+
+test "it keeps the last of the talk, so a question can point back" {
+  answers voice: [{text: "A simulator and a key exchange."}, {text: "They teach you skills; they are not a way to invest."}]
+  a = main({text: "which quantum projects should we build?"})
+  b = main({text: "will these help me earn money?"})
+  none: TalksRecalled = {found: false, value: null}
+  past: TalksRecalled = {found: true, value: {lines: ["You: which quantum projects should we build?", "Kosi: A simulator and a key exchange."], open: []}}
+  plain: Prompt = {text: "You are Kosi.\n\nThe person says: will these help me earn money?"}
+  expect with_talk(plain, none) == plain
+  expect with_talk(plain, past).text == "You are Kosi.\n\nThe conversation so far, oldest first:\nYou: which quantum projects should we build?\nKosi: A simulator and a key exchange.\n\nThe person says: will these help me earn money?"
+  turn: Turn = {book: {name: "Kosi", you: "", reminders: [], facts: []}, text: " They teach you skills. ", suggest: []}
+  expect heard(past, {text: " will these help? "}, turn).lines == ["You: which quantum projects should we build?", "Kosi: A simulator and a key exchange.", "You: will these help?", "Kosi: They teach you skills."]
+  expect heard(past, {text: "forget everything"}, turn).lines == []
+  long: TalksRecalled = {found: true, value: {lines: ["1", "2", "3", "4", "5", "6", "7", "8"], open: []}}
+  expect heard(long, {text: "nine"}, turn).lines == ["3", "4", "5", "6", "7", "8", "You: nine", "Kosi: They teach you skills."]
+  expect b.text == "They teach you skills; they are not a way to invest."
+  expect ask_prompt({text: "hi there you"}, {found: false, value: null}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}).text.contains("Do not mention their reminders")
+}
+
+test "an open question may go to an outside agent, with nothing Kosi keeps" {
+  expect is_open({text: "what shall we build with quantum computing"})
+  expect not is_open({text: "how are you"})
+  book: Book = {name: "Kosi", you: "Aryan", reminders: [{what: "stretch", due: 5, at: "2:49"}], facts: ["my locker is 14"]}
+  turn: Turn = {book: book, text: "A simulator.", suggest: []}
+  none: TalksRecalled = {found: false, value: null}
+  kept = heard(none, {text: "remember that my locker is 14"}, turn)
+  here = heard({found: true, value: kept}, {text: "which locker is mine"}, {book: book, text: "Your locker is 14.", suggest: []})
+  out: Turn = {book: book, text: "A simulator. (answered by omp)", suggest: []}
+  asked = heard({found: true, value: here}, {text: "what quantum projects should we build"}, out)
+  // Only the question put to a model is in the part that may go outside.
+  expect kept.open == []
+  expect kept.lines.length() == 2
+  // Nor is a question its own model answered, which may rest on a fact.
+  expect here.open == []
+  expect asked.open == ["You: what quantum projects should we build", "Kosi: A simulator. (answered by omp)"]
+  q = outside_question({text: " will these earn money? "}, {found: true, value: asked})
+  expect q.agent == "omp"
+  expect q.text.ends_with("The conversation so far, oldest first:\nYou: what quantum projects should we build\nKosi: A simulator. (answered by omp)\n\nThe question: will these earn money?")
+  expect not q.text.contains("locker")
+  expect not q.text.contains("stretch")
+  expect not q.text.contains("Aryan")
+  expect usable({ok: true, agent: "omp", text: "Build a simulator first."})
+  expect not usable({ok: true, agent: "omp", text: " LOCAL. "})
+  expect not usable({ok: true, agent: "omp", text: "  "})
+  expect not usable(no_help())
+  said = outside_said({found: true, value: book}, {ok: true, agent: "omp", text: " Build a simulator first. "})
+  expect said.text == "Build a simulator first.\n(answered by omp)"
+  expect said.book == book
+  // With no outside agent allowed, its own model answers as before.
+  answers voice: [{text: "Cats sleep most of the day."}]
+  a = main({text: "tell me something about cats please"})
+  expect a.text == "Cats sleep most of the day."
+}
+
+test "it never says it did what it cannot do" {
+  answers voice: [{text: "Sure, I'll open the web browser and search for cats."}, {text: "Cats sleep most of the day."}]
+  a = main({text: "open my web browser and search for cats"})
+  b = main({text: "could you show me some cats?"})
+  c = main({text: "tell me something about cats"})
+  expect kind_of({text: "Play some music"}) == "cannot"
+  expect a.text.starts_with("I cannot do that.")
+  expect b.text.starts_with("I cannot do that.")
+  expect c.text == "Cats sleep most of the day."
+  // Looking something up is not done here: it is handed to the gatherer.
+  expect hand_of("could you look up cats for me?").agent == "gatherer"
+}
+
+test "a request for another agent is handed to it" {
+  answers hand_over: [{ok: true, agent: "coder", text: "Done: reverse.py"}, {ok: false, agent: "", text: "There is no agent called teacher. The agents here are: coder."}, {ok: true, agent: "researcher", text: "Three notes mention trees."}]
+  a = hand_of("Ask the coder to write a function that reverses a list")
+  b = hand_of("@Researcher: find my notes on trees")
+  c = hand_of("hand over: tidy my notes")
+  expect a.agent == "coder"
+  expect a.text == "write a function that reverses a list"
+  expect b.agent == "researcher"
+  expect b.text == "find my notes on trees"
+  expect c.agent == ""
+  expect c.text == "tidy my notes"
+  expect hand_of("tell me a joke").text == ""
+  expect hand_of("ask the coder").text == ""
+  expect hand_of("why is the sky blue").text == ""
+  expect kind_of({text: "tell the researcher to find my notes"}) == "hand"
+  g = hand_of("use the coder agent to create a website with motion graphics. go all out")
+  expect g.agent == "coder"
+  expect g.text == "create a website with motion graphics. go all out"
+  h = hand_of("Kosi, can you have the planner agent sort out my week")
+  expect h.agent == "planner"
+  expect h.text == "sort out my week"
+  expect hand_of("please ask the coder to add a test").agent == "coder"
+  expect hand_of("use the force").text == ""
+  expect hand_of("get the time").text == ""
+  expect hand_of("tell the truth about cats").text == ""
+  expect hand_of("let the dog out").text == ""
+  expect kind_of({text: "use the coder agent to create a magnificent website"}) == "hand"
+  m = hand_of("pls make a mind-blowing motion graphics website for my portfolio, go all out")
+  expect m.agent == "coder"
+  expect m.text == "pls make a mind-blowing motion graphics website for my portfolio, go all out"
+  expect hand_of("create a researcher agent that summarizes papers").agent == "coder"
+  expect hand_of("Kosi, can you build me a small game").agent == "coder"
+  expect hand_of("make me laugh").text == ""
+  expect hand_of("write a poem about rain").text == ""
+  expect kind_of({text: "please create a website for my bakery"}) == "hand"
+  w = hand_of("Watch https://github.com/ollama/ollama/releases for v0.41")
+  expect w.agent == "lookout"
+  expect w.text == "Watch https://github.com/ollama/ollama/releases for v0.41"
+  expect hand_of("stop watching 2").text == "stop 2"
+  expect hand_of("my watches").agent == "lookout"
+  l = hand_of("Kosi, can you look up who won the last F1 race")
+  expect l.agent == "gatherer"
+  expect l.text == "who won the last F1 race"
+  expect hand_of("search the web for cheap flights to Goa").text == "cheap flights to Goa"
+  expect hand_of("where is my CV in my files?").agent == "desk"
+  expect hand_of("remember that my files are in Documents").text == ""
+  expect hand_of("look up").text == ""
+  expect hand_of("my services").agent == "steward"
+  expect hand_of("Kosi, pause lookout").text == "pause lookout"
+  expect hand_of("resume the lookout service").agent == "steward"
+  expect kind_of({text: "pause the music"}) == "hand"
+  d = main({text: "ask the coder to write a function that reverses a list"})
+  e = main({text: "ask the teacher to mark my essay"})
+  f = main({text: "hand over: what do my notes say about trees"})
+  expect d.text == "The coder agent says: Done: reverse.py"
+  expect e.text == "There is no agent called teacher. The agents here are: coder."
+  expect f.text == "The researcher agent says: Three notes mention trees."
+}
+
+test "help needs no model" {
+  a = main({text: "help"})
+  expect a.text.starts_with("I am Kosi. I can tell the time, do sums, keep reminders")
+}
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "it answers a plain question briefly" {
+  a = main({text: "why is the sky blue?"})
+  expect a.text.length() > 20
+  expect a.text.length() < 500
+  expect a.text.contains("\n- ") == false
+  expect not a.text.starts_with("Sorry")
+}
+
+eval "it uses what it was asked to remember" {
+  a = main({text: "remember that my sister is called Meera"})
+  b = main({text: "what is my sister called?"})
+  expect b.text.contains("Meera")
+}
+
+eval "it does not pretend to act on the computer" {
+  a = main({text: "could you put on some music for me?"})
+  expect a.text.lower().contains("cannot") or a.text.lower().contains("can't") or a.text.lower().contains("unable") or a.text.lower().contains("not able")
+}
+
+test "a reminder whose time has come goes to the phone" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000000}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000000}, {date: "2026-10-12", time: "09:20", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 20, epoch: 1000000900}, {date: "2026-10-12", time: "09:21", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 21, epoch: 1000000960}]
+  answers tell_phone: [{sent: true}]
+  a = main({text: "remind me in 10 minutes to stretch"})
+  b = main({text: "remind me at 6pm to call Sam"})
+  c = main({text: "check reminders"})
+  d = main({text: "check reminders"})
+  e = main({text: "my reminders"})
+  expect c.text == "Sent to your phone:\nstretch"
+  expect d.text == "Nothing is due."
+  expect e.text.contains("1. call Sam, at 18:00")
+  expect not e.text.contains("stretch")
+}
+
+test "a plain question can be learned; one that points back cannot" {
+  expect standalone({text: "Why is the sky blue?"}) == "why is the sky blue"
+  expect standalone({text: "what about that one"}) == ""
+  expect standalone({text: "what is my locker number"}) == ""
+  expect standalone({text: "hi"}) == ""
+  expect standalone({text: "what is the weather like"}) == ""
+}

@@ -1,0 +1,11 @@
+// Refused: only a model step has answers to keep.
+
+record Note { text: Text }
+
+fn echo(n: Note) -> Note {
+  return n
+}
+
+workflow main(n: Note) -> Note {
+  said = echo(n) learn
+}

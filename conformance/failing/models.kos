@@ -1,0 +1,58 @@
+// Conformance: what a failing model test says.
+
+record Question { text: Text }
+record Answer { text: Text count: Number }
+
+model writer {
+  input: Question
+  output: Answer
+}
+
+workflow main(question: Question) -> Answer {
+  answer = use_model writer(text: question.text)
+}
+
+workflow twice(question: Question) -> Answer {
+  budget 1 model calls
+  first = use_model writer(text: question.text)
+  second = use_model writer(text: question.text)
+}
+
+workflow patient(question: Question) -> Answer {
+  answer = use_model writer(text: question.text) retry 2
+}
+
+test "an answer of the wrong shape" {
+  answers writer: [{text: "x", count: "three"}]
+  r = main({text: "q"})
+  expect r.count == 3
+}
+
+test "an answer with a field the record does not have" {
+  answers writer: [{text: "x", count: 1, extra: true}]
+  r = main({text: "q"})
+  expect r.count == 1
+}
+
+test "a model with no answer left" {
+  r = main({text: "q"})
+  expect r.count == 1
+}
+
+test "a model answer that is never asked for" {
+  answers writer: [{text: "x", count: 1}, {text: "y", count: 2}]
+  r = main({text: "q"})
+  expect r.count == 1
+}
+
+test "the model calls a workflow may make" {
+  answers writer: [{text: "x", count: 1}, {text: "y", count: 2}]
+  r = twice({text: "q"})
+  expect r.count == 2
+}
+
+test "every retry refused" {
+  answers writer: [{text: "a"}, {text: "b"}, {count: 3}]
+  r = patient({text: "q"})
+  expect r.count == 3
+}

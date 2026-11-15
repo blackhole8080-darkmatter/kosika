@@ -1,0 +1,17 @@
+// Refused: a test runs a workflow only as a line of its own, never inside
+// an expression.
+
+record Ask { text: Text }
+record Said { text: Text }
+
+fn echo(ask: Ask) -> Said {
+  return {text: ask.text}
+}
+
+workflow main(ask: Ask) -> Said {
+  said = echo(ask)
+}
+
+test "never runs" {
+  expect main({text: "hi"}).text == "hi"
+}

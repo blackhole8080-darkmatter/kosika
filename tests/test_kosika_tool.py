@@ -65,7 +65,7 @@ class KosikaToolTests(unittest.TestCase):
         )
         bad = parse(DECLARED.replace('operation: "check"', 'operation: "run"'))
         self.assertIn(
-            "the only one is check", declaration_problem(bad, bad.tools[0]) or ""
+            "use one of: check, check_files", declaration_problem(bad, bad.tools[0]) or ""
         )
 
     def test_a_good_program_checks_and_its_tests_pass(self) -> None:

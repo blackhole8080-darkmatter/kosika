@@ -1,0 +1,95 @@
+// Discrete maths in Kosika: a relation as a matrix of 0s and 1s, its
+// properties, its transitive closure, and a graph built from its edges.
+//
+//   kosika test examples/discrete_maths.kos
+//
+// Nothing here asks a model. It is all plain, checked code.
+
+// A relation on the numbers 0 to n-1, or a graph on n nodes.
+record Relation { pairs: Number[][] size: Number }
+
+// What can be said about it.
+record Report {
+  reflexive: Bool
+  symmetric: Bool
+  antisymmetric: Bool
+  transitive: Bool
+  closure: Number[][]
+  kind: Text
+}
+
+record Trip { path: Number[] hops: Number parts: Number[][] }
+
+// The matrix of a relation: a 1 in row i, column j says "i is related to j".
+fn matrix_of(relation: Relation) -> Number[][] {
+  return relation.pairs.directed_adjacency(relation.size)
+}
+
+fn describe(relation: Relation) -> Report {
+  let m = matrix_of(relation)
+  var kind = "none of these"
+  if m.is_reflexive() and m.is_symmetric() and m.is_transitive() { kind = "an equivalence relation" }
+  else if m.is_reflexive() and m.is_antisymmetric() and m.is_transitive() { kind = "a partial order" }
+  return {
+    reflexive: m.is_reflexive(),
+    symmetric: m.is_symmetric(),
+    antisymmetric: m.is_antisymmetric(),
+    transitive: m.is_transitive(),
+    closure: m.closure(),
+    kind: kind
+  }
+}
+
+// The shortest way between two nodes of a graph whose edges go both ways.
+fn travel(graph: Relation) -> Trip {
+  let m = graph.pairs.adjacency(graph.size)
+  let path = m.shortest_path(0, graph.size - 1)
+  return {path: path, hops: path.length() - 1, parts: m.components()}
+}
+
+workflow main(relation: Relation) -> Report {
+  report = describe(relation)
+}
+
+test "less than or equal is a partial order" {
+  r = main({pairs: [[0, 0], [0, 1], [0, 2], [1, 1], [1, 2], [2, 2]], size: 3})
+  expect r.kind == "a partial order"
+  expect r.symmetric == false
+}
+
+test "same remainder when divided by 2 is an equivalence relation" {
+  r = main({pairs: [[0, 0], [1, 1], [2, 2], [3, 3], [0, 2], [2, 0], [1, 3], [3, 1]], size: 4})
+  expect r.kind == "an equivalence relation"
+}
+
+test "the closure adds every place that can be reached" {
+  r = main({pairs: [[0, 1], [1, 2], [2, 3]], size: 4})
+  expect r.transitive == false
+  expect r.closure == [[0, 1, 1, 1], [0, 0, 1, 1], [0, 0, 0, 1], [0, 0, 0, 0]]
+}
+
+test "the shortest path, and the parts of a graph" {
+  square = travel({pairs: [[0, 1], [1, 2], [2, 3], [3, 0]], size: 4})
+  apart = travel({pairs: [[0, 1], [2, 3]], size: 4})
+  expect square.path == [0, 3]
+  expect square.hops == 1
+  expect apart.path == []
+  expect apart.parts == [[0, 1], [2, 3]]
+}
+
+test "a power of the adjacency matrix counts walks" {
+  triangle = [[0, 1], [1, 2], [2, 0]].adjacency(3)
+  expect triangle.power(2) == [[2, 1, 1], [1, 2, 1], [1, 1, 2]]
+  expect triangle.power(3).trace() == 6
+}
+
+test "matrices and vectors" {
+  a = [[1, 2], [3, 4]]
+  expect a.times([[5, 6], [7, 8]]) == [[19, 22], [43, 50]]
+  expect a.transpose() == [[1, 3], [2, 4]]
+  expect a.determinant() == -2
+  expect a.times(a.inverse()) == 2.identity()
+  expect [[2, 1], [1, 3]].solve([3, 5]) == [0.8, 1.4]
+  expect [3, 4].norm() == 5
+  expect [1, 0, 0].cross([0, 1, 0]) == [0, 0, 1]
+}

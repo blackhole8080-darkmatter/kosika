@@ -7,6 +7,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
@@ -27,6 +28,22 @@ def digest(value: Any) -> str:
 #: The name an approval request carries when it is for a planning agent's
 #: whole list of changes. No declared tool can have it: it is not a name.
 PLAN_TOOL = "$plan"
+
+
+@dataclass(frozen=True)
+class Claimed:
+    """The action a step claimed before it happened, and who had said yes.
+
+    `action` is the hash the ledger holds: it covers the plan, the step the
+    call is made in, the tool and the exact arguments. `approved_by` is the
+    person whose approval matched it, and `plan_hash` the plan that approval
+    was given under -- both of which a trace records, so that a replay can
+    put a recorded call back to its approval.
+    """
+
+    plan_hash: str
+    action: str
+    approved_by: str
 
 
 class ApprovalPending(ExecutionError):
@@ -61,6 +78,7 @@ class ExecutionSession:
         self.plan_hash = ""
         self.active = False
         self.owner: int | None = None
+        self._held: sqlite3.Connection | None = None
         self.ledger = ApprovalLedger(str(self.path) + ".approvals.sqlite")
 
     @contextlib.contextmanager
@@ -80,19 +98,35 @@ class ExecutionSession:
         finally:
             self.active = False
             self.owner = None
+            held, self._held = self._held, None
+            if held is not None:
+                held.close()
             lock.close()
+
+    def _connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.path)
+        db.execute("PRAGMA synchronous=FULL")
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS plan (id INTEGER PRIMARY KEY CHECK(id=1), hash TEXT NOT NULL)"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS steps (name TEXT PRIMARY KEY, state TEXT NOT NULL, payload TEXT NOT NULL)"
+        )
+        return db
 
     @contextlib.contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        db = sqlite3.connect(self.path)
+        # While the run that owns the journal works, one connection serves
+        # all its steps: opening one for each step cost more than the step.
+        # Every step still commits before the next begins.
+        if self.active and self.owner == threading.get_ident():
+            if self._held is None:
+                self._held = self._connect()
+            with self._held:
+                yield self._held
+            return
+        db = self._connect()
         try:
-            db.execute("PRAGMA synchronous=FULL")
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS plan (id INTEGER PRIMARY KEY CHECK(id=1), hash TEXT NOT NULL)"
-            )
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS steps (name TEXT PRIMARY KEY, state TEXT NOT NULL, payload TEXT NOT NULL)"
-            )
             with db:
                 yield db
         finally:
@@ -172,8 +206,10 @@ class ExecutionSession:
 
     def start(
         self, scope: tuple[str, ...], tool: str | None, arguments: dict[str, Any]
-    ) -> str | None:
-        action = None
+    ) -> Claimed | None:
+        """Claim this step's action, or pause: nothing happens without a yes."""
+
+        claimed = None
         if tool is not None:
             action = action_hash(self.plan_hash, json.dumps([*scope, tool]), arguments)
             approval = next(
@@ -197,8 +233,9 @@ class ExecutionSession:
                 self._save(scope, "pending", request)
                 raise ApprovalPending(request)
             self.ledger.claim(action, self.plan_hash, approval.approved_by, tool)
+            claimed = Claimed(self.plan_hash, action, approval.approved_by)
         self._save(scope, "started", {"arguments": arguments})
-        return action
+        return claimed
 
     def remember(self, scope: tuple[str, ...], payload: Any) -> None:
         """Keep something beside the steps, to be read when a step begins again."""

@@ -1,0 +1,68 @@
+{
+  "model": "gemma3:4b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 2,
+  "summary": {
+    "1": {
+      "passed": 1,
+      "tasks": 1,
+      "seconds": 93.0,
+      "attempts": 1
+    },
+    "2": {
+      "passed": 1,
+      "tasks": 1,
+      "seconds": 93.0,
+      "attempts": 1
+    }
+  },
+  "results": [
+    {
+      "id": "py-fix-bug",
+      "passed": true,
+      "state": "done",
+      "seconds": 93.0,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-fix-bug",
+          "attempt": 1,
+          "asked": "average in calc.py fails on an empty list; make it return 0 for an empty list, with a test",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 93.0,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 93.0
+        },
+        "2": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 93.0
+        }
+      }
+    }
+  ]
+}

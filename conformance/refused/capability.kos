@@ -1,0 +1,20 @@
+// Refused: an agent uses only the tools it is given.
+
+record Ask { id: Text }
+record Stock { id: Text left: Number }
+
+tool stock_of {
+  source mcp "shop"
+  operation: "stock_of"
+  access: observe
+  input: Ask
+  output: Stock
+}
+
+agent clerk {
+  can: []
+}
+
+workflow main(ask: Ask) -> Stock {
+  stock = execute clerk.stock_of(id: ask.id)
+}

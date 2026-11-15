@@ -1,0 +1,1 @@
+Check failed: Step 'function f' cannot read field 'pages' of shape 'Priced'; a shape has only its functions

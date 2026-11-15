@@ -1,0 +1,304 @@
+{
+  "exercises": [
+    {
+      "id": "l0_1",
+      "level": 0,
+      "category": "ai_problem",
+      "title": "Basic Classification",
+      "description": "Classify a simple text into one of two categories",
+      "input_data": {"text": "The cat is sleeping"},
+      "expected_output": "animal",
+      "time_limit": 30
+    },
+    {
+      "id": "l0_2",
+      "level": 0,
+      "category": "writing",
+      "title": "Simple Greeting",
+      "description": "Write a simple greeting message",
+      "input_data": {"name": "Alice"},
+      "expected_output": "Hello Alice",
+      "time_limit": 30
+    },
+    {
+      "id": "l0_3",
+      "level": 0,
+      "category": "project_build",
+      "title": "HTML Title",
+      "description": "Create a simple HTML title tag",
+      "input_data": {"title": "My Page"},
+      "expected_output": "<h1>My Page</h1>",
+      "time_limit": 30
+    },
+    {
+      "id": "l0_4",
+      "level": 0,
+      "category": "server_creation",
+      "title": "Basic HTTP Response",
+      "description": "Return a basic HTTP 200 response",
+      "input_data": {},
+      "expected_output": {"status": 200, "message": "OK"},
+      "time_limit": 30
+    },
+    {
+      "id": "l0_5",
+      "level": 0,
+      "category": "database_integration",
+      "title": "Simple Query",
+      "description": "Formulate a simple SELECT query",
+      "input_data": {"table": "users", "field": "name"},
+      "expected_output": "SELECT name FROM users",
+      "time_limit": 30
+    },
+    {
+      "id": "l1_1",
+      "level": 1,
+      "category": "ai_problem",
+      "title": "Sentiment Analysis",
+      "description": "Determine if text is positive or negative",
+      "input_data": {"text": "I love this product"},
+      "expected_output": "positive",
+      "time_limit": 45
+    },
+    {
+      "id": "l1_2",
+      "level": 1,
+      "category": "writing",
+      "title": "Email Draft",
+      "description": "Draft a professional email",
+      "input_data": {"topic": "meeting request", "recipient": "John"},
+      "expected_output": "Subject: Meeting Request\n\nDear John,\n\nI would like to request a meeting...",
+      "time_limit": 60
+    },
+    {
+      "id": "l1_3",
+      "level": 1,
+      "category": "project_build",
+      "title": "HTML Form",
+      "description": "Create an HTML form with input and submit button",
+      "input_data": {"form_name": "contact"},
+      "expected_output": "<form><input type=\"text\" name=\"contact\"><button>Submit</button></form>",
+      "time_limit": 60
+    },
+    {
+      "id": "l1_4",
+      "level": 1,
+      "category": "server_creation",
+      "title": "REST Endpoint",
+      "description": "Define a GET endpoint path",
+      "input_data": {"resource": "users"},
+      "expected_output": "/api/users",
+      "time_limit": 45
+    },
+    {
+      "id": "l1_5",
+      "level": 1,
+      "category": "database_integration",
+      "title": "INSERT Query",
+      "description": "Formulate an INSERT query",
+      "input_data": {"table": "users", "data": {"name": "Alice", "email": "alice@test.com"}},
+      "expected_output": "INSERT INTO users (name, email) VALUES ('Alice', 'alice@test.com')",
+      "time_limit": 45
+    },
+    {
+      "id": "l2_1",
+      "level": 2,
+      "category": "ai_problem",
+      "title": "Entity Extraction",
+      "description": "Extract entities from text",
+      "input_data": {"text": "Apple is based in Cupertino, California"},
+      "expected_output": ["Apple", "Cupertino", "California"],
+      "time_limit": 60
+    },
+    {
+      "id": "l2_2",
+      "level": 2,
+      "category": "writing",
+      "title": "Blog Post",
+      "description": "Write a short blog post with introduction and conclusion",
+      "input_data": {"topic": "benefits of AI", "length": "200 words"},
+      "expected_output": "A blog post with intro, body, and conclusion about AI benefits",
+      "time_limit": 90
+    },
+    {
+      "id": "l2_3",
+      "level": 2,
+      "category": "project_build",
+      "title": "CSS Styling",
+      "description": "Create CSS for a responsive card layout",
+      "input_data": {"card_class": "card"},
+      "expected_output": ".card { display: flex; flex-wrap: wrap; } .card-item { flex: 1; min-width: 300px; }",
+      "time_limit": 90
+    },
+    {
+      "id": "l2_4",
+      "level": 2,
+      "category": "server_creation",
+      "title": "API with Parameters",
+      "description": "Define an endpoint with query parameters",
+      "input_data": {"endpoint": "search", "params": ["q", "limit"]},
+      "expected_output": "/api/search?q={query}&limit={limit}",
+      "time_limit": 60
+    },
+    {
+      "id": "l2_5",
+      "level": 2,
+      "category": "database_integration",
+      "title": "JOIN Query",
+      "description": "Create a JOIN query for two tables",
+      "input_data": {"tables": ["users", "orders"], "join_field": "user_id"},
+      "expected_output": "SELECT * FROM users JOIN orders ON users.id = orders.user_id",
+      "time_limit": 60
+    },
+    {
+      "id": "l3_1",
+      "level": 3,
+      "category": "ai_problem",
+      "title": "Text Summarization",
+      "description": "Summarize a long text into key points",
+      "input_data": {"text": "A very long text about machine learning that needs summarization..."},
+      "expected_output": ["Key point 1", "Key point 2", "Key point 3"],
+      "time_limit": 90
+    },
+    {
+      "id": "l3_2",
+      "level": 3,
+      "category": "writing",
+      "title": "Technical Documentation",
+      "description": "Write API documentation with examples",
+      "input_data": {"endpoint": "/api/users", "methods": ["GET", "POST", "PUT", "DELETE"]},
+      "expected_output": "Documentation with descriptions and examples for all methods",
+      "time_limit": 120
+    },
+    {
+      "id": "l3_3",
+      "level": 3,
+      "category": "project_build",
+      "title": "React Component",
+      "description": "Create a React component with state",
+      "input_data": {"component": "UserList", "props": ["users"]},
+      "expected_output": "function UserList({ users }) { const [selected, setSelected] = useState(null); return <div>{users.map(...)}</div>; }",
+      "time_limit": 120
+    },
+    {
+      "id": "l3_4",
+      "level": 3,
+      "category": "server_creation",
+      "title": "Authentication Middleware",
+      "description": "Define auth middleware for a server",
+      "input_data": {"strategy": "jwt"},
+      "expected_output": "Middleware function that validates JWT tokens",
+      "time_limit": 90
+    },
+    {
+      "id": "l3_5",
+      "level": 3,
+      "category": "database_integration",
+      "title": "Transaction with Multiple Operations",
+      "description": "Create a transaction with INSERT and UPDATE",
+      "input_data": {"operations": ["INSERT INTO orders", "UPDATE inventory"]},
+      "expected_output": "BEGIN TRANSACTION; INSERT INTO orders ...; UPDATE inventory ...; COMMIT;",
+      "time_limit": 90
+    },
+    {
+      "id": "l4_1",
+      "level": 4,
+      "category": "ai_problem",
+      "title": "Question Answering",
+      "description": "Answer a complex question from context",
+      "input_data": {"context": "Document about AI history", "question": "When was neural network invented?"},
+      "expected_output": "Neural networks were invented in the 1940s",
+      "time_limit": 120
+    },
+    {
+      "id": "l4_2",
+      "level": 4,
+      "category": "writing",
+      "title": "Research Paper Abstract",
+      "description": "Write an abstract for a research paper",
+      "input_data": {"topic": "deep learning for NLP", "findings": ["accuracy improved", "faster training"]},
+      "expected_output": "Abstract summarizing methodology, findings, and significance",
+      "time_limit": 180
+    },
+    {
+      "id": "l4_3",
+      "level": 4,
+      "category": "project_build",
+      "title": "Full-Stack Feature",
+      "description": "Design a full-stack feature with frontend, backend, and database",
+      "input_data": {"feature": "user authentication with OAuth"},
+      "expected_output": "Design with React frontend, Express backend, PostgreSQL schema, and API endpoints",
+      "time_limit": 180
+    },
+    {
+      "id": "l4_4",
+      "level": 4,
+      "category": "server_creation",
+      "title": "Microservices Architecture",
+      "description": "Design a microservices architecture for an e-commerce system",
+      "input_data": {"components": ["users", "products", "orders", "payments"]},
+      "expected_output": "Architecture with service definitions, API gateway, and communication patterns",
+      "time_limit": 180
+    },
+    {
+      "id": "l4_5",
+      "level": 4,
+      "category": "database_integration",
+      "title": "Optimized Query with Indexes",
+      "description": "Create an optimized query with proper indexing strategy",
+      "input_data": {"query": "SELECT * FROM orders WHERE user_id = ? AND date > ?", "table": "orders"},
+      "expected_output": "Query with EXPLAIN and CREATE INDEX recommendations",
+      "time_limit": 120
+    },
+    {
+      "id": "l5_1",
+      "level": 5,
+      "category": "ai_problem",
+      "title": "Multi-Hop Reasoning",
+      "description": "Answer a question requiring multi-step reasoning",
+      "input_data": {"knowledge": "Graph of relationships", "question": "What is the relationship between X and Y through Z?"},
+      "expected_output": "Answer with reasoning chain showing X -> Z -> Y",
+      "time_limit": 180
+    },
+    {
+      "id": "l5_2",
+      "level": 5,
+      "category": "writing",
+      "title": "Technical Architecture Document",
+      "description": "Write a complete system architecture document",
+      "input_data": {"system": "distributed ML training platform", "components": ["data ingestion", "training", "serving"]},
+      "expected_output": "Architecture document with diagrams, trade-offs, and implementation details",
+      "time_limit": 300
+    },
+    {
+      "id": "l5_3",
+      "level": 5,
+      "category": "project_build",
+      "title": "CI/CD Pipeline",
+      "description": "Design a complete CI/CD pipeline for a complex project",
+      "input_data": {"project": "monorepo with multiple services", "requirements": ["testing", "deployment", "rollback"]},
+      "expected_output": "Pipeline with stages, tools, and rollback strategy",
+      "time_limit": 240
+    },
+    {
+      "id": "l5_4",
+      "level": 5,
+      "category": "server_creation",
+      "title": "Event-Driven Architecture",
+      "description": "Design an event-driven server architecture",
+      "input_data": {"events": ["user_created", "order_placed", "payment_processed"], "services": ["notification", "analytics"]},
+      "expected_output": "Architecture with event bus, consumers, and error handling",
+      "time_limit": 240
+    },
+    {
+      "id": "l5_5",
+      "level": 5,
+      "category": "database_integration",
+      "title": "Database Migration Strategy",
+      "description": "Design a zero-downtime database migration",
+      "input_data": {"migration": "add column to users table", "table_size": "10M rows"},
+      "expected_output": "Migration strategy with dual-write, validation, and rollback plan",
+      "time_limit": 180
+    }
+  ]
+}

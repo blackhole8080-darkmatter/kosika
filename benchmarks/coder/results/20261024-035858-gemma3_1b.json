@@ -1,0 +1,96 @@
+{
+  "model": "gemma3:1b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 2,
+  "summary": {
+    "1": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 34.5,
+      "attempts": 1
+    },
+    "2": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 58.1,
+      "attempts": 2
+    }
+  },
+  "results": [
+    {
+      "id": "py-add-function",
+      "passed": false,
+      "state": "done",
+      "seconds": 58.1,
+      "approvals": 4,
+      "failures": [
+        "python -c from calc import is_even; assert is_even(4) and not is_even(7): ImportError: cannot import name 'is_even' from 'calc' (C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-89dbsa3m\\py\\calc.py)"
+      ],
+      "error": "",
+      "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-add-function",
+          "attempt": 1,
+          "asked": "add a function is_even to calc.py that says whether a number is even, with a test",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 34.5,
+          "approvals": 2,
+          "failures": [
+            "python -c from calc import is_even; assert is_even(4) and not is_even(7): ImportError: cannot import name 'is_even' from 'calc' (C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-_mqf3pmx\\py\\calc.py)"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 1, in <module>\n  ImportError: cannot import name 'is_even' from 'calc' (C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-_mqf3pmx\\py\\calc.py)"
+          ],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        },
+        {
+          "id": "py-add-function",
+          "attempt": 2,
+          "asked": "add a function is_even to calc.py that says whether a number is even, with a test",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 23.6,
+          "approvals": 2,
+          "failures": [
+            "python -c from calc import is_even; assert is_even(4) and not is_even(7): ImportError: cannot import name 'is_even' from 'calc' (C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-89dbsa3m\\py\\calc.py)"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 1, in <module>\n  ImportError: cannot import name 'is_even' from 'calc' (C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-89dbsa3m\\py\\calc.py)"
+          ],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 34.5
+        },
+        "2": {
+          "passed": false,
+          "attempts": 2,
+          "seconds": 58.1
+        }
+      }
+    }
+  ]
+}

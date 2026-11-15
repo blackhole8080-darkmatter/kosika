@@ -1,0 +1,19 @@
+// What the everyday methods refuse, when a program runs.
+
+fn a() -> Number { return "x".count("") }
+fn b() -> Number { return 5.clamp(10, 1) }
+fn c() -> Number { return 0.log() }
+fn d() -> Text { return 1.to_fixed(21) }
+fn e() -> Text { return "15/10/2026".add_days(1) }
+fn f() -> Text { return "2026-02-30".weekday() }
+fn g() -> Number { return 1000.exp() }
+fn h() -> Text { return "ab".repeat(1.5) }
+
+test "an empty part" { expect a() == 0 }
+test "low above high" { expect b() == 0 }
+test "log of zero" { expect c() == 0 }
+test "too many digits" { expect d() == "" }
+test "not a date" { expect e() == "" }
+test "no such day" { expect f() == "" }
+test "too large" { expect g() == 0 }
+test "not whole" { expect h() == "" }

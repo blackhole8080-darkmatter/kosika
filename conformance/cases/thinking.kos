@@ -1,0 +1,64 @@
+// Conformance: a general model, and the four thinking steps, each asking
+// a model whose answers the test scripts.
+
+record Ticket { text: Text }
+record Invoice { number: Text total: Number paid: Bool? }
+record Report { kind: Text sure: Bool total: Number brief: Text refund: Bool }
+
+model assistant
+
+default model careful {
+  deployment: "big"
+}
+
+fn report(kind: Choice, invoice: Invoice, brief: Summary, refund: Decision) -> Report {
+  return {
+    kind: kind.label,
+    sure: kind.confidence > 0.5,
+    total: invoice.total,
+    brief: brief.text,
+    refund: refund.answer
+  }
+}
+
+workflow main(ticket: Ticket) -> Report {
+  kind = classify ticket.text into ["billing", "bug", "other"]
+  invoice = extract Invoice from ticket.text using assistant
+  brief = summarize ticket.text
+  refund = decide "Is a refund owed?" given ticket.text retry 1
+  done = report(kind, invoice, brief, refund)
+}
+
+workflow chat(ticket: Ticket) -> Reply {
+  reply = use_model assistant(text: ticket.text)
+}
+
+test "each thinking step asks its model and binds a typed answer" {
+  answers careful: [
+    {label: "billing", confidence: 0.9},
+    {text: "Charged twice."},
+    {answer: true, confidence: 0.8, reason: "It says twice."}
+  ]
+  answers assistant: [{number: "A-7", total: 40}]
+  r = main({text: "I was charged twice for invoice A-7, 40 euros."})
+  expect r == {kind: "billing", sure: true, total: 40, brief: "Charged twice.", refund: true}
+}
+
+test "an answer that breaks a step's promise is asked for again" {
+  answers careful: [
+    {label: "other", confidence: 0.2},
+    {text: "Nothing."},
+    {answer: false, confidence: 7, reason: "?"},
+    {answer: false, confidence: 0.6, reason: "No charge is named."}
+  ]
+  answers assistant: [{number: "", total: 0, paid: true}]
+  r = main({text: "Hello"})
+  expect r.refund == false
+  expect not r.sure
+}
+
+test "a general model takes and gives text" {
+  answers assistant: [{text: "Hi there."}]
+  r = chat({text: "Hi"})
+  expect r.text == "Hi there."
+}

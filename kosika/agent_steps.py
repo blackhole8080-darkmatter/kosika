@@ -189,6 +189,63 @@ def call_agent(
     }
 
 
+#: A field of an agent's answer that Kosika fills in itself.
+DID_FIELD = "did"
+
+
+def takes_did(output_schema: Mapping[str, Any]) -> bool:
+    """Whether an agent's answer record has a `did: Text[]` field."""
+
+    field = output_schema.get("properties", {}).get(DID_FIELD)
+    return (
+        isinstance(field, dict)
+        and field.get("type") == "array"
+        and isinstance(field.get("items"), dict)
+        and field["items"].get("type") == "string"
+    )
+
+
+def did_from(messages: Any, changing: Any) -> list[str]:
+    """The changes an agent really made, in order, read from its transcript:
+    each call of a tool that changes something whose result was not an
+    error. One line each, the tool and the path it was pointed at.
+
+    This is worked out the same way when a run is made and when its trace
+    is replayed, so a trace cannot claim a change that did not happen.
+    """
+
+    names = set(changing) if isinstance(changing, (list, tuple)) else set()
+    if not isinstance(messages, list):
+        return []
+    results: dict[str, Any] = {}
+    for message in messages:
+        if isinstance(message, dict) and message.get("role") == "tool":
+            try:
+                results[str(message.get("tool_call_id"))] = strict_json(
+                    message.get("content") or ""
+                )
+            except (TypeError, ValueError):
+                continue
+    did: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        for call in message.get("tool_calls") or []:
+            if not isinstance(call, dict) or call.get("name") not in names:
+                continue
+            told = results.get(str(call.get("id")))
+            if told is None or (isinstance(told, dict) and set(told) == {"error"}):
+                continue
+            arguments = call.get("arguments")
+            path = arguments.get("path") if isinstance(arguments, dict) else None
+            did.append(
+                f"{call['name']} {path}"
+                if isinstance(path, str) and path
+                else call["name"]
+            )
+    return did
+
+
 def validate_agent_transcript(call: dict[str, Any], returned: dict[str, Any]) -> None:
     """Validate cached tool arguments/outcomes without invoking a provider or tool."""
     messages = returned.get("messages")

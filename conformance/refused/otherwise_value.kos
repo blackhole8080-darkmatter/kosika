@@ -1,0 +1,10 @@
+// Refused: a value after `otherwise` is held to the step's type.
+
+record Ask { text: Text }
+record Said { text: Text }
+
+fn say(ask: Ask) -> Said { return {text: ask.text} }
+
+workflow main(ask: Ask) -> Said {
+  said = say(ask) otherwise {text: 0}
+}

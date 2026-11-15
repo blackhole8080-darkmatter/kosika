@@ -1,0 +1,6 @@
+PASS  a model's scripted answer is used
+PASS  a field the answer leaves out may be absent
+PASS  a refused answer is asked for again
+PASS  a model that cannot answer hands its step to the fallback
+PASS  models answer in turn
+5 passed, 0 failed

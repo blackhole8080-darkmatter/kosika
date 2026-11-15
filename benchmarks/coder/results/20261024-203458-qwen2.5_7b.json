@@ -1,0 +1,64 @@
+{
+  "model": "qwen2.5:7b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 1,
+      "tasks": 1,
+      "seconds": 171.4,
+      "attempts": 1
+    }
+  },
+  "languages": {
+    "kosika": {
+      "passed": 1,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "kosika-notes",
+      "language": "kosika",
+      "passed": true,
+      "state": "done",
+      "seconds": 171.4,
+      "approvals": 4,
+      "failures": [],
+      "error": "",
+      "said": "My first try failed its tests, so I read what they printed and put it right.\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests for notes/main.kos pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "notes\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-notes",
+          "attempt": 1,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 171.4,
+          "approvals": 4,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "My first try failed its tests, so I read what they printed and put it right.\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests for notes/main.kos pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "notes\\main.kos"
+          ],
+          "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-hqhrv8vf\\kosika"
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 171.4
+        }
+      },
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-hqhrv8vf\\kosika"
+    }
+  ]
+}

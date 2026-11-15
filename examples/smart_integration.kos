@@ -1,0 +1,130 @@
+// Smart Agent Integration with Kosika
+// This uses actual Kosika syntax with system tools
+
+record AgentInput {
+  task: Text
+  context: Text
+}
+
+record AgentOutput {
+  result: Text
+  method_used: Text
+  confidence: Number
+}
+
+// Tool to run search algorithm
+tool search_tool {
+  source system "python"
+  operation: "execute"
+  access: execute
+  input: AgentInput
+  output: AgentOutput
+}
+
+// Pure function for algorithmic reasoning
+fn determine_approach(task: Text) -> Text {
+  if task.contains("plan") {
+    return "use_search_algorithm"
+  }
+  if task.contains("knowledge") {
+    return "use_knowledge_graph"
+  }
+  if task.contains("learn") {
+    return "use_pattern_extraction"
+  }
+  return "use_default_approach"
+}
+
+// Smart agent workflow
+workflow smart_agent(task: Text, context: Text) -> AgentOutput {
+  step analyze {
+    let approach = determine_approach(task)
+    return approach
+  }
+
+  step execute {
+    let method = analyze
+    let result_text = "Executed " + method + " for task: " + task
+
+    let output: AgentOutput = {
+      result: result_text,
+      method_used: method,
+      confidence: 0.85
+    }
+
+    return output
+  }
+}
+
+// Example: Planning with matrix operations
+record MatrixInput {
+  matrix: Number[][]
+  operation: Text
+}
+
+record MatrixOutput {
+  result: Number[][]
+  operation: Text
+}
+
+workflow matrix_operations(matrix: Number[][], operation: Text) -> MatrixOutput {
+  step execute {
+    let result: Number[][] = []
+
+    if operation == "transpose" {
+      result = matrix.transpose()
+    } else if operation == "inverse" {
+      result = matrix.inverse()
+    } else if operation == "multiply" {
+      // Would need second matrix
+      result = matrix
+    } else {
+      result = matrix
+    }
+
+    let output: MatrixOutput = {
+      result: result,
+      operation: operation
+    }
+
+    return output
+  }
+}
+
+// Example: Knowledge reasoning
+record QueryInput {
+  subject: Text
+  predicate: Text
+}
+
+record QueryOutput {
+  answer: Text
+  confidence: Number
+}
+
+workflow knowledge_query(subject: Text, predicate: Text) -> QueryOutput {
+  step reason {
+    let answer = ""
+
+    if subject == "Kosika" {
+      if predicate == "is_a" {
+        answer = "programming language"
+      } else if predicate == "designed_for" {
+        answer = "AI development"
+      }
+    } else if subject == "Python" {
+      if predicate == "is_a" {
+        answer = "programming language"
+      }
+    } else {
+      answer = "unknown"
+    }
+
+    let output: QueryOutput = {
+      answer: answer,
+      confidence: 0.9
+    }
+
+    return output
+  }
+}

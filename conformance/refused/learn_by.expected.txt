@@ -1,0 +1,1 @@
+Check failed: Step 'said' learns by 'Number'; what a question is known by must be Text

@@ -1,0 +1,7 @@
+// Refused: sorting by a field the records do not have.
+
+record Order { id: Text total: Number }
+
+fn biggest(orders: Order[]) -> Order[] {
+  return orders.sort_by(field: "amount")
+}

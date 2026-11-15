@@ -1,0 +1,5 @@
+// For import_clash.kos.
+
+export [area]
+
+fn area(n: Number) -> Number { return n * n }

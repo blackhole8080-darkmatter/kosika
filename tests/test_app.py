@@ -12,8 +12,18 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from kosika.app import PAGE, App, AppError, address, describe, find_agents, make_server
+from kosika.app import (
+    PAGE,
+    App,
+    AppError,
+    address,
+    describe,
+    find_agents,
+    make_server,
+    plain_refusal,
+)
 from kosika.model import ModelResponse, ScriptedModelProvider
+from kosika.parser import parse
 
 DESK = """// A desk that remembers people.
 //
@@ -100,6 +110,13 @@ workflow main(note: Note) -> Done {
   done = execute scribe.save(note.path, note.text)
   require approval
 }
+"""
+
+
+SKILL_NOTE = """# How a list is written
+When: todo, shopping list
+
+One thing on a line.
 """
 
 
@@ -206,6 +223,20 @@ class ActionTests(Fixture):
         listed = describe(app.agent("desk/main.kos"), detail=True)["traces"]
         self.assertEqual(len(listed), 2)
 
+    def test_a_listed_run_says_what_was_asked_and_how_it_ended(self) -> None:
+        app = self.app()
+        app.run("desk/main.kos", {"text": "hello"})
+        listed = describe(app.agent("desk/main.kos"), detail=True)["traces"]
+        self.assertEqual(listed[0]["ask"], "hello")
+        self.assertEqual(listed[0]["state"], "done")
+        self.assertIn("seconds", listed[0])
+        self.assertIn("steps", listed[0])
+
+    def test_a_card_gets_the_first_paragraph_as_its_purpose(self) -> None:
+        detail = describe(self.app().agent("desk/main.kos"), detail=True)
+        self.assertTrue(detail["purpose"])
+        self.assertTrue(detail["about"].startswith(detail["purpose"]))
+
     def test_a_run_can_ask_the_granted_models(self) -> None:
         answer = ModelResponse(content=json.dumps({"label": "b", "confidence": 1}))
         self.providers["cheap"] = ScriptedModelProvider([answer, answer])
@@ -238,6 +269,23 @@ class ActionTests(Fixture):
             app.story("desk/main.kos", "../../secret.jsonl")
         with self.assertRaises(AppError):
             app.run("desk/main.kos", {"nothing": 1})
+
+
+class RefusalTests(unittest.TestCase):
+    def test_a_missing_grant_says_what_to_do_in_studio(self) -> None:
+        program = parse(
+            "record P { path: Text }\nrecord L { text: Text }\n"
+            'tool list_folder {\n  source system "files"\n  operation: "list"\n'
+            "  access: observe\n  input: P\n  output: L\n}\n"
+            'tool run_tests {\n  source system "shell"\n  operation: "run"\n'
+            "  access: execute\n  input: P\n  output: L\n}\n"
+        )
+        folder = plain_refusal(program, "Agent tool 'list_folder' has no authorized host binding")
+        self.assertIn("Choose a folder", folder)
+        shell = plain_refusal(program, "Agent tool 'run_tests' has no authorized host binding")
+        self.assertIn("Let agents start programs", shell)
+        other = "Agent 'coder' has no authorized model binding"
+        self.assertEqual(plain_refusal(program, other), other)
 
 
 class LiveTests(Fixture):
@@ -318,6 +366,67 @@ class LiveTests(Fixture):
         with self.assertRaises(AppError) as caught:
             self.app().poll("nope", 0)
         self.assertEqual(caught.exception.status, 404)
+
+
+class OutsideTests(Fixture):
+    def test_the_folder_says_what_else_it_holds(self) -> None:
+        (self.root / "notes.py").write_text(
+            "def summarise(text):\n    return text\n", encoding="utf-8"
+        )
+        (self.root / "node_modules" / "hidden.py").write_text(
+            "def never():\n    return 0\n", encoding="utf-8"
+        )
+        data = self.app().outside_sources()
+        self.assertEqual(data["file_count"], 1)
+        self.assertEqual(data["language_file_counts"], {"python": 1})
+        self.assertEqual(
+            [(item["path"], item["declarations"]) for item in data["files"]],
+            [("notes.py", ["summarise"])],
+        )
+
+    def test_a_folder_with_nothing_else_says_zero(self) -> None:
+        data = self.app().outside_sources()
+        self.assertEqual((data["file_count"], data["files"]), (0, []))
+        self.assertEqual(data["graph"]["nodes"], [])
+
+    def test_a_file_the_map_drew_can_be_read_beside_it(self) -> None:
+        (self.root / "helper.py").write_text(
+            "def twice(n):\n    return n * 2\n", encoding="utf-8", newline="\n"
+        )
+        data = self.app().other_source("helper.py")
+        self.assertEqual((data["path"], data["language"]), ("helper.py", "python"))
+        self.assertEqual(data["text"], "def twice(n):\n    return n * 2\n")
+        self.assertEqual((data["line_count"], data["truncated"]), (2, False))
+
+    def test_a_file_outside_the_folder_is_not_given(self) -> None:
+        (self.root.parent / "secret.py").write_text("x = 1\n", encoding="utf-8")
+        for given in (
+            "../secret.py",
+            str(self.root.parent / "secret.py"),
+            "desk/../../secret.py",
+            "",
+        ):
+            with self.assertRaises(AppError) as caught:
+                self.app().other_source(given)
+            self.assertEqual(caught.exception.status, 422)
+
+    def test_the_folder_is_drawn_with_its_links(self) -> None:
+        (self.root / "store.py").write_text(
+            "def load():\n    return 1\n", encoding="utf-8"
+        )
+        (self.root / "use.py").write_text(
+            "from store import load\n\ndef start():\n    return load()\n",
+            encoding="utf-8",
+        )
+        graph = self.app().outside_sources()["graph"]
+        self.assertEqual(
+            [(link["from"], link["to"], link["kind"]) for link in graph["links"]],
+            [("use.py", "store.py", "import"), ("use.py", "store.py", "call")],
+        )
+        self.assertEqual(
+            {node["path"]: node["level"] for node in graph["nodes"]},
+            {"use.py": 0, "store.py": 1},
+        )
 
 
 class ServerTests(Fixture):
@@ -418,6 +527,79 @@ class ServerTests(Fixture):
         )
         self.assertEqual(status, 400)
         self.assertIn("error", data)
+
+    def test_the_skills_section_is_served(self) -> None:
+        status, data = self.ask("/api/skills")
+        self.assertEqual(status, 200)
+        self.assertIn("desk", [place["title"] for place in data["places"]])
+        status, saved = self.ask(
+            "/api/skills/save?id=desk/main.kos",
+            body={"name": "lists", "text": SKILL_NOTE},
+        )
+        self.assertEqual((status, saved["saved"]), (200, True))
+        status, picked = self.ask(
+            "/api/skills/try?id=desk/main.kos", body={"text": "a todo for today"}
+        )
+        self.assertEqual(picked["picked"][0]["name"], "lists")
+        status, checked = self.ask(
+            "/api/skills/check", body={"name": "x", "text": "nothing"}
+        )
+        self.assertEqual((status, checked["ok"]), (200, False))
+        status, _ = self.ask(
+            "/api/skills/save?id=desk/main.kos",
+            body={"name": "bad name", "text": SKILL_NOTE},
+        )
+        self.assertEqual(status, 422)
+        status, _ = self.ask("/api/skills/save?id=desk/main.kos", body={"name": 3})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.ask("/api/skills", token="wrong")[0], 403)
+
+    def test_the_page_has_a_skills_section(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        self.assertEqual(page.count('["skills", "Skills"]'), 2)
+        self.assertIn('id="icon-skills"', page)
+        self.assertIn("async function showSkills(", page)
+
+    def test_the_rest_of_the_folder_is_served(self) -> None:
+        (self.root / "helper.py").write_text(
+            "def twice(n):\n    return n * 2\n", encoding="utf-8"
+        )
+        status, data = self.ask("/api/outside")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["files"][0]["path"], "helper.py")
+        self.assertEqual(data["files"][0]["declarations"], ["twice"])
+
+    def test_the_project_page_lists_other_languages(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        self.assertIn("function outsidePanel(", page)
+        self.assertIn('api("/api/outside")', page)
+        self.assertIn("kosika sourcemap . --format text", page)
+
+    def test_another_language_file_can_be_read_over_http_but_not_from_outside(
+        self,
+    ) -> None:
+        (self.root / "helper.py").write_text(
+            "def twice(n):\n    return n * 2\n", encoding="utf-8"
+        )
+        (self.root.parent / "secret.py").write_text("x = 1\n", encoding="utf-8")
+        status, data = self.ask("/api/other?path=helper.py")
+        self.assertEqual((status, data["language"]), (200, "python"))
+        self.assertIn("return n * 2", data["text"])
+        self.assertEqual(self.ask("/api/other?path=..%2Fsecret.py")[0], 422)
+        self.assertEqual(self.ask("/api/other?path=desk%2Fmain.kos")[0], 422)
+        self.assertEqual(self.ask("/api/other?path=missing.py")[0], 422)
+
+    def test_the_project_page_opens_a_file_it_drew(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        self.assertIn("function showOtherFile(", page)
+        self.assertIn('api("/api/other?path="', page)
+        self.assertIn("Read-only, as the map read it", page)
+
+    def test_the_project_page_draws_what_connects_the_files(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        self.assertIn("function fileMap(", page)
+        self.assertIn('class: "fmap-svg"', page)
+        self.assertIn("fileMap(graph)", page)
 
 
 class PageTests(unittest.TestCase):

@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -50,7 +51,7 @@ class CliCoverageTests(unittest.TestCase):
         usage = output.getvalue().split("positional arguments:", 1)[0]
         self.assertIn("diagnostics-coverage", usage)
         self.assertIn("editor", usage)
-        self.assertIn("city", usage)
+        self.assertNotIn("city", usage)
         self.assertIn("benchmark", usage)
         self.assertIn("corpus", usage)
 
@@ -142,32 +143,6 @@ class CliCoverageTests(unittest.TestCase):
         self.assertIn('"answer": "The notes schedule launch for June 1."', output)
         self.assertIn('"sources": [', output)
         self.assertIn("Model steps: 2", output)
-
-    def test_city_command_renders_reference_world_manifest(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            output_path = Path(directory) / "forest-world.html"
-            result, output = self.call_cli(
-                "city",
-                str(ROOT / "examples" / "city"),
-                "--format",
-                "live",
-                "--world",
-                str(ROOT / "examples" / "worlds" / "forest_knowledge_reserve.json"),
-                "--output",
-                str(output_path),
-            )
-
-            self.assertEqual(result, 0)
-            self.assertIn("City written:", output)
-            page = output_path.read_text(encoding="utf-8")
-            self.assertIn(
-                "<title>Forest Knowledge Reserve live forest world</title>", page
-            )
-            self.assertIn('data-world="Forest Knowledge Reserve"', page)
-            self.assertIn("Archive Lodge", page)
-            self.assertIn('data-camera="isometric"', page)
-            self.assertIn('data-building="archive-lodge"', page)
-            self.assertIn("Research Institute", page)
 
     def test_agent_command_resumes_completed_journal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -273,7 +248,9 @@ class CliCoverageTests(unittest.TestCase):
         factory.assert_called_once_with(
             "http://localhost:11434/v1",
             "declared-model",
-            api_key=None,
+            # A key set on this computer is passed on, so the test asks for the
+            # same key the command would have found rather than for none.
+            api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
         )
         self.assertEqual(provider.requests[0].temperature, 0.1)
 
@@ -489,7 +466,7 @@ class CliCoverageTests(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertIn("Approval record needs", error)
 
-    def test_cli_rejects_invalid_model_and_assistant_fixtures(self) -> None:
+    def test_cli_rejects_an_invalid_model_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model_fixture = root / "model.json"
@@ -502,21 +479,6 @@ class CliCoverageTests(unittest.TestCase):
             )
             self.assertEqual(result, 2)
             self.assertIn("requires a nonempty list", error)
-
-            assistant_fixture = root / "assistant.json"
-            assistant_fixture.write_text(
-                json.dumps({"responses": []}), encoding="utf-8"
-            )
-            result, error = self.call_cli_error(
-                "assistant",
-                str(MOCK_SOURCE),
-                "--task",
-                "Explain",
-                "--fixture",
-                str(assistant_fixture),
-            )
-            self.assertEqual(result, 2)
-            self.assertIn("Assistant fixture", error)
 
 
 if __name__ == "__main__":

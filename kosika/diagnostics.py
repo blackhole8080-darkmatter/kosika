@@ -61,6 +61,7 @@ CODES: Mapping[str, str] = {
     "lex/unexpected-character": "The source contains a character the lexer cannot start a token with.",
     # -- Syntactic -------------------------------------------------------
     "parse/expected-token": "A required token was not present.",
+    "parse/step-as-value": "A workflow step such as classify was written where a value belongs.",
     "parse/expected-identifier": "A declaration or binding required an identifier.",
     "parse/unnamed-argument": "A call argument needs a name.",
     "check/unnamed-argument": "A call's single argument cannot be named for it.",
@@ -88,7 +89,7 @@ CODES: Mapping[str, str] = {
     "check/return-type": "An early return has the wrong type for its function.",
     "check/otherwise-execute": "A fallback is used around a world-changing tool.",
     "check/otherwise-type": "A step and its fallback return different types.",
-    "check/value-step": "A value stands where a step needs a call.",
+    "check/value-step": "A step is a value whose type cannot be told.",
     "check/try": "A try and its otherwise give different types, or fail was given something that is not Text.",
     "check/method": "A record's own function has a name it cannot have.",
     "check/parallel": "A step in a parallel block cannot run apart from the others.",
@@ -101,8 +102,16 @@ CODES: Mapping[str, str] = {
     "check/test": "A test written in the program is not well formed.",
     "check/memory": "A memory is declared in a way that cannot be honoured.",
     "check/board": "A board is declared or signed in a way that cannot be honoured.",
+    "check/enum": "An enum is declared or used with a value it does not have.",
+    "check/choice": "A choice, its alternatives, or a match on it is declared or used in a way it does not allow.",
+    "check/shape": "A shape is declared or used in a way it does not allow.",
+    "check/store": "A store is declared in a way that cannot be honoured.",
+    "check/default": "A default value is not written out or does not fit its type.",
+    "check/plain-model": "A model that answers as text does not return a record of one Text field.",
+    "check/choice-evidence": "A model that answers with a choice has no record to quote evidence from.",
+    "check/learn": "A step that learns is not a model step, or is known by a value that is not Text.",
     "check/step-match": "A step that chooses between calls is not well formed.",
-    "check/invalid-system-tool": "A shell or files tool is declared incorrectly.",
+    "check/invalid-system-tool": "A system tool is declared incorrectly.",
     "check/thinking-evidence": "A thinking step cannot be asked for evidence.",
     "check/thinking-model-required": "A thinking step has no single model to ask.",
     "check/thinking-record-clash": "A declared record clashes with a built-in one.",
@@ -143,6 +152,7 @@ CODES: Mapping[str, str] = {
     "check/capability-denied": "An agent attempted a capability it does not hold.",
     "check/approval-required": "A mutation requires approval that was not declared.",
     "check/plan-first": "An agent that plans first lacks a model or the turns to plan.",
+    "check/plan-check": "An agent's plan check is not a function of the right shape.",
     "check/unknown-agent": "An agent name is not declared.",
     "check/unknown-tool": "A tool name is not declared.",
     "check/agent-conflict": "An agent both allows and denies the same capability.",
@@ -284,6 +294,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "parse/expected-identifier",
         re.compile(r"^Expected (identifier|string or identifier) at"),
     ),
+    ("parse/step-as-value", re.compile(r"is a workflow step, not a value")),
     ("parse/expected-token", re.compile(r"^Expected \S+ at \d+:\d+")),
     ("parse/empty-block", re.compile(r"^Empty block")),
     ("parse/limit-exceeded", re.compile(r"(nesting|depth) exceeds \d+")),
@@ -346,7 +357,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/return-type", re.compile(r"early return expects ")),
     ("check/otherwise-execute", re.compile(r"cannot use otherwise with execute")),
     ("check/otherwise-type", re.compile(r"otherwise branch returns ")),
-    ("check/value-step", re.compile(r"has a value where a call is needed")),
+    ("check/value-step", re.compile(r"is a value whose type cannot be told")),
     ("check/try", re.compile(r" try gives | fail expects a Text reason")),
     ("check/method", re.compile(r"^Record '[^']+' method ")),
     ("check/parallel", re.compile(r"cannot run in parallel: ")),
@@ -358,6 +369,36 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/budget", re.compile(r"^Workflow '[^']+' budget ")),
     ("check/memory", re.compile(r"^Memory ")),
     ("check/board", re.compile(r"^Board ")),
+    (
+        "check/store",
+        re.compile(
+            r"^Store "
+            r"|^Stores .* both name "
+            r"|^Table [\w.]+ (declares|has) "
+        ),
+    ),
+    ("check/enum", re.compile(r"^Enum '")),
+    (
+        "check/choice",
+        re.compile(
+            r"^Choice '|^Choice alternatives |^Choice alternative '|^Match alternative "
+            r"|^Duplicate match alternative|^Match on choice |^Alternative '"
+        ),
+    ),
+    (
+        "check/shape",
+        re.compile(r"^Shape '|shape '[^']+' has no function |of shape '[^']+'; a shape"),
+    ),
+    (
+        "check/default",
+        re.compile(r"so its default cannot be |default value at \d+:\d+ must be written|cannot give a parameter a default value"),
+    ),
+    ("check/plain-model", re.compile(r"answers as text, so its output")),
+    (
+        "check/choice-evidence",
+        re.compile(r"answers with a choice, so it cannot give evidence"),
+    ),
+    ("check/learn", re.compile(r"^Step '[^']+' (cannot learn: |learns by )")),
     ("check/step-match", re.compile(r"^Step '[^']+' match ")),
     ("check/test", re.compile(r"^Test '.*' line \d+: ")),
     ("check/invalid-system-tool", re.compile(r"^Invalid system tool: ")),
@@ -412,6 +453,10 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"^Capability violation:|plans first but can change nothing"),
     ),
     ("check/plan-first", re.compile(r"plans first, so ")),
+    (
+        "check/plan-check",
+        re.compile(r"^Agent \S+ check \S+ (is not a function|must be a function)"),
+    ),
     ("parse/invalid-declaration", re.compile(r"^Agent plan must be `first` or `off`")),
     (
         "check/approval-required",
@@ -448,6 +493,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "check/invalid-model",
         re.compile(
             r"^Model .* deployment must not be empty|^Model .* stop must contain"
+            r"|^Model .* requires a known input record and an output record or choice"
         ),
     ),
     (
@@ -506,7 +552,11 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "parse/invalid-declaration",
-        re.compile(r"^Unexpected (declaration|workflow item)"),
+        re.compile(
+            r"^Unexpected (declaration|workflow item)"
+            r"|^A store needs a quoted file"
+            r"|^Column '[^']+' has a default value at \d+:\d+"
+        ),
     ),
     # Generic fallbacks: typed mismatches that share one shape.
     ("check/type-mismatch", re.compile(r"expects .*, got ")),
@@ -568,6 +618,7 @@ def _owner_of(message: str) -> tuple[str | None, str | None]:
         ("function", "Function"),
         ("agent", "Agent"),
         ("record", "Record"),
+        ("store", "Store"),
         ("workflow", "Workflow"),
         ("model", "Model"),
         ("tool", "Tool"),

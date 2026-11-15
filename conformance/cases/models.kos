@@ -1,0 +1,78 @@
+// Conformance: models whose answers a test scripts, the steps that ask
+// them, and asking again when an answer is refused.
+
+record Question { text: Text }
+record Answer { text: Text sure: Bool note: Text? }
+record Summary { words: Number sure: Bool }
+
+model writer {
+  input: Question
+  output: Answer
+  deployment: "small"
+  parameters: {
+    temperature: 0.2
+    max_output_tokens: 200
+    stop: ["END"]
+  }
+}
+
+model checker {
+  input: Question
+  output: Answer
+}
+
+fn make_question(text: Text) -> Question {
+  return {text: text.trim()}
+}
+
+fn summary(answer: Answer) -> Summary {
+  return {words: answer.text.words().length(), sure: answer.sure}
+}
+
+fn plain(question: Question) -> Answer {
+  return {text: "no answer", sure: false, note: null}
+}
+
+workflow main(question: Question) -> Summary {
+  budget 3 model calls
+  asked = make_question(question.text)
+  step answer {
+    let said: Answer = use_model writer(text: asked.text) retry 1
+    return said
+  }
+  counted = summary(said)
+}
+
+workflow careful(question: Question) -> Answer {
+  checked = use_model checker(text: question.text) otherwise plain(question)
+}
+
+test "a model's scripted answer is used" {
+  answers writer: [{text: "two words", sure: true, note: "fine"}]
+  r = main({text: " what? "})
+  expect r == {words: 2, sure: true}
+}
+
+test "a field the answer leaves out may be absent" {
+  answers writer: [{text: "one", sure: false}]
+  r = main({text: "x"})
+  expect r.words == 1
+}
+
+test "a refused answer is asked for again" {
+  answers writer: [{text: "no sure field"}, {text: "now it is right", sure: true}]
+  r = main({text: "x"})
+  expect r.words == 4
+}
+
+test "a model that cannot answer hands its step to the fallback" {
+  r = careful({text: "x"})
+  expect r.text == "no answer"
+}
+
+test "models answer in turn" {
+  answers checker: [{text: "a", sure: true}, {text: "b", sure: true}]
+  first = careful({text: "x"})
+  second = careful({text: "y"})
+  expect first.text + second.text == "ab"
+}

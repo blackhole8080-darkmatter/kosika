@@ -101,6 +101,19 @@ class PackTests(unittest.TestCase):
         path.write_text(json.dumps(pack), encoding="utf-8")
         return path
 
+    def test_a_folder_or_a_non_kos_file_is_refused_with_a_plain_reason(self) -> None:
+        notes = self.root / "notes.txt"
+        notes.write_text("not a program", encoding="utf-8")
+        for entry, wanted in (
+            (self.project, "not a folder"),
+            (notes, "not notes.txt"),
+        ):
+            with self.subTest(entry=entry.name):
+                with self.assertRaises(PackError) as caught:
+                    make_pack(entry)
+                self.assertIn(wanted, str(caught.exception))
+                self.assertNotIn("module root", str(caught.exception))
+
     def test_a_pack_holds_every_module_and_the_program_hash(self) -> None:
         pack = make_pack(self.project / "main.kos")
         self.assertEqual(sorted(pack["modules"]), ["main.kos", "shared/types.kos"])
