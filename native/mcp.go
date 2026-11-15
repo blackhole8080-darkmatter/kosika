@@ -36,6 +36,9 @@ type pinnedTool struct {
 type mcpManifest struct {
 	source, protocol, name, version string
 	tools                           map[string]pinnedTool
+	// wait is how long one call may take: the manifest's waitSeconds,
+	// which the person pins for a server whose calls wait on a person.
+	wait time.Duration
 }
 
 // canonicalJSON is json.dumps(value, sort_keys=True, separators=(",", ":")).
@@ -83,6 +86,14 @@ func loadManifest(path string) (*mcpManifest, string) {
 		name:     showText(server.Fields["name"]),
 		version:  showText(server.Fields["version"]),
 		tools:    map[string]pinnedTool{},
+		wait:     10 * time.Second,
+	}
+	if raw, has := server.Fields["waitSeconds"]; has {
+		seconds, ok := raw.(*big.Int)
+		if !ok || seconds.Cmp(big.NewInt(1)) < 0 || seconds.Cmp(big.NewInt(300)) > 0 {
+			return nil, "MCP manifest waitSeconds must be a whole number from 1 to 300"
+		}
+		manifest.wait = time.Duration(seconds.Int64()) * time.Second
 	}
 	for _, name := range tools.Keys {
 		tool, ok := tools.Fields[name].(*Record)
@@ -388,6 +399,7 @@ func (r *run) callDeclaredTool(tool *ToolDecl, arguments *Record) Value {
 	}
 	client := startMCP(server.command)
 	defer client.close()
+	client.timeout = manifest.wait
 	client.verify(manifest)
 	// The reference asks for the tool by name before it calls it, and the
 	// call asks again.

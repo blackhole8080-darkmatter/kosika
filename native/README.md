@@ -12,6 +12,7 @@ network.
                                      run a workflow, asking a real model
     kosika-native replay TRACE.jsonl check a run's trace, running nothing
     kosika-native capabilities       the conformance surfaces it reads
+    kosika-native phone ...          phones as Kosika nodes: see PHONE.md
 
 `run` takes the reference's flags for models: `--model NAME` (or
 `fast,strong=big`), `--model-url`, `--model-protocol openai|ollama`,

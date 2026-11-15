@@ -12,7 +12,9 @@ from typing import Any
 from kosika import app as studio
 from kosika.project_index import project_index
 
-EXAMPLES = Path(__file__).resolve().parent.parent / "examples" / "agents"
+from agents_beside import AGENTS, need_agents
+
+EXAMPLES = AGENTS
 
 ROUGH = """record Msg { text: Text }
 record Out { text: Text }
@@ -73,6 +75,7 @@ class ProjectIndexTests(unittest.TestCase):
         return {s["rule"]: s for s in found if s["title"] == name}
 
     def test_everything_is_listed_with_its_program_and_line(self) -> None:
+        need_agents()
         view = index_of(EXAMPLES)
         # Counted from the folder, so a new example does not break the test.
         folders = [
@@ -181,6 +184,7 @@ class ProjectIndexTests(unittest.TestCase):
         self.assertEqual(unused, ["Model idle is declared but no step asks it."])
 
     def test_the_examples_are_clean_apart_from_missing_evals(self) -> None:
+        need_agents()
         found = index_of(EXAMPLES)["suggestions"]
         rules = {s["rule"] for s in found}
         # Some examples have workflows a host program runs by name (Kosika
@@ -217,6 +221,7 @@ class ProjectIndexTests(unittest.TestCase):
         self.assertEqual(labels, ordered)
 
     def test_studio_serves_it_and_the_page_shows_it(self) -> None:
+        need_agents()
         shutil.copytree(EXAMPLES / "scout", self.root / "scout")
         view = studio.App(self.root).project()
         self.assertEqual(view["counts"]["agent"], 1)

@@ -51,7 +51,7 @@ ran into this week:
 
 | # | Step | State |
 |---|------|-------|
-| 1 | Coder agent | **exists** (`examples/agents/coder`) |
+| 1 | Coder agent | **exists** (`agents/coder` in kosika-agents) |
 | 2 | Coder swarm | **exists** (`daily.py --swarm`), now with a live board |
 | 3 | Hands on the screen, own pointers | **done** this week (`hands.py`, `pointer.py`, designed in `cursor.kos`) |
 | 4 | Browser hands with checks and backup plans | **done** this week (`browser.py`, `browse.kos`) |

@@ -38,6 +38,9 @@ class MCPManifest:
     server_version: str
     tools: dict[str, PinnedTool]
     manifest_version: int = 1
+    #: How long one call may take, in seconds: the manifest's waitSeconds,
+    #: which the person pins for a server whose calls wait on a person.
+    wait_seconds: int = 10
 
 
 def manifest_from_client(client: MCPStdioClient, source: str) -> MCPManifest:
@@ -223,6 +226,13 @@ def load_manifest(path: str | Path) -> MCPManifest:
         if pinned_hash != actual_hash:
             raise ManifestError(f"Manifest tool {name!r} has an invalid schemaHash")
         tools[name] = PinnedTool(name, input_schema, output_schema, pinned_hash)
+    wait_seconds = server.get("waitSeconds", 10)
+    if (
+        not isinstance(wait_seconds, int)
+        or isinstance(wait_seconds, bool)
+        or not 1 <= wait_seconds <= 300
+    ):
+        raise ManifestError("MCP manifest waitSeconds must be a whole number from 1 to 300")
     return MCPManifest(
         source=str(server["source"]),
         protocol_version=str(server["protocolVersion"]),
@@ -230,6 +240,7 @@ def load_manifest(path: str | Path) -> MCPManifest:
         server_version=str(server["version"]),
         tools=tools,
         manifest_version=int(data.get("manifestVersion", 1)),
+        wait_seconds=wait_seconds,
     )
 
 

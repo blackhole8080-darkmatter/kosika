@@ -998,11 +998,11 @@ eval that did not always pass.
 
 ### Example agents
 
-`examples/agents` holds eleven agents written in Kosika, each with its own
-tests. Point Studio at the folder to try them:
+The agents live in the kosika-agents repo, next to this one, each with its
+own tests. Point Studio at its `agents` folder to try them:
 
 ```
-kosika studio examples/agents --model MODEL --allow-folder YOUR_FOLDER --allow-shell
+kosika studio ../kosika-agents/agents --model MODEL --allow-folder YOUR_FOLDER --allow-shell
 ```
 
 - `researcher` answers questions from the files in the granted folder. Code

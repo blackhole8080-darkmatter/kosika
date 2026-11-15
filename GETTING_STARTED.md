@@ -191,7 +191,7 @@ its own tests, to change as you like.
 
 ## Where next
 
-- `examples/agents` holds eight larger agents to read and try: a
+- [kosika-agents](https://github.com/blackhole8080-darkmatter/kosika-agents), cloned next to this folder, holds the larger agents to read and try: a
   researcher that proves its answers with quotes, a study coach, a task
   planner and others.
 - `TUTORIAL.md` teaches the language itself, by hand, from an empty file.

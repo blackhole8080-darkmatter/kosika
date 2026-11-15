@@ -326,7 +326,6 @@ Many examples include fixture data files (JSON) for offline testing without mode
 
 ## Special Folders
 
-- `examples/agents/` - Agent-specific examples
 - `examples/motion/` - Motion and animation examples
 - `examples/path_motion/` - Path-based motion
 - `examples/composed/` - Multi-file module examples
@@ -335,8 +334,8 @@ Many examples include fixture data files (JSON) for offline testing without mode
 - `examples/mcp/` - MCP server examples
 - `examples/studios/` - Studio-related examples
 - `examples/worlds/` - World simulation examples
-- `examples/virtual_models/` - Virtual model examples
-- `examples/self_improve/` - Self-improvement examples
+
+The agents, the coder swarm and the virtual models now live in [kosika-agents](https://github.com/blackhole8080-darkmatter/kosika-agents), next to this repo.
 
 ## Troubleshooting
 
