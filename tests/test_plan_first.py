@@ -22,6 +22,8 @@ from kosika.story import read_trace
 from kosika.system_tools import bind_system_tools
 from kosika.trace_replay import replay_trace
 
+from agents_beside import need_agents
+
 TIDY = """
 record Msg { text: Text }
 record Said { text: Text }
@@ -298,13 +300,7 @@ class MapTests(Base):
         )
 
     def test_the_example_builder_plans_first(self) -> None:
-        example = (
-            Path(__file__).resolve().parents[1]
-            / "examples"
-            / "agents"
-            / "builder"
-            / "main.kos"
-        )
+        example = need_agents() / "builder" / "main.kos"
         program = load_program(example)
         builder = program.agents[0]
         self.assertIsNone(builder.plan)

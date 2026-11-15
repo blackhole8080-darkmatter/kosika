@@ -19,6 +19,8 @@ from kosika.skills import (
     pick_skills,
 )
 
+from agents_beside import need_agents
+
 ROOT = Path(__file__).resolve().parent.parent
 
 OPEN = """---
@@ -120,7 +122,7 @@ class OpenSkillTests(unittest.TestCase):
         self.assertEqual(load_open_skill(out / "python" / "SKILL.md").keywords, ("python", ".py", "script"))
 
     def test_the_hands_skills_export_cleanly(self) -> None:
-        notes = ROOT / "examples" / "agents" / "hands" / "skills"
+        notes = need_agents() / "hands" / "skills"
         for note in load_skill_notes(notes):
             again = load_open_skill(self.write(f"h/{note.skill_id}/SKILL.md", open_skill_text(note)))
             self.assertEqual((again.summary, again.keywords, again.instructions), (note.summary, note.keywords, note.instructions))

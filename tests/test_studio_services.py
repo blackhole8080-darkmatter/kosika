@@ -10,8 +10,10 @@ from pathlib import Path
 from kosika import services as running
 from kosika.app import PAGE, App, AppError
 
+from agents_beside import AGENTS, need_agents
+
 ROOT = Path(__file__).resolve().parents[1]
-LOOKOUT = (ROOT / "examples" / "agents" / "lookout" / "main.kos").as_posix()
+LOOKOUT = (AGENTS / "lookout" / "main.kos").as_posix()
 
 SERVICES = f"""// Two services for the test.
 service lookout {{
@@ -29,6 +31,7 @@ service quiet {{
 
 class ServicesPageTests(unittest.TestCase):
     def setUp(self) -> None:
+        need_agents()
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)

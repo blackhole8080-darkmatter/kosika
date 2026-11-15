@@ -106,6 +106,9 @@ jobs:
             python: "3.12"
     env:
       COVERAGE: ${{ matrix.coverage == 'wanted' && github.event_name == 'workflow_dispatch' }}
+      AGENTS_REF: main
+      KOSIKA_AGENTS_HOME: ${{ github.workspace }}/.kosika-agents
+      KOSIKA_AGENTS_REQUIRED: "1"
     steps:
       # Windows runners turn line endings into CRLF on checkout, which makes
       # files differ from what the tests expect. Keep them as committed.
@@ -123,6 +126,16 @@ jobs:
 
       - name: Check out repository
         uses: actions/checkout@v4
+
+      # Studio, Kosi and some tests use real agents as their examples. The
+      # agents live in kosika-agents; check it out inside the workspace and
+      # make the tests fail, not skip, if it is missing.
+      - name: Check out the agents beside it
+        uses: actions/checkout@v4
+        with:
+          repository: blackhole8080-darkmatter/kosika-agents
+          ref: ${{ env.AGENTS_REF }}
+          path: .kosika-agents
 
       - name: Set up Python
         uses: actions/setup-python@v5

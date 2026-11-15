@@ -12,6 +12,8 @@ from kosika import app as studio
 from kosika.modules import load_program
 from kosika.project_map import MAX_STEPS, NOTE_FILE, beginner_map
 
+from agents_beside import need_agents
+
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 
 
@@ -21,7 +23,7 @@ def map_of(path: Path, **extra: Any) -> dict[str, Any]:
 
 class MapTests(unittest.TestCase):
     def test_the_researcher_only_looks(self) -> None:
-        view = map_of(EXAMPLES / "agents" / "researcher" / "main.kos")
+        view = map_of(need_agents() / "researcher" / "main.kos")
         self.assertEqual(
             {item["name"] for item in view["reads"]},
             {"search_files", "find_files", "look_at"},
@@ -37,7 +39,7 @@ class MapTests(unittest.TestCase):
         self.assertEqual(view["budget"], [["model_calls", 9], ["seconds", 900]])
 
     def test_starting_a_program_is_a_change_that_kosika_cannot_see_inside(self) -> None:
-        view = map_of(EXAMPLES / "agents" / "workbench" / "main.kos")
+        view = map_of(need_agents() / "workbench" / "main.kos")
         changes = {item["name"]: item for item in view["changes"]}
         self.assertEqual(set(changes), {"run_git", "run_python"})
         self.assertEqual(changes["run_git"]["does"], "starts the program git")
@@ -54,7 +56,7 @@ class MapTests(unittest.TestCase):
             self.assertIn("not visible to Kosika", item["unseen"])
 
     def test_every_line_points_at_its_declaration(self) -> None:
-        for path in sorted((EXAMPLES / "agents").glob("*/main.kos")):
+        for path in sorted(need_agents().glob("*/main.kos")):
             source = path.read_text(encoding="utf-8").splitlines()
             view = map_of(path)
             listed = [
@@ -113,7 +115,7 @@ class MapTests(unittest.TestCase):
         )
 
     def test_purpose_is_never_guessed(self) -> None:
-        path = EXAMPLES / "agents" / "scout" / "main.kos"
+        path = need_agents() / "scout" / "main.kos"
         self.assertEqual(map_of(path)["purpose"], {"text": "", "source": "none"})
         told = map_of(path, about="Finds things.")["purpose"]
         self.assertEqual(told, {"text": "Finds things.", "source": "comment"})
@@ -127,7 +129,7 @@ class StudioMapTests(unittest.TestCase):
         self._dir = tempfile.TemporaryDirectory()
         self.addCleanup(self._dir.cleanup)
         self.root = Path(self._dir.name)
-        shutil.copytree(EXAMPLES / "agents" / "scout", self.root / "scout")
+        shutil.copytree(need_agents() / "scout", self.root / "scout")
         self.app = studio.App(self.root)
 
     def test_a_note_is_kept_beside_the_program_and_survives_a_restart(self) -> None:

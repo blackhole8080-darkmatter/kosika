@@ -1,0 +1,53 @@
+name: Phone preview builds
+
+# Builds kosika-native for phones and publishes them as one pre-release,
+# "phone-preview", replaced on each push to the phone branch.
+
+on:
+  push:
+    branches: [claude/project-thread-vo0rzl]
+    paths:
+      - "native/**"
+      - ".github/workflows/phone-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phone-preview
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Test the phone commands
+        working-directory: native
+        run: go test -run Phone -count=1 .
+      - name: Build for each device
+        working-directory: native
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p ../dist
+          GOOS=linux GOARCH=386 GO386=softfloat go build -trimpath -ldflags="-s -w" -o ../dist/kosika-native-ish .
+          GOOS=android GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o ../dist/kosika-native-android .
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../dist/kosika-native-linux .
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../dist/kosika-native.exe .
+          cp try-ish.sh ../dist/try.sh
+          cp ../examples/discrete_maths.kos ../dist/
+          cd ../dist && sha256sum * > SHA256SUMS
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete phone-preview --yes --cleanup-tag || true
+          gh release create phone-preview dist/* \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Phone preview (kosika-native phone)" \
+            --notes "Test builds of kosika-native with the phone commands, from branch claude/project-thread-vo0rzl ($GITHUB_SHA). Not reviewed or merged yet. iPhone (iSH): kosika-native-ish. Android (Termux): kosika-native-android. See native/PHONE.md."
