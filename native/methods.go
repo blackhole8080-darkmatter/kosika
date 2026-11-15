@@ -237,6 +237,25 @@ func runeIndex(text, part string) int {
 }
 
 var textMethods = map[string]method{
+	"pad_start": {[]string{"width", "fill"}, func(r Value, a []Value) Value {
+		size, ok := asWhole(a[0])
+		if !ok || size.Sign() < 0 {
+			runFail("pad_start needs a whole width that is not negative")
+		}
+		with := []rune(textOf(a[1]))
+		if len(with) != 1 {
+			runFail("pad_start needs exactly one character to fill with")
+		}
+		if size.Cmp(bigInt(maxTextLength)) > 0 {
+			runFail(fmt.Sprintf("pad_start would exceed %d characters", maxTextLength))
+		}
+		missing := int(size.Int64()) - len([]rune(textOf(r)))
+		if missing <= 0 {
+			return textOf(r)
+		}
+		padding := strings.Repeat(string(with), missing)
+		return padding + textOf(r)
+	}},
 	"length":     {nil, func(r Value, a []Value) Value { return bigInt(len([]rune(textOf(r)))) }},
 	"upper":      {nil, func(r Value, a []Value) Value { return strings.ToUpper(textOf(r)) }},
 	"lower":      {nil, func(r Value, a []Value) Value { return strings.ToLower(textOf(r)) }},
