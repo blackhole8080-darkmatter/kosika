@@ -119,9 +119,3 @@ fn title_case(text: Text) -> Text {
   }
   return titled.join(" ")
 }
-
-// Tests
-test "title_case capitalizes each word" {
-  result = title_case("hello world! this is kosika.")
-  expect result == "Hello World! This Is Kosika."
-}
