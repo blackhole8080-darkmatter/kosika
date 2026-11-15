@@ -2220,7 +2220,7 @@ workflow examples_checked(job: Checking) -> Result {
   report = worked_on(job.task, examples_work(job.asked), tested)
   fixed  = match report.last.passed {
     case true { as_is(report) }
-    case _ { call mend(job.task, report) }
+    case _ { call fill_py({asked: job.asked, sig: signature(job.asked), failure: report.last.output}) }
   }
   later  = execute coder.read_file(examples_path(job.asked)) otherwise {text: ""}
   again  = call keep_examples_test({asked: job.asked, text: examples_text(job.asked, signature(job.asked)), now: later.text})
@@ -2263,6 +2263,210 @@ fn examples_text(asked: MethodAsked, sig: Signature) -> Text {
   let examples = examples_of(asked.text)
   if examples.is_empty() or not sig.ok { return "" }
   return examples_test(asked, sig, examples)
+}
+
+// ---------------------------------------------------------------- bodies
+//
+// When the program has written an empty function, the model is asked for
+// its body alone, as plain code, and the program puts it in place. A small
+// model that writes a right body often cannot write an edit that applies to
+// the file; with no edit to write, that cannot fail.
+
+record Filling { asked: MethodAsked sig: Signature failure: Text }
+record BodySave { path: Text old: Text now: Text name: Text }
+record GoAgain { asked: MethodAsked fill: Bool python: Text agreed: Ran }
+
+fn py_fillable(before: Text, asked: MethodAsked, sig: Signature) -> Bool {
+  return not examples_of(asked.text).is_empty() and py_shelled(before, asked, sig) != before
+}
+
+fn go_fillable(before: Text, asked: MethodAsked) -> Bool {
+  let sig = signature(asked)
+  return sig.ok and go_shelled(before, asked, sig) != before
+}
+
+fn indent_of(line: Text) -> Number {
+  return line.length() - line.trim_start().length()
+}
+
+// The answer without the lines of a ``` fence around it.
+fn unfenced_lines(answer: Text) -> Text[] {
+  let lines = answer.replace("\r\n", "\n").split("\n")
+  let kept = for line in lines where not line.trim().starts_with("```") { line }
+  return kept
+}
+
+// The lines moved left as far as they go together, then indented by `pad`,
+// with no empty lines at either end.
+fn reindented(lines: Text[], pad: Text) -> Text[] {
+  var least = -1
+  for line in lines {
+    if not line.trim().is_empty() {
+      let n = indent_of(line.replace("\t", "    "))
+      if least < 0 or n < least { least = n }
+    }
+  }
+  if least < 0 { return [] }
+  var out: Text[] = []
+  for line in lines {
+    let flat = line.replace("\t", "    ").trim_end()
+    out = out.append(if flat.is_empty() { "" } else { pad + flat.drop(least) })
+  }
+  var first = 0
+  var last = out.length() - 1
+  for i in 0 until out.length() {
+    if out[i].is_empty() and first == i { first = i + 1 }
+  }
+  for i in 0 until out.length() {
+    let j = out.length() - 1 - i
+    if out[j].is_empty() and last == j { last = j - 1 }
+  }
+  if first > last { return [] }
+  return out.drop(first).take(last - first + 1)
+}
+
+// The body a model wrote for a Python function: what follows its def line
+// when it wrote one, up to the next line at the left margin.
+fn py_body(answer: Text, name: Text) -> Text[] {
+  let lines = unfenced_lines(answer)
+  var at = -1
+  for i in 0 until lines.length() {
+    if at < 0 and lines[i].trim().starts_with("def _" + name + "(") { at = i }
+  }
+  if at < 0 { return reindented(lines, "    ") }
+  var body: Text[] = []
+  var open = true
+  for line in lines.drop(at + 1) {
+    if open and not line.trim().is_empty() and indent_of(line) == 0 { open = false }
+    if open { body = body.append(line) }
+  }
+  return reindented(body, "    ")
+}
+
+// builtin_methods.py with the function's body replaced by the model's; as
+// it was when there is no such function or no body in the answer.
+fn with_py_body(source: Text, asked: MethodAsked, answer: Text) -> Text {
+  let body = py_body(answer, asked.name)
+  if body.is_empty() { return source }
+  let plain = source.replace("\r\n", "\n")
+  let lines = plain.split("\n")
+  var at = -1
+  for i in 0 until lines.length() {
+    if at < 0 and lines[i].starts_with("def _" + asked.name + "(") { at = i }
+  }
+  if at < 0 { return source }
+  var end = lines.length()
+  for j in (at + 1) until lines.length() {
+    if end == lines.length() and not lines[j].trim().is_empty() and indent_of(lines[j]) == 0 { end = j }
+  }
+  let now = lines.take(at + 1).concat(body).concat(["", ""]).concat(lines.drop(end)).join("\n")
+  return if source.contains("\r\n") { now.replace("\n", "\r\n") } else { now }
+}
+
+// The body a model wrote for a Go method entry: what is inside its func
+// when it wrote the func line, else all of it.
+fn go_body(answer: Text) -> Text[] {
+  let lines = unfenced_lines(answer)
+  var at = -1
+  for i in 0 until lines.length() {
+    if at < 0 and lines[i].contains("func(r Value, a []Value) Value {") { at = i }
+  }
+  if at < 0 { return reindented(lines, "\t\t") }
+  var body: Text[] = []
+  var open = true
+  for line in lines.drop(at + 1) {
+    let t = line.trim()
+    if open and (t == "}}," or t == "}}" or (t == "}" and indent_of(line) <= indent_of(lines[at]))) { open = false }
+    if open { body = body.append(line) }
+  }
+  return reindented(body, "\t\t")
+}
+
+fn with_go_body(methods: Text, asked: MethodAsked, answer: Text) -> Text {
+  let body = go_body(answer)
+  if body.is_empty() { return methods }
+  let plain = methods.replace("\r\n", "\n")
+  let lines = plain.split("\n")
+  var at = -1
+  for i in 0 until lines.length() {
+    if at < 0 and lines[i].starts_with("\t\"" + asked.name + "\": {") { at = i }
+  }
+  if at < 0 { return methods }
+  var end = -1
+  for j in (at + 1) until lines.length() {
+    if end < 0 and lines[j] == "\t}}," { end = j }
+  }
+  if end < 0 { return methods }
+  let now = lines.take(at + 1).concat(body).concat(lines.drop(end)).join("\n")
+  return if methods.contains("\r\n") { now.replace("\n", "\r\n") } else { now }
+}
+
+fn examples_said(asked: MethodAsked) -> Text {
+  var said: Text[] = []
+  for e in examples_of(asked.text) { said = said.append("  " + e.call + " gives " + e.value) }
+  return if said.is_empty() { "" } else { "\nIn Kosika these must hold:\n" + said.join("\n") + "\n" }
+}
+
+fn failure_said(failure: Text) -> Text {
+  return if failure.trim().is_empty() { "" } else { "\nThe last body you wrote did not pass. What the check said:\n" + failure.take(1500) + "\nWrite the body again so that it passes.\n" }
+}
+
+fn py_body_task(job: Filling) -> Task {
+  var names: Text[] = [receiver_name(job.asked.kind)]
+  for p in job.sig.params { names = names.append(p.name) }
+  return {text: "Write the body of one Python function in Kosika's Python engine:\n\ndef _" + job.asked.name + "(" + names.join(", ") + "):\n\nIt is the " + job.asked.kind + " method " + job.asked.name + ". What it does: " + job.asked.text.split("; examples:").first().or(job.asked.text) + "\n" + names[0] + " is the value the method is called on (a Python " + (if job.asked.kind == "Text" { "str" } else { if job.asked.kind == "Number" { "int or float" } else { "value" } }) + "); the other parameters are its arguments in order. Return a Python " + (if job.sig.result == "Text" { "str" } else { if job.sig.result == "Bool" { "bool" } else { if job.sig.result == "Number" { "int or float" } else { "value" } } }) + ". To refuse a call, raise RuntimeError with a short message.\n" + examples_said(job.asked) + failure_said(job.failure) + "\nAnswer with only the body: the indented lines that go under the def line. No def line, no imports, no explanation."}
+}
+
+fn go_body_task(job: Filling, python: Text) -> Task {
+  let reads = if job.asked.kind == "Text" { "textOf(r) is the text" } else { "toFloat(r) is the number as a float64, and r.(*big.Int) is it when it is whole" }
+  return {text: "Write the body of one Go function in Kosika's Go engine, the method " + job.asked.name + " in native/methods.go:\n\nfunc(r Value, a []Value) Value {\n\t// the body\n}\n\nIn the body " + reads + ", the arguments are a[0], a[1] in order (textOf(a[0]) for a Text, toFloat(a[0]) for a Number), and you return a Go string, bool, float64 or *big.Int (bigInt(n) makes one from an int). To refuse a call, runFail(\"a short message\") and then return nil. It must give exactly what the Python engine gives, which is:\n```python\n" + python + "\n```\n" + examples_said(job.asked) + failure_said(job.failure) + "\nAnswer with only the lines of the body. No func line, no imports, no explanation."}
+}
+
+fn agreed_result(asked: MethodAsked, ran: Ran) -> Result {
+  let said = ran.stdout.take(1500) + ran.stderr.take(500)
+  return {text: "I wrote the body of " + asked.name + " in the Go engine and compared the two engines on sample values:\n" + said, last: {task: asked.text, output: said, passed: ran.exit_code == 0, known: true}}
+}
+
+workflow fill_py(job: Filling) -> Result {
+  source = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
+  asked  = py_body_task(job)
+  code   = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
+  saved  = call save_body({path: "kosika/builtin_methods.py", old: source.text, now: with_py_body(source.text, job.asked, code.text), name: job.asked.name})
+  tested = call run_tests(examples_work(job.asked))
+  result = worked_on({text: job.asked.text}, examples_work(job.asked), tested)
+  require approval
+}
+
+workflow fill_go(job: Filling) -> Result {
+  source = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
+  table  = execute coder.read_file("native/methods.go") otherwise {text: ""}
+  asked  = go_body_task(job, python_lines(source.text, job.asked.name))
+  code   = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
+  saved  = call save_body({path: "native/methods.go", old: table.text, now: with_go_body(table.text, job.asked, code.text), name: job.asked.name})
+  agreed = execute runner.run_python(agree_args(job.asked))
+  result = agreed_result(job.asked, agreed)
+  require approval
+}
+
+workflow go_once_more(job: GoAgain) -> Result {
+  result = match job.fill {
+    case true { call fill_go({asked: job.asked, sig: signature(job.asked), failure: job.agreed.stdout.take(1200) + job.agreed.stderr.take(400)}) }
+    case _ { call on_my_own(go_again(job.asked, job.python, job.agreed)) }
+  }
+  require approval
+}
+
+workflow save_body(job: BodySave) -> Saved {
+  saved = match job.now == job.old {
+    case true { nothing_saved() }
+    case _ { call write_body(job) }
+  }
+  require approval
+}
+
+workflow write_body(job: BodySave) -> Saved {
+  saved = execute writer.save_all([{path: job.path, text: job.now, before: job.old, exists: true}], "The body of " + job.name + ", written by the model in place of the empty one.")
+  require approval
 }
 
 // ---------------------------------------------------------------- shells
@@ -2409,7 +2613,10 @@ workflow kosika_method(task: Task) -> Result {
   shell  = call write_py_shell({asked: asked, sig: sig, old: before.text})
   tests  = call write_examples_test({asked: asked, text: examples_text(asked, sig)})
   first  = python_part(asked, shell_said(before.text, py_shelled(before.text, asked, sig), asked, sig))
-  made   = call on_my_own(first)
+  made   = match py_fillable(before.text, asked, sig) {
+    case true { call fill_py({asked: asked, sig: sig, failure: ""}) }
+    case _ { call on_my_own(first) }
+  }
   // With examples, their tests are what decide: run them, and if they fail
   // the model gets one try to mend the method.
   tried  = match examples_text(asked, sig).is_empty() {
@@ -2496,13 +2703,16 @@ workflow method_rest(asked: MethodAsked, python: Result) -> Result {
   types  = execute coder.read_file("native/types.go") otherwise {text: ""}
   table  = execute coder.read_file("native/methods.go") otherwise {text: ""}
   shell  = call write_go_shell({asked: asked, sig: signature(asked), types: types.text, methods: table.text})
-  first  = call on_my_own(go_part(asked, python_lines(source.text, asked.name)))
+  first  = match go_fillable(table.text, asked) {
+    case true { call fill_go({asked: asked, sig: signature(asked), failure: ""}) }
+    case _ { call on_my_own(go_part(asked, python_lines(source.text, asked.name))) }
+  }
   agreed = execute runner.run_python(agree_args(asked))
   // The engines disagree, or the Go one has no such method: the Go part is
   // asked for once more, told what each engine said.
   go     = match agreed.exit_code == 0 {
     case true { as_is(first) }
-    case _ { call on_my_own(go_again(asked, python_lines(source.text, asked.name), agreed)) }
+    case _ { call go_once_more({asked: asked, fill: go_fillable(table.text, asked), python: python_lines(source.text, asked.name), agreed: agreed}) }
   }
   again  = execute runner.run_python(agree_args(asked))
   docs   = call on_my_own(docs_part(asked))
@@ -3571,4 +3781,33 @@ test "a request with no examples asks the model for tests as before" {
   expect examples_text(asked, signature(asked)) == ""
   told = python_part(asked, "")
   expect told.text.contains("three to six")
+}
+
+test "a Python body is put in place of the empty one, fenced or not, with or without its def line" {
+  asked = method_asked({text: "add a Number method is_even() that says whether a whole number is even, giving a Bool; examples: `(4).is_even()` is `true`"})
+  source = "import x\n\n\ndef _is_even(number):\n    raise RuntimeError(\"is_even is not written yet\")\n\n\nMETHODS: tuple[Method, ...] = (\n)\n"
+  bare = with_py_body(source, asked, "return number % 2 == 0")
+  expect bare.contains("def _is_even(number):\n    return number % 2 == 0\n\n\nMETHODS")
+  fenced = with_py_body(source, asked, "```python\ndef _is_even(number):\n        if number != int(number):\n            return False\n        return int(number) % 2 == 0\n```\nThis works because...")
+  expect fenced.contains("def _is_even(number):\n    if number != int(number):\n        return False\n    return int(number) % 2 == 0\n\n\nMETHODS")
+  expect not fenced.contains("not written yet")
+  expect with_py_body(source, asked, "   ") == source
+}
+
+test "a Go body is put inside the method's entry, and only there" {
+  asked = method_asked({text: "add a Text method shout() that gives the text in capitals, giving a Text"})
+  table = "var textMethods = map[string]method{\n\t\"shout\": {nil, func(r Value, a []Value) Value {\n\t\trunFail(\"shout is not written yet\")\n\t\treturn nil\n\t}},\n\t\"other\": {nil, func(r Value, a []Value) Value {\n\t\treturn nil\n\t}},\n}\n"
+  now = with_go_body(table, asked, "```go\nreturn strings.ToUpper(textOf(r))\n```")
+  expect now.contains("\t\"shout\": {nil, func(r Value, a []Value) Value {\n\t\treturn strings.ToUpper(textOf(r))\n\t}},\n\t\"other\"")
+  whole = with_go_body(table, asked, "\"shout\": {nil, func(r Value, a []Value) Value {\n    return strings.ToUpper(textOf(r))\n}},")
+  expect whole == now
+}
+
+test "the body task names the function, the examples and the last failure" {
+  asked = method_asked({text: "add a Text method surround(left: Text, right: Text) that gives the text with left before it and right after it, giving a Text; examples: `\"x\".surround(\"<\", \">\")` is `\"<x>\"`"})
+  told = py_body_task({asked: asked, sig: signature(asked), failure: "AssertionError: '<x' != '<x>'"})
+  expect told.text.contains("def _surround(text, left, right):")
+  expect told.text.contains("\"x\".surround(\"<\", \">\") gives \"<x>\"")
+  expect told.text.contains("AssertionError")
+  expect not told.text.contains("examples:")
 }
