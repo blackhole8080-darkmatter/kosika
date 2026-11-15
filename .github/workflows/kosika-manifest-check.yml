@@ -106,8 +106,7 @@ jobs:
             python: "3.12"
     env:
       COVERAGE: ${{ matrix.coverage == 'wanted' && github.event_name == 'workflow_dispatch' }}
-      # Until kosika-agents#1 is merged its agents are on this branch; then: main
-      AGENTS_REF: claude/project-thread-skotv7
+      AGENTS_REF: main
       KOSIKA_AGENTS_HOME: ${{ github.workspace }}/.kosika-agents
       KOSIKA_AGENTS_REQUIRED: "1"
     steps:
