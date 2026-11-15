@@ -14,17 +14,21 @@ from kosika.model import ModelResponse, ScriptedModelProvider
 from kosika.modules import load_program
 from kosika.testing import run_tests
 
+from agents_beside import AGENTS, need_agents
+
 ROOT = Path(__file__).resolve().parents[1]
-ASSISTANT = ROOT / "examples" / "agents" / "assistant" / "main.kos"
+ASSISTANT = AGENTS / "assistant" / "main.kos"
 
 
 class AssistantTests(unittest.TestCase):
     def test_its_own_tests_pass(self) -> None:
+        need_agents()
         results = run_tests(load_program(ASSISTANT))
         self.assertGreaterEqual(len(results), 11)
         self.assertEqual([r.name for r in results if not r.passed], [])
 
     def test_what_it_reaches_is_listed_and_none_of_it_changes_the_world(self) -> None:
+        need_agents()
         program = load_program(ASSISTANT)
         sources = sorted({tool.source for tool in program.tools})
         # A clock, its two memories, the other agents here, an outside agent
@@ -48,8 +52,9 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual({tool.access for tool in program.tools} & {"execute"}, set())
 
     def test_studio_opens_on_it(self) -> None:
+        need_agents()
         self.assertEqual(
-            studio.App(ROOT / "examples" / "agents").assistant(), "assistant/main.kos"
+            studio.App(AGENTS).assistant(), "assistant/main.kos"
         )
 
 
@@ -60,6 +65,7 @@ class OutsideMindTests(unittest.TestCase):
     QUESTION = "what quantum computing projects should we build together"
 
     def setUp(self) -> None:
+        need_agents()
         self._dir = tempfile.TemporaryDirectory()
         self.addCleanup(self._dir.cleanup)
         self.root = Path(self._dir.name) / "agents"

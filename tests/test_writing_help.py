@@ -10,11 +10,14 @@ from typing import Any
 
 from kosika import app as studio
 
-EXAMPLES = Path(__file__).resolve().parent.parent / "examples" / "agents"
+from agents_beside import AGENTS, need_agents
+
+EXAMPLES = AGENTS
 
 
 class WritingHelpTests(unittest.TestCase):
     def setUp(self) -> None:
+        need_agents()
         self._dir = tempfile.TemporaryDirectory()
         self.addCleanup(self._dir.cleanup)
         self.root = Path(self._dir.name)

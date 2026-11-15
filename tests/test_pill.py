@@ -13,12 +13,15 @@ from unittest import mock
 from kosika import cli, desktop_app, pill
 from kosika.model import ModelResponse, ScriptedModelProvider
 
+from agents_beside import AGENTS, need_agents
+
 ROOT = Path(__file__).resolve().parents[1]
-ASSISTANT = ROOT / "examples" / "agents" / "assistant"
+ASSISTANT = AGENTS / "assistant"
 
 
 class EngineTests(unittest.TestCase):
     def setUp(self) -> None:
+        need_agents()
         self._dir = tempfile.TemporaryDirectory()
         self.addCleanup(self._dir.cleanup)
         self.agents = Path(self._dir.name)
@@ -69,6 +72,7 @@ class AskingTests(unittest.TestCase):
     """An agent Kosi handed a request to wants to change a file."""
 
     def setUp(self) -> None:
+        need_agents()
         from tests.test_hand_over import SCRIBE
 
         self._dir = tempfile.TemporaryDirectory()

@@ -20,6 +20,8 @@ from kosika.runtime import run
 from kosika.testing import run_tests
 from kosika.trace_replay import replay_trace
 
+from agents_beside import need_agents
+
 LOGO = Path(__file__).resolve().parent.parent / "examples" / "motion" / "logo.kos"
 SVG = "{http://www.w3.org/2000/svg}"
 
@@ -362,7 +364,7 @@ class StudioSceneTests(unittest.TestCase):
         view = studio.describe(self.app.agent("logo.kos"), detail=True)
         self.assertTrue(view["scene"])
         self.assertIn('"dots": 12', view["example_input"])
-        researcher = LOGO.parent.parent / "agents" / "researcher"
+        researcher = need_agents() / "researcher"
         other = studio.describe(studio.App(researcher).agent("main.kos"), detail=True)
         self.assertFalse(other["scene"])
 
@@ -453,7 +455,7 @@ class StudioSceneTests(unittest.TestCase):
         self.assertFalse(self.app.draw_scene("logo.kos", "not a scene")["ok"])
 
     def test_every_pattern_of_the_animator_plays(self) -> None:
-        animator = LOGO.parent.parent / "agents" / "animator" / "main.kos"
+        animator = need_agents() / "animator" / "main.kos"
         source = animator.read_text(encoding="utf-8") + (
             "\nworkflow made(plan: Plan) -> Scene {\n  scene = build(plan)\n}\n"
         )

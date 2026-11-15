@@ -10,6 +10,8 @@ from pathlib import Path
 from kosika import outside
 from kosika.outside import OutsideError, propose
 
+from agents_beside import need_agents
+
 CALC = "def add(a, b):\n    return a + b\n"
 
 
@@ -186,7 +188,7 @@ class CoderTests(unittest.TestCase):
         self.work.mkdir(parents=True)
         self.other.mkdir()
         (self.work / "calc.py").write_text(CALC, encoding="utf-8")
-        coder = Path(__file__).resolve().parents[1] / "examples" / "agents" / "coder"
+        coder = need_agents() / "coder"
         shutil.copytree(
             coder,
             top / "agents" / "coder",

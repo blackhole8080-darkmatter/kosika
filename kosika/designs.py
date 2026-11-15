@@ -23,6 +23,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from .agents_home import FETCH, agent_program
+
 FRONT_DOOR = Path(__file__).resolve().parent / "std" / "designs.kos"
 KINDS = ("", "diagram", "illustration", "art", "canvas")
 PLACES = ("chat", "studio", "site", "agent")
@@ -116,11 +118,12 @@ def _keep_failure(printed: str) -> None:
         raise DesignsError(f"The engine crashed: {crash} (the whole output is in ~/.kosika/designs-last-failure.txt)")
 
 
-STUDY = Path(__file__).resolve().parent.parent / "examples" / "agents" / "study" / "main.kos"
+#: In the kosika-agents repo beside this one (see agents_home).
+STUDY = agent_program("study")
 
 
 def study(text: str, *, timeout: float = 900) -> dict[str, Any]:
-    """Ask the study companion (examples/agents/study): an answer in words,
+    """Ask the study companion (agents/study in kosika-agents): an answer in words,
     from the person's own study notes where they help, and a Designs canvas
     beside it. "remember: ..." keeps a note instead.
 
@@ -132,7 +135,7 @@ def study(text: str, *, timeout: float = 900) -> dict[str, Any]:
     if not text:
         raise DesignsError("Say what to study, or what to remember.")
     if not STUDY.is_file():
-        raise DesignsError(f"The study companion is not in this copy of Kosika ({STUDY}).")
+        raise DesignsError(f"The study companion is not at {STUDY}. {FETCH}")
     memory = Path(os.environ.get("KOSIKA_STUDY_MEMORY", str(Path.home() / ".kosika" / "study")))
     memory.mkdir(parents=True, exist_ok=True)
     extra = ["--memory", str(memory)]

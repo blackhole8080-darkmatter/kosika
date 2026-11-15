@@ -4,7 +4,7 @@ A services file lists them. Each `service` names its program, what it is
 told each time it runs, how often, and exactly what it may reach:
 
     service lookout {
-      program "examples/agents/lookout/main.kos"
+      program "../kosika-agents/agents/lookout/main.kos"
       say "check"
       every 15 minutes
       allow site "github.com"
@@ -13,7 +13,7 @@ told each time it runs, how often, and exactly what it may reach:
     }
 
     service gatherer {
-      program "examples/agents/gatherer/main.kos"
+      program "../kosika-agents/agents/gatherer/main.kos"
       allow site "news.google.com"
       allow site "en.wikipedia.org"
       model "qwen/qwen3.8-27b" at "https://api.groq.com/openai/v1" key "GROQ_API_KEY"
