@@ -616,13 +616,14 @@ body.on-mission .track { opacity: .5; }
 [data-skin="spy"] .untiled { display: none; }
 
 /* Coders */
-.coders .coder { display: flex; flex-direction: column; gap: 6px; }
-.coder .who { display: flex; align-items: center; gap: 12px; }
-.coder .who .face { width: 72px; height: 72px; flex: none; }
-.coder .who .face svg { width: 72px; height: 72px; overflow: visible; }
-.coder .who h3 { margin: 0; }
-.coder .who small { display: block; color: var(--faint); font: 11.5px var(--mono); }
-.coder .ask { margin: 2px 0; font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.grid.coders { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.coders .coder { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.coder .coder-who { display: flex; align-items: center; gap: 12px; }
+.coder-face { width: 72px; height: 72px; flex: none; }
+.coder-face svg { width: 72px; height: 72px; overflow: visible; }
+.coder .coder-who h3 { margin: 0; }
+.coder .coder-who small { display: block; color: var(--faint); font: 11.5px var(--mono); }
+.coder .coder-ask { margin: 2px 0; font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .coder .why { color: var(--faint); font-size: 12px; }
 .todo-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .todo-list li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.45; }
@@ -1074,6 +1075,62 @@ pre.diff .hunk { color: var(--faint); }
 
 @media (prefers-reduced-motion: reduce) { [data-skin="dark-matter"] body::after { display: none; } }
 
+
+/* ------------------------------------------------- Graphite, the modern look
+   "Kosika Studio, Modern": quieter, flatter, one accent. A graphite ground,
+   hairline borders, amber as the only colour that asks for attention, a
+   grotesk for words and a mono for facts. No nebula, no glass, no opening. */
+[data-skin="graphite"] {
+  --bg: #0E0F12; --panel: #121419; --rail: #0B0C0F; --ink: #ECEDEE; --soft: #A9ADB6; --faint: #8E929C; --line: #22252C;
+  --accent: #F5B45C; --accent-soft: #1C1810; --ok: #6FCF97; --ok-soft: #13241A;
+  --bad: #F2A3A3; --bad-soft: #2A1717; --warn: #F5B45C; --warn-soft: #17140E;
+  --think: #B9B2F0; --think-soft: #1A1928; --mem: #5EC4B6; --mem-soft: #0F1A19;
+  --code: #D8DAE0; --code-soft: #121419;
+  --display: Inter, "Segoe UI", system-ui, sans-serif;
+  --shadow: none; --lift: none; --glow: transparent;
+  color-scheme: dark;
+}
+[data-skin="graphite"] body { font-family: Inter, "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--ink); grid-template-columns: 232px minmax(0, 1fr); }
+[data-skin="graphite"] body::before, [data-skin="graphite"] body::after { display: none !important; }
+[data-skin="graphite"] .nebula, [data-skin="graphite"] .grain, [data-skin="graphite"] .spot, [data-skin="graphite"] .runner, [data-skin="graphite"] .track { display: none !important; }
+[data-skin="graphite"] ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--ink); }
+[data-skin="graphite"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-skin="graphite"] ::-webkit-scrollbar-thumb { background: #2A2D35; border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+[data-skin="graphite"] aside.rail { background: var(--rail); border-right: 1px solid var(--line); backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-skin="graphite"] .brand { font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+[data-skin="graphite"] .brand small { font: 500 11px/1 var(--mono); letter-spacing: 0; text-transform: none; color: var(--faint); margin-left: auto; }
+[data-skin="graphite"] .brand .mark { border-radius: 50%; box-shadow: none; }
+[data-skin="graphite"] .nav { border-radius: 8px; color: var(--soft); font-size: 14px; transition: background .15s, color .15s; }
+[data-skin="graphite"] .nav:hover { background: #15171C; color: var(--ink); }
+[data-skin="graphite"] .nav.on { background: #1A1C22 !important; color: var(--ink); box-shadow: none !important; border-color: transparent !important; outline: 0; font-weight: 500; }
+[data-skin="graphite"] .nav.on::before, [data-skin="graphite"] .nav.on::after { display: none !important; }
+[data-skin="graphite"] .nav.on svg { color: var(--ink); }
+[data-skin="graphite"] .rail .foot { font-size: 12px; color: var(--soft); border-top: 1px solid var(--line); }
+[data-skin="graphite"] main h1 { font-family: var(--display); font-weight: 600; letter-spacing: -.02em; line-height: 1.15; font-size: 26px; }
+[data-skin="graphite"] main h2 { font: 600 13px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--soft); margin: 28px 0 12px; display: block; }
+[data-skin="graphite"] main h2::after { display: none; }
+[data-skin="graphite"] .titled .hero { display: none; }
+[data-skin="graphite"] p.lead { color: var(--soft); }
+[data-skin="graphite"] .panel, [data-skin="graphite"] .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-skin="graphite"] .card:hover { border-color: #3A3E47; transform: none; box-shadow: none; }
+[data-skin="graphite"] .card h3, [data-skin="graphite"] .panel h3 { font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+[data-skin="graphite"] .chip { font: 500 11px/1.7 var(--mono); letter-spacing: 0; text-transform: none; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--soft); }
+[data-skin="graphite"] .chip.ok { color: var(--ok); border-color: #23402F; }
+[data-skin="graphite"] .chip.bad { color: var(--bad); border-color: #4A2A2A; }
+[data-skin="graphite"] .chip.warn, [data-skin="graphite"] .chip.accent { color: var(--accent); border-color: #3A2F1C; }
+[data-skin="graphite"] .chip.think { color: var(--think); border-color: #2C2A44; }
+[data-skin="graphite"] .chip.mem { color: var(--mem); border-color: #1D3532; }
+[data-skin="graphite"] button { font: 500 13px var(--display); border-radius: 8px; min-height: 36px; background: var(--ink); color: var(--bg); border: 0; box-shadow: none; }
+[data-skin="graphite"] button:hover { background: #FFFFFF; box-shadow: none; }
+[data-skin="graphite"] button.ghost, [data-skin="graphite"] button.quiet { background: transparent !important; color: var(--ink) !important; box-shadow: inset 0 0 0 1px #2A2D35 !important; }
+[data-skin="graphite"] button:disabled { opacity: .45; }
+[data-skin="graphite"] input, [data-skin="graphite"] textarea, [data-skin="graphite"] select { background: var(--panel); color: var(--ink); border: 1px solid #2A2D35; border-radius: 10px; }
+[data-skin="graphite"] input:focus, [data-skin="graphite"] textarea:focus, [data-skin="graphite"] select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 1px; }
+[data-skin="graphite"] .banner { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); }
+[data-skin="graphite"] .banner.bad { border-color: #4A2A2A; color: var(--bad); }
+[data-skin="graphite"] pre, [data-skin="graphite"] code { font-family: "JetBrains Mono", var(--mono); }
+[data-skin="graphite"] .path { font-family: var(--mono); color: var(--faint); }
+[data-skin="graphite"] main { animation: none !important; }
 </style>
 </head>
 <body>
@@ -1681,7 +1738,7 @@ async function showCoders(note) {
   async function face(agent, state, holder) {
     try {
       const drawn = await api("/api/coders/mascot?agent=" + encodeURIComponent(agent) + "&state=" + state);
-      if (drawn.svg) { const svg = new DOMParser().parseFromString(drawn.svg, "image/svg+xml").documentElement; if (svg.nodeName === "svg") { const box = h("div", {class: "face"}, document.importNode(svg, true)); holder.face.replaceWith(box); holder.face = box; } }
+      if (drawn.svg) { const svg = new DOMParser().parseFromString(drawn.svg, "image/svg+xml").documentElement; if (svg.nodeName === "svg") { const box = h("div", {class: "coder-face"}, document.importNode(svg, true)); holder.face.replaceWith(box); holder.face = box; } }
       holder.title.textContent = drawn.title || agent;
     } catch (error) { /* the coder is shown by its name alone */ }
   }
@@ -1689,11 +1746,11 @@ async function showCoders(note) {
   const cards = view.runs.slice().reverse().map(run => {
     const [said, kind] = words(run);
     const state = run.result === "passed" ? "done" : run.result ? "failed" : "typing";
-    const holder = {face: h("div", {class: "face"}), title: h("h3", null, run.agent)};
+    const holder = {face: h("div", {class: "coder-face"}), title: h("h3", null, run.agent)};
     face(run.agent, state, holder);
     return h("div", {class: "card coder", "data-state": state, title: "See the change and its report", onclick: () => go("coders", run.run)},
-      h("div", {class: "who"}, holder.face, h("div", null, holder.title, h("small", null, run.agent + " · " + run.run))),
-      h("p", {class: "ask"}, run.request || "(no request written)"),
+      h("div", {class: "coder-who"}, holder.face, h("div", null, holder.title, h("small", null, run.agent + " · " + run.run))),
+      h("p", {class: "coder-ask"}, run.request || "(no request written)"),
       h("div", {class: "chips"}, chip(said, kind), chip(Math.floor(run.seconds / 60) + " min " + (run.seconds % 60) + " s"), run.patch ? chip("change ready", "think") : null),
       run.why ? h("div", {class: "why"}, run.why) : null);
   });
@@ -1747,7 +1804,7 @@ async function showCoderRun(name) {
   main.replaceChildren(...[titled("Coders"),
     h("p", {class: "lead"}, h("a", {href: "#coders"}, "← All coders"), " · ", run.run),
     h("div", {class: "card coder-run"},
-      h("p", {class: "ask"}, run.request),
+      h("p", {class: "coder-ask"}, run.request),
       h("div", {class: "chips"}, said, run.why ? chip(run.why) : null),
       action ? h("div", {class: "row"}, action) : null,
       h("p", {class: "why"}, run.result === "passed" && !run.kept ? "Keeping it makes a branch coder/" + run.run + " from studio, pushes it and opens a pull request. You review and merge it on GitHub." : "")),
@@ -2598,7 +2655,7 @@ function swarmTab(agent) {
     members = {}; active = null; round.textContent = chosen.agents.length + " agents, up to " + chosen.max_rounds + " rounds of workflow " + chosen.workflow;
     fill(stage, chosen.agents.map((name, index) => {
       const doing = h("div", {class: "doing"});
-      const el = h("div", {class: "member c" + (index % 5)}, h("div", {class: "face"}, name.slice(0, 2).toUpperCase()), h("div", {class: "who"}, name), doing);
+      const el = h("div", {class: "member c" + (index % 5)}, h("div", {class: "coder-face"}, name.slice(0, 2).toUpperCase()), h("div", {class: "who"}, name), doing);
       members[name] = {el, doing, index}; return el;
     }));
     live = liveView(agent, chosen.workflow); fill(flow, live.el); quiet();
@@ -3046,7 +3103,7 @@ loadBrand().finally(route);
   function intro() {
     let shown = false;
     try { shown = sessionStorage.getItem("kosika-intro") === "1"; sessionStorage.setItem("kosika-intro", "1"); } catch (error) { shown = false; }
-    if (shown || calm()) return;
+    if (shown || calm() || document.documentElement.dataset.skin === "graphite") return;
     const ns = SVGNS;
     const ink = s("linearGradient", {id: "introInk", x1: "0", y1: "0", x2: "1", y2: "1"},
       s("stop", {offset: "0", "stop-color": "#ff8a4c"}), s("stop", {offset: ".55", "stop-color": "#a993ff"}), s("stop", {offset: "1", "stop-color": "#55d6ff"}));
@@ -3250,7 +3307,7 @@ loadBrand().finally(route);
     if (document.hidden || now - last < 33) return;
     const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
     const look = document.documentElement.dataset.skin;
-    if (look === "swiss" || look === "spy") return;
+    if (look === "swiss" || look === "spy" || look === "graphite") { canvas.style.opacity = "0"; return; }
     TINTS.idle = look === "cutting-room" ? [0.6, 0.38, 0.22] : look === "dark-matter" ? [0.54, 0.44, 1.0] : [0.66, 0.58, 1.0];
     if (now > calmUntil) { wantEnergy = look === "cutting-room" ? 0.07 : look === "dark-matter" ? 0.06 : 0.15; wantTint = TINTS.idle; }
     energy += (wantEnergy - energy) * Math.min(1, dt * 1.6);
@@ -3269,14 +3326,17 @@ loadBrand().finally(route);
 // ------------------------------------------------- skins
 // Four looks: Cinema (the nebula), and three from LemoLab's film styles.
 // The choice is this person's and stays on this computer.
-const SKINS = [["dark-matter", "Dark Matter"], ["cutting-room", "The Cutting Room"], ["cinema", "Cinema"], ["swiss", "Swiss Motion"], ["spy", "Spy Titles"]];
-function skin() { try { return localStorage.getItem("kosika-skin") || "dark-matter"; } catch (error) { return "dark-matter"; } }
+// Studio has one look now, Graphite ("Kosika Studio, Modern"): quieter,
+// flatter, one accent. The older looks' rules stay below, unused.
+const SKINS = [["graphite", "Graphite"]];
+function skin() { return "graphite"; }
 function setSkin(name) {
   try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
   if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;
 }
 setSkin(skin());
 (function skinSwitch() {
+  if (SKINS.length < 2) return;
   const foot = document.getElementById("foot");
   function add() {
     if (foot.querySelector(".skin-switch")) return;
