@@ -1,0 +1,4 @@
+build/
+*.syso
+app/winres/
+setup/payload.zip
