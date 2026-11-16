@@ -1681,7 +1681,7 @@ async function showCoders(note) {
   async function face(agent, state, holder) {
     try {
       const drawn = await api("/api/coders/mascot?agent=" + encodeURIComponent(agent) + "&state=" + state);
-      if (drawn.svg) { const box = h("div", {class: "face"}); box.innerHTML = drawn.svg; holder.face.replaceWith(box); holder.face = box; }
+      if (drawn.svg) { const svg = new DOMParser().parseFromString(drawn.svg, "image/svg+xml").documentElement; if (svg.nodeName === "svg") { const box = h("div", {class: "face"}, document.importNode(svg, true)); holder.face.replaceWith(box); holder.face = box; } }
       holder.title.textContent = drawn.title || agent;
     } catch (error) { /* the coder is shown by its name alone */ }
   }
