@@ -26,7 +26,7 @@ here reaches Kosika until its owner applies the change.
 - [ ] add exported functions lighter(colour: Text, part: Number) -> Text and darker(colour: Text, part: Number) -> Text to kosika/std/designs_palette.kos that mix a #rrggbb colour with #ffffff or #000000 by part, as mix does
 - [ ] add an exported function readable_on(text_colour: Text, background: Text) -> Bool to kosika/std/designs_palette.kos that says whether the two #rrggbb colours have a contrast of at least 4.5, as contrast measures it
 - [ ] add a function slug(text: Text) -> Text to kosika/std/text.kos that gives the words of the text, as words_of finds them, in lower case, with every character that is not a to z or 0 to 9 left out, joined by "-"
-- [ ] add a Text method is_hex_colour() that says whether the text is a colour written as # and then 3 or 6 of the digits 0 to 9 and letters a to f, either case, giving a Bool
+- [x] add a Text method is_hex_colour() that says whether the text is a colour written as # and then 3 or 6 of the digits 0 to 9 and letters a to f, either case, giving a Bool (2026-11-16, 2026-11-16-8)
 - [ ] add a function palette_has(name: Text) -> Bool to kosika/std/designs_palette.kos that says whether a palette of that name exists, matching names as palette_named does
 - [ ] add a function hues_of(name: Text) -> Text[] to kosika/std/designs_palette.kos that gives the hues of the palette of that name, or the first palette's hues when there is none, as palette_named chooses
-- [ ] add a Text method is_upper_letter() that says whether the text is exactly one letter from A to Z, giving a Bool
+- [x] add a Text method is_upper_letter() that says whether the text is exactly one letter from A to Z, giving a Bool (2026-11-16, 2026-11-16-6)

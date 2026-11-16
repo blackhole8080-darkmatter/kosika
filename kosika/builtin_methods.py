@@ -394,7 +394,35 @@ def _days_until(text: str, other: str) -> int:
     return (_date(other, "days_until") - _date(text, "days_until")).days
 
 
+def _is_upper_letter(text):
+    if not isinstance(text, str):
+        raise RuntimeError("invalid argument")
+    return len(text) == 1 and 'A' <= text <= 'Z'
+
+
+def _first_word(text):
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    return stripped.split()[0]
+
+
+def _is_hex_colour(text):
+    if not isinstance(text, str):
+        raise RuntimeError("Argument must be a string")
+    if len(text) not in (4, 7):
+        return False
+    if not text.startswith('#'):
+        return False
+    hex_part = text[1:]
+    valid_chars = set("0123456789abcdefABCDEF")
+    return all(c in valid_chars for c in hex_part)
+
+
 METHODS: tuple[Method, ...] = (
+    Method("Text", "is_upper_letter", (), "Bool", _is_upper_letter),
+    Method("Text", "first_word", (), "Text", _first_word),
+    Method("Text", "is_hex_colour", (), "Bool", _is_hex_colour),
     Method("Text", "length", (), "Number", lambda text: len(text)),
     Method("Text", "upper", (), "Text", lambda text: text.upper()),
     Method("Text", "lower", (), "Text", lambda text: text.lower()),
