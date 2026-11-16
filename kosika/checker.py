@@ -77,12 +77,130 @@ class CheckError(ValueError):
 _ALLOWED_ACCESS = {"observe", "analyze", "prepare", "execute"}
 _PRIMITIVE_TYPES = {"Text", "Number", "Bool", "Null"}
 
+#: Names to declarations, per program, by identity. A program is never
+#: changed once made, so the table built for one stays right for as long as
+#: it lives. Walking every function to look one up, on every expression, is
+#: what made a large file take seconds to check.
+_INDEX: dict[int, tuple[weakref.ref[Program], dict[str, dict]]] = {}
+
+
+def _index(program: Program) -> dict[str, dict]:
+    """This program's declarations, by the name each is written under."""
+
+    known = _INDEX.get(id(program))
+    if known is not None and known[0]() is program:
+        return known[1]
+    alternatives: dict[str, tuple[object, object]] = {}
+    for choice in program.choices:
+        for alternative in choice.alternatives:
+            alternatives[alternative.name] = (choice, alternative)
+    built: dict[str, dict] = {
+        "functions": {item.name: item for item in program.functions},
+        "records": {item.name: item for item in program.records},
+        "fields": {
+            record.name: {field.name: field.type_name for field in record.fields}
+            for record in program.records
+        },
+        "models": {item.name: item for item in program.models},
+        "tools": {item.name: item for item in program.tools},
+        "workflows": {item.name: item for item in program.workflows},
+        "shapes": {item.name: item for item in program.shapes},
+        "choices": {item.name: item for item in program.choices},
+        "enums": {item.name: item for item in program.enums},
+        "alternatives": alternatives,
+    }
+    key = id(program)
+    _INDEX[key] = (
+        weakref.ref(program, lambda _ref: _INDEX.pop(key, None)),
+        built,
+    )
+    return built
+
 
 def _record_fields(program: Program, record_name: str) -> dict[str, str]:
-    for record in program.records:
-        if record.name == record_name:
-            return {field.name: field.type_name for field in record.fields}
-    raise CheckError(f"Unknown record type {record_name!r}")
+    fields = _index(program)["fields"].get(record_name)
+    if fields is None:
+        raise CheckError(f"Unknown record type {record_name!r}")
+    return dict(fields)
+
+
+def _check_stores(program: Program) -> None:
+    """A store declares the tables a program means, so its words are checked.
+
+    What is checked here needs no file: a column holds one of the three
+    `Text`, `Number` and `Bool`, nothing is declared twice, and the file a
+    store names is a path beside the program rather than an absolute one.
+    Whether the file agrees is a preflight, before the first step of a run
+    (see `kosika.database.check_stores`), since only the host knows the file.
+    """
+
+    from .database import ROW_FIELD_TYPES
+
+    seen: set[str] = set()
+    files: dict[str, str] = {}
+    for store in program.stores:
+        if store.name in seen:
+            raise CheckError(f"Store {store.name!r} is declared more than once")
+        seen.add(store.name)
+        if not store.tables:
+            raise CheckError(
+                f"Store {store.name!r} declares no table; a store says which "
+                "tables a program means"
+            )
+        if not store.file.strip():
+            raise CheckError(
+                f"Store {store.name!r} names an empty file; say which database "
+                'it means, as `at "./notes.db"`'
+            )
+        named = store.file.replace("\\", "/")
+        if named.startswith("/") or (
+            len(named) > 1 and named[0].isalpha() and named[1] == ":"
+        ):
+            raise CheckError(
+                f"Store {store.name!r} names the file {store.file!r}; a store's "
+                'file is a path beside the program, as `at "./notes.db"`'
+            )
+        if store.file in files:
+            raise CheckError(
+                f"Stores {files[store.file]!r} and {store.name!r} both name "
+                f"{store.file!r}; one store says what a file holds"
+            )
+        files[store.file] = store.name
+        tables = [table.name for table in store.tables]
+        if len(set(tables)) != len(tables):
+            raise CheckError(
+                f"Store {store.name!r} declares the table "
+                f"{_repeated_name(tables)!r} twice"
+            )
+        for table in store.tables:
+            if not table.columns:
+                raise CheckError(
+                    f"Table {store.name}.{table.name} declares no column; a "
+                    "table says which columns a program means"
+                )
+            columns = [column.name for column in table.columns]
+            if len(set(columns)) != len(columns):
+                raise CheckError(
+                    f"Table {store.name}.{table.name} declares the column "
+                    f"{_repeated_name(columns)!r} twice"
+                )
+            for column in table.columns:
+                if column.type_name not in ROW_FIELD_TYPES:
+                    raise CheckError(
+                        f"Store {store.name!r} declares "
+                        f"{table.name}.{column.name} as {column.type_name!r}; a "
+                        "column of a store is one of: "
+                        f"{', '.join(ROW_FIELD_TYPES)}"
+                    )
+
+
+def _repeated_name(names: list[str]) -> str:
+    """The first name declared more than once."""
+
+    counted: dict[str, int] = {}
+    for name in names:
+        counted[name] = counted.get(name, 0) + 1
+    return min(name for name, count in counted.items() if count > 1)
 
 
 def _check_stores(program: Program) -> None:
@@ -204,33 +322,29 @@ def _validate_type_name(program: Program, type_name: str) -> None:
 def _choice_named(program: Program, type_name: str):
     """The `choice` a type name names, or None."""
 
-    for choice in program.choices:
-        if choice.name == type_name:
-            return choice
-    return None
+    return _index(program)["choices"].get(type_name)
 
 
 def _choice_alternative(program: Program, name: str):
     """The choice and alternative a constructor name names, or (None, None)."""
 
-    for choice in program.choices:
-        for alternative in choice.alternatives:
-            if alternative.name == name:
-                return choice, alternative
-    return None, None
+    found = _index(program)["alternatives"].get(name)
+    if found is None:
+        return None, None
+    return found
 
 
 def _enum_values(program: Program, type_name: str) -> tuple[str, ...] | None:
-    for enum in program.enums:
-        if enum.name == type_name:
-            return enum.values
-    return None
+    enum = _index(program)["enums"].get(type_name)
+    return None if enum is None else enum.values
 
 
 def _check_shapes(program: Program) -> None:
-    taken = {record.name for record in program.records} | {
-        enum.name for enum in program.enums
-    } | {choice.name for choice in program.choices}
+    taken = (
+        {record.name for record in program.records}
+        | {enum.name for enum in program.enums}
+        | {choice.name for choice in program.choices}
+    )
     seen: set[str] = set()
     for shape in program.shapes:
         if shape.name in seen:
@@ -279,9 +393,11 @@ def _check_enums(program: Program) -> None:
 
 
 def _check_choices(program: Program) -> None:
-    taken = {record.name for record in program.records} | {
-        enum.name for enum in program.enums
-    } | {shape.name for shape in program.shapes}
+    taken = (
+        {record.name for record in program.records}
+        | {enum.name for enum in program.enums}
+        | {shape.name for shape in program.shapes}
+    )
     seen: set[str] = set()
     choice_names = {choice.name for choice in program.choices}
     constructors: dict[str, str] = {}
@@ -291,8 +407,7 @@ def _check_choices(program: Program) -> None:
             raise CheckError(f"Choice {choice.name!r} is declared more than once")
         if choice.name in taken or choice.name in _PRIMITIVE_TYPES:
             raise CheckError(
-                f"Choice {choice.name!r} has the name of a record, enum, shape "
-                "or type"
+                f"Choice {choice.name!r} has the name of a record, enum, shape or type"
             )
         seen.add(choice.name)
         if not choice.alternatives:
@@ -586,11 +701,7 @@ def _expression_type(
         )
         values = _enum_values(program, subject_type)
         choice = _choice_named(program, subject_type)
-        if (
-            subject_type not in _PRIMITIVE_TYPES
-            and values is None
-            and choice is None
-        ):
+        if subject_type not in _PRIMITIVE_TYPES and values is None and choice is None:
             raise CheckError("Match subjects must be scalar values or a choice")
         seen: list[object] = []
         seen_alternatives: set[str] = set()
@@ -603,8 +714,7 @@ def _expression_type(
             if arm.alternative is not None:
                 if choice is None:
                     raise CheckError(
-                        f"Match alternative {arm.alternative!r} needs a choice "
-                        "subject"
+                        f"Match alternative {arm.alternative!r} needs a choice subject"
                     )
                 alternative = next(
                     (
@@ -896,7 +1006,8 @@ def _expression_type(
                     f"{', '.join(item.name for item in shape.methods)}"
                 )
             rest = resolve_unnamed(
-                expression.arguments, [parameter.name for parameter in shape_method.parameters]
+                expression.arguments,
+                [parameter.name for parameter in shape_method.parameters],
             )
             _check_arguments(
                 program,
@@ -1268,14 +1379,7 @@ def _expression_type(
             )
         return branch_type
     if isinstance(expression, FunctionRefExpr):
-        function = next(
-            (
-                item
-                for item in program.functions
-                if item.name == expression.function_name
-            ),
-            None,
-        )
+        function = _index(program)["functions"].get(expression.function_name)
         if function is None:
             raise CheckError(f"Unknown function reference {expression.function_name!r}")
         _check_arguments(
@@ -1308,9 +1412,7 @@ def _expression_type(
                 expected_fields={p.name: p.type_name for p in parameters},
             )
             return output
-        choice, alternative = _choice_alternative(
-            program, expression.function_name
-        )
+        choice, alternative = _choice_alternative(program, expression.function_name)
         if alternative is not None:
             arguments = resolve_unnamed(
                 expression.arguments,
@@ -1327,14 +1429,7 @@ def _expression_type(
                 },
             )
             return choice.name
-        function = next(
-            (
-                item
-                for item in program.functions
-                if item.name == expression.function_name
-            ),
-            None,
-        )
+        function = _index(program)["functions"].get(expression.function_name)
         if function is None:
             raise CheckError(
                 f"Step {step_name!r} uses unknown function {expression.function_name!r}"
@@ -1432,13 +1527,14 @@ def _check_learn(program: Program, step: Step, bindings: _Env) -> None:
 
 
 def _check_fallbacks(program: Program) -> None:
-    """Check `otherwise` by checking the program each fallback would make.
+    """Check what a step's `otherwise` may not be.
 
-    A step with a fallback is valid when the program is valid with the first
-    call and also valid with the fallback in its place, and both calls produce
-    the same type. Neither call may be a tool that changes the outside world:
-    after such a call fails, whether it happened is not known, so quietly
-    doing something else instead would hide that.
+    Neither the step's own call nor its fallback may be a tool that changes
+    the outside world: after such a call fails, whether it happened is not
+    known, so quietly doing something else instead would hide that.
+
+    The calls themselves are checked where every step's call is checked,
+    with the names in scope at the step, so each of them costs one check.
     """
 
     tools = {tool.name: tool for tool in program.tools}
@@ -1453,54 +1549,6 @@ def _check_fallbacks(program: Program) -> None:
                         f"Step {step.name!r} cannot use otherwise with execute "
                         f"tool {tool.name!r}: a failed action may still have happened"
                     )
-    without = replace(
-        program,
-        workflows=[
-            replace(
-                workflow,
-                steps=tuple(replace(step, fallback=None) for step in workflow.steps),
-            )
-            for workflow in program.workflows
-        ],
-    )
-    swapped = replace(
-        program,
-        workflows=[
-            replace(
-                workflow,
-                steps=tuple(
-                    replace(
-                        step,
-                        call=step.fallback or step.call,
-                        fallback=None,
-                        retries=step.retries if step.fallback is None else 0,
-                        votes=step.votes if step.fallback is None else 0,
-                        escalate=step.escalate if step.fallback is None else None,
-                        learns=step.learns if step.fallback is None else False,
-                        learn_by=step.learn_by if step.fallback is None else None,
-                    )
-                    for step in workflow.steps
-                ),
-            )
-            for workflow in program.workflows
-        ],
-    )
-    # The program must first be sound without its fallbacks. A fault in a
-    # declaration, such as a tool that returns an unknown record, is then
-    # reported as itself and not as the type disagreement it also causes.
-    check(without)
-    for workflow in program.workflows:
-        for step in workflow.steps:
-            if step.fallback is None:
-                continue
-            first = _call_output(program, step.call)
-            second = _call_output(program, step.fallback)
-            if first is not None and second is not None and first != second:
-                raise CheckError(
-                    f"Step {step.name!r} otherwise branch returns {second!r}, "
-                    f"but the step returns {first!r}"
-                )
-    check(swapped)
 
 
 def _plan_check_fits(program: Program, agent: AgentDecl) -> bool:
@@ -1512,7 +1560,7 @@ def _plan_check_fits(program: Program, agent: AgentDecl) -> bool:
     where R is a record with exactly the fields of `PLAN_FILE_FIELDS`.
     """
 
-    function = next((f for f in program.functions if f.name == agent.check), None)
+    function = _index(program)["functions"].get(agent.check)
     if function is None:
         return False
     if len(function.parameters) != 2 or function.output_type != "Text[]":
@@ -1520,7 +1568,7 @@ def _plan_check_fits(program: Program, agent: AgentDecl) -> bool:
     first, second = function.parameters
     if first.type_name != "Text" or not second.type_name.endswith("[]"):
         return False
-    record = next((r for r in program.records if r.name == second.type_name[:-2]), None)
+    record = _index(program)["records"].get(second.type_name[:-2])
     return (
         record is not None
         and {field.name: field.type_name for field in record.fields} == PLAN_FILE_FIELDS
@@ -1594,22 +1642,114 @@ def _check_verify(program: Program) -> None:
     check(replace(program, workflows=workflows))
 
 
+def _other_calls(step: Step) -> tuple[Any, ...]:
+    """The calls a step can make besides its own: its other branches, and
+    the call it falls back to when its own fails."""
+
+    others = [call for _, call in step.branches if call != step.call]
+    if step.fallback is not None:
+        others.append(step.fallback)
+    return tuple(others)
+
+
+def _call_signature(
+    step: Step,
+    call: Any,
+    *,
+    workflow: Any,
+    bindings: _Env,
+    workflows: dict[str, Any],
+    functions: dict[str, Any],
+    tools: dict[str, Any],
+    agents: dict[str, Any],
+    models: dict[str, Any],
+) -> tuple[str | None, str, dict[str, str] | None]:
+    """What a step call takes and gives: its input record, type, and fields.
+
+    A match step makes one of several calls, so this is asked of each of
+    them: the step's own call and every branch's.
+    """
+
+    expected_fields: dict[str, str] | None = None
+    if isinstance(call, WorkflowCall):
+        child = workflows[call.workflow_name]
+        call_input, call_output = None, child.output_type
+        expected_fields = {field.name: field.type_name for field in child.parameters}
+        if child.approval_required and not workflow.approval_required:
+            raise CheckError(
+                f"Workflow {workflow.name!r} must require approval for {child.name!r}"
+            )
+    elif isinstance(call, FunctionCall):
+        if call.function_name in bindings:
+            function_signature = signature(bindings[call.function_name])
+            if function_signature is None:
+                raise CheckError(f"{call.function_name!r} is not a function value")
+            parameters, call_output = function_signature
+            call_input = None
+            expected_fields = {p.name: p.type_name for p in parameters}
+        else:
+            called_function = functions.get(call.function_name)
+            if called_function is None:
+                raise CheckError(
+                    f"Step {step.name!r} uses unknown function {call.function_name!r}"
+                )
+            call_input, call_output = None, called_function.output_type
+            expected_fields = {
+                field.name: field.type_name for field in called_function.parameters
+            }
+    elif isinstance(call, AgentCall):
+        asked_agent = agents.get(call.agent_name)
+        if asked_agent is None or asked_agent.model is None:
+            raise CheckError(f"Step {step.name!r} requires a known agent with a model")
+        asked_model = models[asked_agent.model]
+        call_input, call_output = asked_model.input, asked_model.output
+    elif isinstance(call, ModelCall):
+        resolved_model = models.get(call.model_name)
+        if resolved_model is None:
+            raise CheckError(
+                f"Step {step.name!r} uses unknown model {call.model_name!r}"
+            )
+        call_input, call_output = resolved_model.input, resolved_model.output
+    else:
+        workflow_agent = agents.get(call.agent_name)
+        if workflow_agent is None:
+            raise CheckError(
+                f"Step {step.name!r} uses unknown agent {call.agent_name!r}"
+            )
+        workflow_tool = tools.get(call.tool_name)
+        if workflow_tool is None:
+            raise CheckError(f"Step {step.name!r} uses unknown tool {call.tool_name!r}")
+        if call.tool_name not in workflow_agent.can:
+            raise CheckError(
+                f"Capability violation: agent {workflow_agent.name!r} cannot use "
+                f"tool {workflow_tool.name!r}"
+            )
+        if workflow_tool.access == "execute" and not workflow.approval_required:
+            raise CheckError(
+                f"Workflow {workflow.name!r} needs approval before execute tool "
+                f"{workflow_tool.name!r}"
+            )
+        call_input, call_output = workflow_tool.input, workflow_tool.output
+    return call_input, call_output, expected_fields
+
+
 def _check_branches(program: Program) -> None:
-    """Check a `match` step by checking the program each branch would make.
+    """Check what a `match` step's branches must agree on.
 
     Every branch must produce the same type, the last one must be `case _`
     so that some call is always made, and no value may be listed twice. A
     branch may not be a tool that changes the world: which call a step makes
     is decided as the workflow runs, after any approval of the plan.
+
+    The calls themselves are checked where every step's call is checked,
+    with the names in scope at the step, so each of them costs one check.
     """
 
     tools = {tool.name: tool for tool in program.tools}
-    most = 0
     for workflow in program.workflows:
         for step in workflow.steps:
             if not step.branches:
                 continue
-            most = max(most, len(step.branches))
             patterns = [pattern for pattern, _ in step.branches]
             # A match on an enum that names every value needs no `case _`;
             # that is checked with the subject's type.
@@ -1637,42 +1777,6 @@ def _check_branches(program: Program) -> None:
                     f"Step {step.name!r} match branches return different "
                     f"types: {', '.join(sorted(map(str, outputs)))}"
                 )
-    for index in range(most):
-        check(
-            replace(
-                program,
-                workflows=[
-                    replace(
-                        workflow,
-                        steps=tuple(
-                            replace(
-                                step,
-                                call=step.branches[min(index, len(step.branches) - 1)][
-                                    1
-                                ],
-                                # Each case now makes this one call, so the
-                                # program is checked with it, and its cases
-                                # are still there to be checked against the
-                                # subject.
-                                branches=tuple(
-                                    (
-                                        pattern,
-                                        step.branches[
-                                            min(index, len(step.branches) - 1)
-                                        ][1],
-                                    )
-                                    for pattern, _ in step.branches
-                                ),
-                            )
-                            if step.branches
-                            else step
-                            for step in workflow.steps
-                        ),
-                    )
-                    for workflow in program.workflows
-                ],
-            )
-        )
 
 
 #: Names a record's own function may not take, because a map already
@@ -1864,7 +1968,10 @@ def check(program: Program) -> None:
             raise
         raise CheckError(plain) from exc
     key = id(program)
-    _CHECKED[key] = (weakref.ref(program, lambda _ref: _CHECKED.pop(key, None)), SHAPES.get())
+    _CHECKED[key] = (
+        weakref.ref(program, lambda _ref: _CHECKED.pop(key, None)),
+        SHAPES.get(),
+    )
 
 
 def _check(program: Program) -> None:
@@ -1944,10 +2051,7 @@ def _check(program: Program) -> None:
         for step in workflow.steps:
             if step.votes:
                 asked = (
-                    next(
-                        (m for m in program.models if m.name == step.call.model_name),
-                        None,
-                    )
+                    _index(program)["models"].get(step.call.model_name)
                     if isinstance(step.call, ModelCall)
                     else None
                 )
@@ -1978,9 +2082,7 @@ def _check(program: Program) -> None:
                         f"Step {step.name!r} cannot escalate: a voting step "
                         "already asks more than once; name its models with using"
                     )
-                stronger = next(
-                    (m for m in program.models if m.name == step.escalate), None
-                )
+                stronger = _index(program)["models"].get(step.escalate)
                 if stronger is None or stronger.provider is not None:
                     raise CheckError(
                         f"Step {step.name!r} cannot escalate: {step.escalate!r} "
@@ -2011,15 +2113,17 @@ def _check(program: Program) -> None:
         for workflow in program.workflows
         for step in workflow.steps
     ):
+        # What the branches must agree on is checked here; each branch's
+        # own call is checked below, where every step's call is checked.
         _check_branches(program)
-        return
     if any(
         step.fallback is not None
         for workflow in program.workflows
         for step in workflow.steps
     ):
+        # What the fallback must agree with is checked here; the call itself
+        # is checked below, where every step's call is checked.
         _check_fallbacks(program)
-        return
     if any(function.nested for function in program.functions):
         raise CheckError(
             "Unlowered nested functions: use lower_nested_functions(program)"
@@ -2047,9 +2151,7 @@ def _check(program: Program) -> None:
         if model.deployment is not None and not model.deployment:
             raise CheckError(f"Model {model.name!r} deployment must not be empty")
         if model.plain:
-            written = next(
-                (r for r in program.records if r.name == model.output), None
-            )
+            written = _index(program)["records"].get(model.output)
             if (
                 written is None
                 or len(written.fields) != 1
@@ -2347,8 +2449,7 @@ def _check(program: Program) -> None:
             )
         if tool.output not in records and tool.output not in choices:
             raise CheckError(
-                f"Tool {tool.name!r} returns unknown record or choice "
-                f"{tool.output!r}"
+                f"Tool {tool.name!r} returns unknown record or choice {tool.output!r}"
             )
         if tool.input is not None and tool.input not in records:
             raise CheckError(
@@ -2478,7 +2579,6 @@ def _check(program: Program) -> None:
             bindings[parameter.name] = parameter.type_name
         call_input: str | None
         for step in workflow.steps:
-            expected_fields = None
             if step.learns:
                 _check_learn(program, step, bindings)
             if step.subject is not None:
@@ -2493,86 +2593,34 @@ def _check(program: Program) -> None:
                     )
                 patterns = [pattern for pattern, _ in step.branches]
                 for pattern in patterns:
-                    if values is not None and pattern is not None and (
-                        not isinstance(pattern, str) or pattern not in values
+                    if (
+                        values is not None
+                        and pattern is not None
+                        and (not isinstance(pattern, str) or pattern not in values)
                     ):
                         raise CheckError(
                             f"Enum {subject_type!r} has no value {pattern!r}; "
                             f"it has: {', '.join(values)}"
                         )
-                if patterns and patterns[-1] is not None and (
-                    values is None or set(patterns) != set(values)
+                if (
+                    patterns
+                    and patterns[-1] is not None
+                    and (values is None or set(patterns) != set(values))
                 ):
                     raise CheckError(
                         f"Step {step.name!r} match must end with exactly one `case _`"
                     )
-            if isinstance(step.call, WorkflowCall):
-                child = workflows[step.call.workflow_name]
-                call_input, call_output = None, child.output_type
-                expected_fields = {
-                    field.name: field.type_name for field in child.parameters
-                }
-                if child.approval_required and not workflow.approval_required:
-                    raise CheckError(
-                        f"Workflow {workflow.name!r} must require approval for {child.name!r}"
-                    )
-            elif isinstance(step.call, FunctionCall):
-                if step.call.function_name in bindings:
-                    function_signature = signature(bindings[step.call.function_name])
-                    if function_signature is None:
-                        raise CheckError(
-                            f"{step.call.function_name!r} is not a function value"
-                        )
-                    parameters, call_output = function_signature
-                    call_input = None
-                    expected_fields = {p.name: p.type_name for p in parameters}
-                else:
-                    called_function = functions.get(step.call.function_name)
-                    if called_function is None:
-                        raise CheckError(
-                            f"Step {step.name!r} uses unknown function "
-                            f"{step.call.function_name!r}"
-                        )
-                    call_input, call_output = None, called_function.output_type
-                    expected_fields = {
-                        field.name: field.type_name
-                        for field in called_function.parameters
-                    }
-            elif isinstance(step.call, AgentCall):
-                asked_agent = agents.get(step.call.agent_name)
-                if asked_agent is None or asked_agent.model is None:
-                    raise CheckError(
-                        f"Step {step.name!r} requires a known agent with a model"
-                    )
-                asked_model = models[asked_agent.model]
-                call_input, call_output = asked_model.input, asked_model.output
-            elif isinstance(step.call, ModelCall):
-                resolved_model = models.get(step.call.model_name)
-                if resolved_model is None:
-                    raise CheckError(
-                        f"Step {step.name!r} uses unknown model {step.call.model_name!r}"
-                    )
-                call_input, call_output = resolved_model.input, resolved_model.output
-            else:
-                workflow_agent = agents.get(step.call.agent_name)
-                if workflow_agent is None:
-                    raise CheckError(
-                        f"Step {step.name!r} uses unknown agent {step.call.agent_name!r}"
-                    )
-                workflow_tool = tools.get(step.call.tool_name)
-                if workflow_tool is None:
-                    raise CheckError(
-                        f"Step {step.name!r} uses unknown tool {step.call.tool_name!r}"
-                    )
-                if step.call.tool_name not in workflow_agent.can:
-                    raise CheckError(
-                        f"Capability violation: agent {workflow_agent.name!r} cannot use tool {workflow_tool.name!r}"
-                    )
-                if workflow_tool.access == "execute" and not workflow.approval_required:
-                    raise CheckError(
-                        f"Workflow {workflow.name!r} needs approval before execute tool {workflow_tool.name!r}"
-                    )
-                call_input, call_output = workflow_tool.input, workflow_tool.output
+            call_input, call_output, expected_fields = _call_signature(
+                step,
+                step.call,
+                workflow=workflow,
+                bindings=bindings,
+                workflows=workflows,
+                functions=functions,
+                tools=tools,
+                agents=agents,
+                models=models,
+            )
             _check_arguments(
                 program,
                 call_input,
@@ -2581,6 +2629,39 @@ def _check(program: Program) -> None:
                 step_name=step.name,
                 expected_fields=expected_fields,
             )
+            # A step that chooses between calls, or falls back to another
+            # when its own fails, makes each of them with the same names in
+            # scope, so each is checked here, once, rather than by checking
+            # the program again with that call in the step's place.
+            for call in _other_calls(step):
+                other_input, other_output, other_fields = _call_signature(
+                    step,
+                    call,
+                    workflow=workflow,
+                    bindings=bindings,
+                    workflows=workflows,
+                    functions=functions,
+                    tools=tools,
+                    agents=agents,
+                    models=models,
+                )
+                # A fallback must give what the step gives, and that is
+                # reported before what it is given: this is asked after the
+                # declarations are checked, so a tool or function that is
+                # itself wrong is reported as that, not as this.
+                if call is step.fallback and other_output != call_output:
+                    raise CheckError(
+                        f"Step {step.name!r} otherwise branch returns "
+                        f"{other_output!r}, but the step returns {call_output!r}"
+                    )
+                _check_arguments(
+                    program,
+                    other_input,
+                    call.arguments,
+                    bindings,
+                    step_name=step.name,
+                    expected_fields=other_fields,
+                )
             if step.binding_type is not None:
                 _validate_type_name(program, step.binding_type)
                 if step.binding_type != call_output:
@@ -2592,6 +2673,7 @@ def _check(program: Program) -> None:
                 raise CheckError(
                     f"Step {step.name!r} must return its binding "
                     f"{step.binding_name!r}, got {step.return_name!r}"
+                    "; a step block is one call followed by `return <name>`"
                 )
             if step.binding_name in {
                 parameter.name for parameter in workflow.parameters

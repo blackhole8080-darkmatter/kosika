@@ -24,6 +24,7 @@
 
 import "std/math.kos"
 import "designs_palette.kos"
+import "designs_art.kos"
 
 export [Part, Link, Step, Mark, Look, PartPhoto, Wanted, photos_wanted, Structure, Picture, Request, Design, problems, draw, golden_squares, escaped, f1, kinds]
 
@@ -264,24 +265,95 @@ fn nested_svg(s: Structure, w: Number, h: Number) -> Text {
   return rings.join("")
 }
 
+// ---------------------------------------------------------------- art in a part
+//
+// A part whose name is a real thing Kosika art draws — a heart, a cell, an
+// atom, a gear, a strand of DNA — is drawn as that thing, in a small picture
+// at the corner of its card. Kosika chooses it from the part's own words, so
+// this costs no model call at all, and each picture takes its part's id as a
+// prefix so a page can hold as many as it has parts.
+
+fn part_art_words() -> Text[] {
+  return ["heart", "cell", "atom", "gear", "dna", "neuron", "transistor", "engine", "magnet", "leaf", "circuit", "rainbow", "spiral", "sun", "cloud", "drop", "wave", "star"]
+}
+
+// The art figure a part is about, or "" when it is not one of them.
+fn art_for_part(p: Part) -> Text {
+  let words = (" " + p.label.lower() + " " + p.note.lower() + " ").words()
+  for k in part_art_words() {
+    if words.contains(k) or words.contains(k + "s") { return k }
+  }
+  if words.contains("brain") or words.contains("nerve") or words.contains("nerves") { return "neuron" }
+  if words.contains("battery") or words.contains("voltage") or words.contains("current") or words.contains("resistor") { return "circuit" }
+  if words.contains("piston") or words.contains("cylinder") or words.contains("motor") { return "engine" }
+  if words.contains("helix") { return "dna" }
+  if words.contains("gearbox") or words.contains("gearwheel") or words.contains("gearwheels") { return "gear" }
+  if words.contains("heartbeat") or words.contains("ventricle") or words.contains("ventricles") { return "heart" }
+  if words.contains("membrane") or words.contains("mitochondria") or words.contains("nucleus") { return "cell" }
+  if words.contains("blood") or words.contains("vein") or words.contains("artery") { return "heart" }
+  return ""
+}
+
+// How the small picture moves, if it should: only motions that do not change
+// what the figure means.
+fn part_art_move(kind: Text) -> Text {
+  if kind == "gear" or kind == "atom" { return "spin" }
+  if kind == "heart" or kind == "dna" { return "pulse" }
+  if kind == "cloud" { return "float" }
+  if kind == "leaf" { return "sway" }
+  return ""
+}
+
+// The small picture a part gets, scaled into the corner of its card, or ""
+// when the part is not one of the things art draws or the card is too narrow.
+//
+// It is drawn in the paper palette, so it reads as a small printed picture
+// on the card: light ground, ink lines. The card's own palette is dark
+// matter on most pages, and a dark figure on a dark card would not read.
+fn part_art_vars() -> Text {
+  let p = palette_named("paper")
+  let hues = (for k in 0 until p.hues.length() { f"--h{k}:{p.hues[k]}" }).join(";")
+  return f"--bg:{p.bg};--halo:{p.panel};--ink:{p.ink};--soft:{p.soft};--amber:{p.accent};--gold:{p.gold};--think:{p.think};--line:{p.line};{hues}"
+}
+
+fn part_art_badge(p: Part, x: Number, y: Number, bw: Number) -> Text {
+  let kind = art_for_part(p)
+  if kind.is_empty() or bw < 104 { return "" }
+  let move = part_art_move(kind)
+  let moves: Motion[] = if move.is_empty() { [] } else { [{what: "p", kind: move, around: "", seconds: 0, delay: 0}] }
+  let art: Art = {title: p.label, summary: "", palette: "paper", backdrop: "plain", figures: [{id: "p", kind: kind, x: 50, y: 30, w: 17, h: 17, count: 0, hue: 2, label: "", points: []}], motions: moves, beats: []}
+  let named = art_svg_named(art, "a" + p.id + "-")
+  return f"<svg class=\"partart\" x=\"{f1(x + bw / 2 - 39)}\" y=\"{f1(y - 23)}\" width=\"34\" height=\"22\" viewBox=\"0 0 800 480\" preserveAspectRatio=\"xMidYMid slice\" style=\"clip-path:inset(0 round 5px);{part_art_vars()}\" aria-hidden=\"true\">{named}</svg>"
+}
+
 // A part: a rounded box, its label, and its note beneath in small type.
 // A part is a card, as in a node editor: a small header in capitals (its
 // note), a rule, and its name below. With no note it is a single band.
 fn part_svg(p: Part, x: Number, y: Number) -> Text {
   let bw = box_width(p)
   let card = f"<rect class=\"card\" pathLength=\"1\" x=\"{f1(x - bw / 2)}\" y=\"{f1(y - 26)}\" width=\"{f1(bw)}\" height=\"52\" rx=\"10\"/>"
+  let badge = part_art_badge(p, x, y, bw)
   if p.note.is_empty() {
-    return f"<g class=\"part bit\" id=\"p-{p.id}\">{card}<text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 5)}\">{escaped(p.label)}</text></g>"
+    return f"<g class=\"part bit\" id=\"p-{p.id}\">{card}{badge}<text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 5)}\">{escaped(p.label)}</text></g>"
   }
   let room = ((bw - 22) / 7.2).floor()
   let head = if p.note.length() > room { p.note.slice(0, (room - 1).max(1)).trim() + "…" } else { p.note }
-  return f"<g class=\"part bit\" id=\"p-{p.id}\">{card}<text class=\"cardhead\" x=\"{f1(x)}\" y=\"{f1(y - 12)}\"><title>{escaped(p.note)}</title>{escaped(head)}</text><path class=\"carddiv\" d=\"M{f1(x - bw / 2 + 1)} {f1(y - 5)} H{f1(x + bw / 2 - 1)}\"/><text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 13)}\">{escaped(p.label)}</text></g>"
+  return f"<g class=\"part bit\" id=\"p-{p.id}\"><title>{escaped(p.note)}</title>{card}{badge}<text class=\"cardhead\" x=\"{f1(x)}\" y=\"{f1(y - 12)}\">{escaped(head)}</text><path class=\"carddiv\" d=\"M{f1(x - bw / 2 + 1)} {f1(y - 5)} H{f1(x + bw / 2 - 1)}\"/><text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 13)}\">{escaped(p.label)}</text></g>"
 }
 
 // A link: a curve from the edge of one box to the edge of the next, with
 // an arrowhead, its label at the middle, and a dash that runs along it
 // when one of its sentences is hovered.
-fn link_svg(s: Structure, l: Link, at: Number[][]) -> Text {
+// Where a link's label sits. On a ring the chords run close to the cards, so
+// the middle of a chord lands on its neighbours; a ring's label is drawn on a
+// smaller ring inside, where the drawing has room. Every other shape keeps
+// its label at the middle of the curve.
+fn link_label_at(mx: Number, my: Number, shape: Text, w: Number, h: Number) -> Number[] {
+  if shape != "cycle" { return [mx, my] }
+  return [w / 2 + (mx - w / 2) * 0.45, h / 2 + (my - h / 2) * 0.45]
+}
+
+fn link_svg(s: Structure, l: Link, at: Number[][], w: Number, h: Number) -> Text {
   let a = place(s, l.from)
   let b = place(s, l.to)
   let ax = at[0][a]
@@ -308,7 +380,8 @@ fn link_svg(s: Structure, l: Link, at: Number[][]) -> Text {
   let c2y = if side { ey - bow } else { sy + (ey - sy) * 0.5 }
   let mx = (sx + 3 * c1x + 3 * c2x + ex) / 8
   let my = (sy + 3 * c1y + 3 * c2y + ey) / 8
-  let label = if l.label.is_empty() { "" } else { f"<text class=\"linklabel\" x=\"{f1(mx)}\" y=\"{f1(my - 7)}\">{escaped(l.label)}</text>" }
+  let spot = link_label_at(mx, my, s.shape, w, h)
+  let label = if l.label.is_empty() { "" } else { f"<text class=\"linklabel\" x=\"{f1(spot[0])}\" y=\"{f1(spot[1] - 7)}\">{escaped(l.label)}</text>" }
   let path = f"M{f1(sx)} {f1(sy)} C{f1(c1x)} {f1(c1y)} {f1(c2x)} {f1(c2y)} {f1(ex)} {f1(ey)}"
   let grad = f"<linearGradient id=\"g-{l.from}-{l.to}\" gradientUnits=\"userSpaceOnUse\" x1=\"{f1(sx)}\" y1=\"{f1(sy)}\" x2=\"{f1(ex)}\" y2=\"{f1(ey)}\"><stop offset=\"0\" stop-color=\"var(--gold)\"/><stop offset=\"1\" stop-color=\"var(--think)\"/></linearGradient>"
   let ports = f"<circle class=\"port out\" cx=\"{f1(sx)}\" cy=\"{f1(sy)}\" r=\"4.5\"/><circle class=\"port in\" cx=\"{f1(ex)}\" cy=\"{f1(ey)}\" r=\"4.5\"/>"
@@ -320,7 +393,7 @@ fn structure_svg(s: Structure) -> Text {
   let h = height(s, w)
   let at = layout(s, w, h)
   let special = ["nested", "graph", "tree", "mindmap", "timeline", "compare", "sketch", "sequence", "orbit", "containers"].contains(s.shape)
-  let links = if special { "" } else { (for l in s.links { link_svg(s, l, at) }).join("") }
+  let links = if special { "" } else { (for l in s.links { link_svg(s, l, at, w, h) }).join("") }
   let parts = if s.shape == "sequence" { sequence_svg(s, at, w, h) } else if s.shape == "orbit" { orbit_svg(s, at, w, h) } else if s.shape == "containers" { containers_svg(s, at, w, h) } else if s.shape == "graph" { graph_svg(s, at) } else if s.shape == "tree" or s.shape == "mindmap" { hierarchy_svg(s, at) } else if s.shape == "timeline" { timeline_svg(s, at, w, h) } else if s.shape == "compare" { compare_svg(s, at, w, h) } else if s.shape == "sketch" { sketch_svg(s, w, h) } else if s.shape == "nested" { nested_svg(s, w, h) } else if s.shape == "layers" { (for i in 0 until s.parts.length() { layer_svg(s.parts[i], at[0][i], at[1][i]) }).join("") } else { (for i in 0 until s.parts.length() { part_svg(s.parts[i], at[0][i], at[1][i]) }).join("") }
   return f"<svg viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{escaped(s.title)}\"><defs><marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"8\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto-start-reverse\"><path d=\"M0 0L10 5L0 10z\" class=\"head\"/></marker></defs>{links}{parts}</svg>"
 }
@@ -1326,7 +1399,7 @@ fn quoted(lines: Text[]) -> Text {
 }
 
 fn draw_style() -> Text {
-  return "@font-face{font-family:Figtree;src:url(/fonts/Figtree.ttf) format('truetype');font-weight:300 900;font-display:swap}:root{--bg:#07080d;--halo:#0e0f18;--ink:#eef0f7;--soft:#a3a8bd;--amber:#ff8a4c;--gold:#f5b45c;--think:#a993ff;--line:#fff;--line2:rgba(255,255,255,.5)}@media (prefers-color-scheme: light){:root{--bg:#f4f2ee;--halo:#f4f2ee;--ink:#16141f;--soft:#5b5870;--amber:#d4621f;--gold:#b8761c;--think:#6f58e0;--line:#000;--line2:rgba(0,0,0,.45)}}*{box-sizing:border-box}body{margin:0;background:transparent;color:var(--ink);font:16px/1.55 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.005em}main{max-width:980px;margin:0 auto;padding:28px 16px 48px}.brand{color:var(--gold);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;display:flex;align-items:center;gap:12px}.brand:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 45%,transparent),transparent)}.ask{color:var(--soft);font-size:14px;margin:2px 0 14px}h1{font-size:30px;font-weight:850;letter-spacing:-.03em;line-height:1.08;margin:6px 0 8px}.think{font:13px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:0 0 10px}.think:before{content:'\\25CF  ';animation:blink 1s infinite}body.done .think:before{content:'\\2713  ';animation:none}svg{width:100%;height:auto;display:block}.hud{font:600 12px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:4px 0 10px}ol{list-style:none;margin:0;padding:0}.say{display:none;gap:12px;padding:6px 8px;border-radius:8px;cursor:default}.say.shown{display:flex}.say b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.say.now b,.say:hover b,.say:focus b{background:var(--amber);border-color:var(--amber);color:#1a0f08;box-shadow:0 0 18px -2px var(--amber)}.say:hover,.say:focus{outline:none;background:rgba(255,181,71,.08)}.bar{display:flex;justify-content:space-between;align-items:center;margin-top:14px}button{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:6px 12px;cursor:pointer}.bit{opacity:0;transition:opacity .35s}.bit.shown{opacity:1}.part rect{fill:var(--halo)}.ring>circle:first-child{fill:none}.part rect,.ring>circle:first-child{stroke:var(--line);stroke-width:1.4;transition:stroke .2s,stroke-width .2s}.part.shown rect,.part.shown>circle:first-child,.sq.shown rect,#spiral.shown{stroke-dasharray:1;animation:pen .7s ease-out both}.label{fill:var(--ink);font:600 14px system-ui,sans-serif;text-anchor:middle}.note{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle}.leader{fill:none;stroke:var(--line2);stroke-width:1}.dot{fill:var(--line)}.wire{fill:none;stroke:var(--line2);stroke-width:1.3}.head{fill:var(--line2)}.pulse{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:5 17;opacity:0}.linklabel{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.sq rect{fill:none;stroke:var(--line);stroke-width:1.2}.side{fill:var(--soft);font-weight:600;text-anchor:middle;font-family:system-ui,sans-serif}#spiral{fill:none;stroke:var(--line);stroke-width:2.4}#origin circle{fill:var(--amber)}.on rect,.on>circle:first-child,.sq.on rect{stroke:var(--amber);stroke-width:2.6;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on .label{fill:var(--amber)}#spiral.on{stroke:var(--amber);stroke-width:3.4}.link.on .wire{stroke:var(--amber)!important}.link.on .pulse{opacity:1;animation:run 1s linear infinite}.ref{margin:16px 0 0}.ref img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;transition:outline .2s}.ref.on img{outline:3px solid var(--amber)}.credit{color:var(--soft);font-size:12px;margin-top:6px}.credit a{color:var(--amber)}@keyframes pen{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes run{to{stroke-dashoffset:-22}}@keyframes blink{50%{opacity:.25}}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}"
+  return "@font-face{font-family:Figtree;src:url(/fonts/Figtree.ttf) format('truetype');font-weight:300 900;font-display:swap}:root{--bg:#07080d;--halo:#0e0f18;--ink:#eef0f7;--soft:#a3a8bd;--amber:#ff8a4c;--gold:#f5b45c;--think:#a993ff;--line:#fff;--line2:rgba(255,255,255,.5)}@media (prefers-color-scheme: light){:root{--bg:#f4f2ee;--halo:#f4f2ee;--ink:#16141f;--soft:#5b5870;--amber:#d4621f;--gold:#b8761c;--think:#6f58e0;--line:#000;--line2:rgba(0,0,0,.45)}}*{box-sizing:border-box}body{margin:0;background:transparent;color:var(--ink);font:16px/1.55 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.005em}main{max-width:min(1680px,100%);margin:0 auto;padding:28px 16px 48px}.brand{color:var(--gold);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;display:flex;align-items:center;gap:12px}.brand:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 45%,transparent),transparent)}.ask{color:var(--soft);font-size:14px;margin:2px 0 14px}h1{font-size:30px;font-weight:850;letter-spacing:-.03em;line-height:1.08;margin:6px 0 8px}.think{font:13px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:0 0 10px}.think:before{content:'\\25CF  ';animation:blink 1s infinite}body.done .think:before{content:'\\2713  ';animation:none}svg{width:100%;height:auto;display:block}.hud{font:600 12px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:4px 0 10px}ol{list-style:none;margin:0;padding:0}.say{display:none;gap:12px;padding:6px 8px;border-radius:8px;cursor:default}.say.shown{display:flex}.say b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.say.now b,.say:hover b,.say:focus b{background:var(--amber);border-color:var(--amber);color:#1a0f08;box-shadow:0 0 18px -2px var(--amber)}.say:hover,.say:focus{outline:none;background:rgba(255,181,71,.08)}.bar{display:flex;justify-content:space-between;align-items:center;margin-top:14px}button{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:6px 12px;cursor:pointer}.bit{opacity:0;transition:opacity .35s}.bit.shown{opacity:1}.part rect{fill:var(--halo)}.ring>circle:first-child{fill:none}.part rect,.ring>circle:first-child{stroke:var(--line);stroke-width:1.4;transition:stroke .2s,stroke-width .2s}.part.shown rect,.part.shown>circle:first-child,.sq.shown rect,#spiral.shown{stroke-dasharray:1;animation:pen .7s ease-out both}.label{fill:var(--ink);font:600 14px system-ui,sans-serif;text-anchor:middle}.note{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle}.leader{fill:none;stroke:var(--line2);stroke-width:1}.dot{fill:var(--line)}.wire{fill:none;stroke:var(--line2);stroke-width:1.3}.head{fill:var(--line2)}.pulse{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:5 17;opacity:0}.linklabel{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.sq rect{fill:none;stroke:var(--line);stroke-width:1.2}.side{fill:var(--soft);font-weight:600;text-anchor:middle;font-family:system-ui,sans-serif}#spiral{fill:none;stroke:var(--line);stroke-width:2.4}#origin circle{fill:var(--amber)}.on rect,.on>circle:first-child,.sq.on rect{stroke:var(--amber);stroke-width:2.6;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on .label{fill:var(--amber)}#spiral.on{stroke:var(--amber);stroke-width:3.4}.link.on .wire{stroke:var(--amber)!important}.link.on .pulse{opacity:1;animation:run 1s linear infinite}.ref{margin:16px 0 0}.ref img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;transition:outline .2s}.ref.on img{outline:3px solid var(--amber)}.credit{color:var(--soft);font-size:12px;margin-top:6px}.credit a{color:var(--amber)}@keyframes pen{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes run{to{stroke-dashoffset:-22}}@keyframes blink{50%{opacity:.25}}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}"
 }
 
 // The build: Kosika's own steps are typed out, then each explanation
@@ -1439,6 +1512,7 @@ fn with_icons(s: Structure) -> Structure {
 }
 
 fn icon_label(s: Structure, p: Part) -> Text {
+  if not art_for_part(p).is_empty() { return p.label }
   for l in s.looks {
     if l.part == p.id and is_icon(l.icon) { return l.icon + " " + p.label }
   }
@@ -1614,7 +1688,7 @@ fn containers_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
     let x = at[0][i]
     bits = bits.append(f"<g class=\"part container bit\" id=\"p-{p.id}\"><rect pathLength=\"1\" x=\"{f1(x - bw / 2)}\" y=\"{f1(top)}\" width=\"{f1(bw)}\" height=\"{f1(rh[r])}\" rx=\"16\" style=\"stroke:{hue(k)}\"/><text class=\"label boxhead\" x=\"{f1(x - bw / 2 + 18)}\" y=\"{f1(top + 28)}\" style=\"fill:{hue(k)};text-anchor:start\">{escaped(p.label)}</text><text class=\"note\" x=\"{f1(x - bw / 2 + 18)}\" y=\"{f1(top + 46)}\" style=\"text-anchor:start\">{escaped(p.note)}</text></g>")
   }
-  let links = (for l in s.links { link_svg(s, l, at) }).join("")
+  let links = (for l in s.links { link_svg(s, l, at, w, h) }).join("")
   let items = (for i in 0 until s.parts.length() where not s.parts[i].parent.is_empty() { part_svg(s.parts[i], at[0][i], at[1][i]) }).join("")
   return bits.join("") + links + items
 }
@@ -1676,8 +1750,76 @@ fn sample() -> Structure {
   steps: [{text: "one", parts: ["a", "b"]}, {text: "two", parts: ["c", "d"]}], marks: [], looks: [], aspects: []}
 }
 
+test "a part named after a real thing is drawn with Kosika art" {
+  expect art_for_part({id: "h", label: "Heart", note: "", parent: ""}) == "heart"
+  expect art_for_part({id: "g", label: "Gears", note: "", parent: ""}) == "gear"
+  expect art_for_part({id: "b", label: "Battery", note: "", parent: ""}) == "circuit"
+  expect art_for_part({id: "i", label: "Input", note: "", parent: ""}) == ""
+  badge = part_art_badge({id: "heart", label: "Heart", note: "", parent: ""}, 100, 100, 160)
+  expect badge.contains("id=\"aheart-f-p\"")
+  expect badge.contains("aheart-art-g2")
+  expect part_art_badge({id: "heart", label: "Heart", note: "", parent: ""}, 100, 100, 80) == ""
+  expect art_for_part({id: "gx", label: "Gearbox on a shaft", note: "", parent: ""}) == "gear"
+  expect art_for_part({id: "mb", label: "Cell membrane", note: "", parent: ""}) == "cell"
+  expect art_for_part({id: "hb", label: "Heartbeat", note: "", parent: ""}) == "heart"
+  expect icon_label(sample(), {id: "x", label: "Heart", note: "", parent: ""}) == "Heart"
+}
+
 test "a good description has nothing wrong with it" {
   expect problems(sample()).length() == 0
+}
+
+// One description for each kind, so the smoke test draws every kind Kosika
+// knows. The kinds are offered to a model, so every one of them must also
+// draw: a kind the model may choose and Kosika cannot lay out is a trap.
+fn smoke(kind: Text) -> Structure {
+  let base: Structure = {..sample(), shape: kind, figure: "", photo: "", links: [], steps: [{text: "One thing happens.", parts: ["a"]}, {text: "Then another thing happens.", parts: ["b"]}]}
+  if kind == "tree" or kind == "mindmap" { return {..family(), shape: kind} }
+  if kind == "graph" {
+    return {..family(), shape: "graph", links: [{from: "root", to: "a", label: ""}, {from: "root", to: "b", label: ""}, {from: "a", to: "c", label: ""}, {from: "b", to: "e", label: ""}]}
+  }
+  if kind == "sketch" {
+    return {..family(), shape: "sketch", parts: [], links: [], marks: [{id: "cell", kind: "shape", points: [20, 20, 80, 25, 70, 80, 25, 70], label: "Cell"}, {id: "way", kind: "arrow", points: [10, 90, 50, 60, 90, 90], label: ""}], steps: [{text: "This is the shape.", parts: ["cell"]}, {text: "This is the way in.", parts: ["way"]}]}
+  }
+  if kind == "timeline" {
+    return {..base, parts: [{id: "a", label: "Alpha", note: "1990", parent: ""}, {id: "b", label: "Beta", note: "1994", parent: ""}, {id: "c", label: "Gamma", note: "2001", parent: ""}, {id: "d", label: "Delta", note: "2010", parent: ""}]}
+  }
+  if kind == "sequence" {
+    return {..base, parts: [{id: "you", label: "You", note: "", parent: ""}, {id: "browser", label: "Browser", note: "", parent: ""}, {id: "server", label: "Server", note: "", parent: ""}], links: [{from: "you", to: "browser", label: "type a URL"}, {from: "browser", to: "server", label: "GET /"}, {from: "server", to: "browser", label: "200 OK"}], steps: [{text: "You type a URL.", parts: ["you"]}, {text: "The browser asks the server.", parts: ["browser", "server"]}]}
+  }
+  if kind == "orbit" {
+    return {..base, parts: [{id: "a", label: "Sun", note: "", parent: ""}, {id: "b", label: "Mercury", note: "", parent: "a"}, {id: "c", label: "Earth", note: "", parent: "a"}, {id: "d", label: "Mars", note: "", parent: "a"}]}
+  }
+  if kind == "containers" {
+    return {..base, parts: [{id: "web", label: "Web tier", note: "", parent: ""}, {id: "data", label: "Data tier", note: "", parent: ""}, {id: "a", label: "Server", note: "", parent: "web"}, {id: "b", label: "Database", note: "", parent: "data"}], links: [{from: "a", to: "b", label: "queries"}]}
+  }
+  if kind == "compare" {
+    return {..base, parts: [{id: "x", label: "Rust", note: "", parent: ""}, {id: "y", label: "Go", note: "", parent: ""}, {id: "x1", label: "Very fast", note: "no collector", parent: "x"}, {id: "y1", label: "Fast enough", note: "simple collector", parent: "y"}, {id: "x2", label: "Steep", note: "the borrow checker", parent: "x"}, {id: "y2", label: "Gentle", note: "a small language", parent: "y"}], aspects: ["Speed", "Learning curve"], steps: [{text: "Rust is fastest.", parts: ["x"]}, {text: "Go is quicker to learn.", parts: ["y"]}]}
+  }
+  if kind == "hub" {
+    return {..base, links: [{from: "a", to: "b", label: ""}, {from: "a", to: "c", label: ""}, {from: "a", to: "d", label: ""}]}
+  }
+  if kind == "cycle" {
+    return {..base, links: [{from: "a", to: "b", label: ""}, {from: "b", to: "c", label: ""}, {from: "c", to: "d", label: ""}, {from: "d", to: "a", label: ""}]}
+  }
+  if kind == "flow" {
+    return {..base, links: [{from: "a", to: "b", label: ""}, {from: "b", to: "c", label: ""}, {from: "c", to: "d", label: ""}]}
+  }
+  return base
+}
+
+fn smoke_request(kind: Text) -> Request {
+  return {ask: "draw a " + kind, structure: smoke(kind), picture: {title: "", author: "", license: "", license_url: "", page_url: "", image: ""}, palette: "dark_matter", photos: [], backdrop: ""}
+}
+
+test "every kind Kosika can draw draws a page" {
+  expect (for k in kinds() where not smoke_draws(k) { k }).is_empty()
+}
+
+// A kind passes when its description has nothing wrong with it and the page
+// it draws is a whole page, not a stub.
+fn smoke_draws(k: Text) -> Bool {
+  return problems(smoke(k)).is_empty() and draw_page(smoke_request(k)).length() > 5000
 }
 
 test "the problems name what is wrong" {
@@ -1817,4 +1959,14 @@ test "icons are emoji, photos are few and only where they help" {
   leaf = {..family(), shape: "flow", parts: [{id: "a", label: "O₂", note: "", parent: ""}, {id: "b", label: "Glucose", note: "", parent: ""}, {id: "c", label: "Leaf", note: "", parent: ""}, {id: "d", label: "CO2", note: "", parent: ""}], looks: [{part: "a", icon: "", photo: "Oxygen"}, {part: "b", icon: "", photo: "Glucose"}, {part: "c", icon: "", photo: "Leaf"}, {part: "d", icon: "", photo: "Carbon dioxide"}]}
   expect wanted_photos(leaf).length() == 1
   expect is_formula("H₂O") and is_formula("CO2") and not is_formula("Rain")
+}
+
+test "a ring pulls its link labels in towards its middle" {
+  expect link_label_at(430, 60, "cycle", 860, 480)[1] > 120
+  expect link_label_at(430, 60, "cycle", 860, 480)[0] == 430
+}
+
+test "every other shape keeps a link label at the middle of the curve" {
+  expect link_label_at(123, 456, "flow", 860, 480)[0] == 123
+  expect link_label_at(123, 456, "flow", 860, 480)[1] == 456
 }

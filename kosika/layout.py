@@ -14,9 +14,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
-from .motion import KINDS, LINK_STYLES, check_scene, to_svg
+from .motion import check_scene, to_svg
 
 WIDTH, HEIGHT = 960, 620
 MARGIN = 78
@@ -37,14 +39,15 @@ KIND_COLORS = {
 }
 
 # A graph is just pairs, like Kosika's relation matrices.
-Graph = tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]
+Edge = tuple[str, str, str]
+Graph = tuple[list[Edge], list[Edge]]
 
 
 # ------------------------------------------------------------------ strategies
 
 
 def _neighbours(nodes: list[str], edges: list[tuple[str, str]]) -> dict[str, list[str]]:
-    found = {name: [] for name in nodes}
+    found: dict[str, list[str]] = {name: [] for name in nodes}
     for source, target in edges:
         found.setdefault(source, []).append(target)
     return found
@@ -101,7 +104,9 @@ def _layers(nodes: list[str], edges: list[tuple[str, str, str]]) -> dict[str, in
     return layer
 
 
-def _barycentric(rows: dict[int, list[str]], edges: list[tuple[str, str]], sweeps: int = 4) -> None:
+def _barycentric(
+    rows: dict[int, list[str]], edges: list[Edge], sweeps: int = 4
+) -> None:
     """Reorder each layer so a vertex sits under the average of its neighbours.
 
     Sugiyama crossing reduction: only permutes within a layer, so every edge
@@ -118,7 +123,9 @@ def _barycentric(rows: dict[int, list[str]], edges: list[tuple[str, str]], sweep
             succs[source].append(target)
             preds[target].append(source)
 
-    column = {name: index for index, row in rows.items() for index, name in enumerate(row)}
+    column = {
+        name: index for index, row in rows.items() for index, name in enumerate(row)
+    }
     layers = sorted(rows)
 
     def mean(anchors: list[str], fallback: int) -> float:
@@ -175,7 +182,9 @@ def _crossings(order: list[str], edges: list[tuple[str, str, str]]) -> int:
     chords = []
     for source, target in pair_edges:
         if source in place and target in place and source != target:
-            chords.append((min(place[source], place[target]), max(place[source], place[target])))
+            chords.append(
+                (min(place[source], place[target]), max(place[source], place[target]))
+            )
     total = 0
     for index, (a, b) in enumerate(chords):
         for c, d in chords[index + 1 :]:
@@ -186,7 +195,9 @@ def _crossings(order: list[str], edges: list[tuple[str, str, str]]) -> int:
     return total
 
 
-def _untangle(order: list[str], edges: list[tuple[str, str, str]], limit: int = 400) -> list[str]:
+def _untangle(
+    order: list[str], edges: list[tuple[str, str, str]], limit: int = 400
+) -> list[str]:
     """Hill-climb the ring order by swapping neighbours while crossings drop."""
 
     best = list(order)
@@ -211,7 +222,9 @@ def _untangle(order: list[str], edges: list[tuple[str, str, str]], limit: int = 
     return best
 
 
-def _fit(points: list[tuple[float, float]], *, padding: float = 34.0) -> list[tuple[float, float]]:
+def _fit(
+    points: list[tuple[float, float]], *, padding: float = 34.0
+) -> list[tuple[float, float]]:
     """Uniformly scale and centre a layout inside the drawing box.
 
     A strategy's own shape is preserved: a circle stays a circle, layers stay
@@ -242,7 +255,7 @@ def _fit(points: list[tuple[float, float]], *, padding: float = 34.0) -> list[tu
     ]
 
 
-def layered(nodes: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[float, float]]:
+def layered(nodes: list[str], edges: list[Edge]) -> dict[str, tuple[float, float]]:
     """Top-down layers: sources at the top, dependencies below."""
 
     layer = _layers(nodes, edges)
@@ -261,7 +274,7 @@ def layered(nodes: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[f
     return dict(zip(order, _fit(points)))
 
 
-def circular(nodes: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[float, float]]:
+def circular(nodes: list[str], edges: list[Edge]) -> dict[str, tuple[float, float]]:
     """Every vertex on one circle, ordered to cross as few edges as possible."""
 
     names = _untangle(_ring_order(nodes, edges), edges)
@@ -273,7 +286,7 @@ def circular(nodes: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[
     return dict(zip(names, _fit(points)))
 
 
-def grid(nodes: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[float, float]]:
+def grid(nodes: list[str], edges: list[Edge]) -> dict[str, tuple[float, float]]:
     """A near-square grid in breadth-first order, so neighbours stay close."""
 
     names = _ring_order(nodes, edges)
@@ -285,7 +298,9 @@ def grid(nodes: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[floa
     return dict(zip(names, _fit(points)))
 
 
-def force(nodes: list[str], edges: list[tuple[str, str, str]], rounds: int = 240) -> dict[str, tuple[float, float]]:
+def force(
+    nodes: list[str], edges: list[tuple[str, str, str]], rounds: int = 240
+) -> dict[str, tuple[float, float]]:
     """Fruchterman–Reingold started on a circle: deterministic, no dice."""
 
     pair_edges = _pairs(edges)
@@ -336,7 +351,9 @@ def force(nodes: list[str], edges: list[tuple[str, str, str]], rounds: int = 240
     return dict(zip(names, _fit(pos)))
 
 
-STRATEGIES = {
+STRATEGIES: dict[
+    str, Callable[[list[str], list[Edge]], dict[str, tuple[float, float]]]
+] = {
     "layered": layered,
     "circular": circular,
     "grid": grid,
@@ -344,7 +361,7 @@ STRATEGIES = {
 }
 
 
-def choose(nodes: list[str], edges: list[tuple[str, str]]) -> str:
+def choose(nodes: list[str], edges: list[Edge]) -> str:
     """The smart default: a DAG wants layers, a small ring wants a circle."""
 
     if _is_acyclic(nodes, edges) and len(nodes) >= 4:
@@ -356,7 +373,7 @@ def choose(nodes: list[str], edges: list[tuple[str, str]]) -> str:
     return "force"
 
 
-def explain_choice(nodes: list[str], edges: list[tuple[str, str]]) -> str:
+def explain_choice(nodes: list[str], edges: list[Edge]) -> str:
     """The reason behind :func:`choose`, in words."""
 
     if _is_acyclic(nodes, edges) and len(nodes) >= 4:
@@ -433,7 +450,10 @@ class Layout:
         return f"{index}:{source}->{target}"
 
 
-def layout_digest(positions: dict[str, tuple[float, float]], routes: dict[str, list[tuple[float, float]]]) -> str:
+def layout_digest(
+    positions: dict[str, tuple[float, float]],
+    routes: dict[str, list[tuple[float, float]]],
+) -> str:
     """A short fingerprint of a layout: same graph, same strategy, same hash."""
 
     payload = ";".join(
@@ -450,7 +470,9 @@ def layout_digest(positions: dict[str, tuple[float, float]], routes: dict[str, l
 def _link_id(index: int, source: str, target: str) -> str:
     """A valid shape id for an edge: letters, digits, underscore only."""
 
-    safe = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in f"{source}->{target}")
+    safe = "".join(
+        ch if (ch.isalnum() or ch == "_") else "_" for ch in f"{source}->{target}"
+    )
     return f"link{index}_{safe}"
 
 
@@ -476,9 +498,7 @@ def compute_layout(
     for index, (source, target, _kind) in enumerate(edges):
         key = _link_id(index, source, target)
         style = "curved" if strategy == "layered" else "straight"
-        routes[key] = route_points(
-            positions[source], positions[target], style
-        )
+        routes[key] = route_points(positions[source], positions[target], style)
         styles[key] = style
 
     return Layout(
@@ -493,7 +513,14 @@ def compute_layout(
 # ------------------------------------------------------------------ motion scene
 
 
-def scene_of(layout: Layout, graph: Graph, *, width: int = WIDTH, height: int = HEIGHT, seconds: float = 1.0) -> dict:
+def scene_of(
+    layout: Layout,
+    graph: Graph,
+    *,
+    width: int = WIDTH,
+    height: int = HEIGHT,
+    seconds: float = 1.0,
+) -> dict:
     """A :mod:`kosika.motion` scene for this layout: nodes as circles, edges as links.
 
     The scene passes :func:`kosika.motion.check_scene`, so :func:`to_svg` and
@@ -570,7 +597,14 @@ def scene_of(layout: Layout, graph: Graph, *, width: int = WIDTH, height: int = 
     return scene
 
 
-def render_svg(layout: Layout, graph: Graph, *, width: int = WIDTH, height: int = HEIGHT, seconds: float = 1.0) -> str:
+def render_svg(
+    layout: Layout,
+    graph: Graph,
+    *,
+    width: int = WIDTH,
+    height: int = HEIGHT,
+    seconds: float = 1.0,
+) -> str:
     """Render one deterministic SVG picture of the graph."""
 
     scene = scene_of(layout, graph, width=width, height=height, seconds=seconds)
@@ -617,7 +651,7 @@ def main() -> None:
 
     graph = DEMO_GRAPH
     items: list[tuple[str, str, str]] = []
-    record = {"graph": {"nodes": [], "edges": []}, "layouts": {}}
+    record: dict[str, Any] = {"graph": {"nodes": [], "edges": []}, "layouts": {}}
 
     for name, fn in STRATEGIES.items():
         result = compute_layout(graph, strategy=name)
@@ -626,7 +660,9 @@ def main() -> None:
         items.append((f"{name} layout", f"digest {result.digest}", svg))
         record["layouts"][name] = {
             "digest": result.digest,
-            "positions": {k: [round(x, 2), round(y, 2)] for k, (x, y) in result.positions.items()},
+            "positions": {
+                k: [round(x, 2), round(y, 2)] for k, (x, y) in result.positions.items()
+            },
         }
 
     positions = compute_layout(graph, strategy="layered").positions
@@ -637,21 +673,30 @@ def main() -> None:
         }
         styles = {_link_id(i, s, t): style for i, (s, t, _) in enumerate(graph[1])}
         digest = layout_digest(positions, routes)
-        result = Layout(strategy="layered", positions=positions, routes=routes, styles=styles, digest=digest)
+        result = Layout(
+            strategy="layered",
+            positions=positions,
+            routes=routes,
+            styles=styles,
+            digest=digest,
+        )
         svg = render_svg(result, graph)
         (out / f"edge-{style}.svg").write_text(svg, encoding="utf-8")
         items.append((f"{style} edges", "layered positions", svg))
 
-    smart = choose(graph[0], graph[1])
+    names = [node[0] for node in graph[0]]
+    smart = choose(names, graph[1])
     record["graph"] = {
         "nodes": [{"id": n[0], "label": n[1], "kind": n[2]} for n in graph[0]],
         "edges": [{"source": e[0], "target": e[1], "kind": e[2]} for e in graph[1]],
     }
     record["smartChoice"] = smart
-    record["whySmartChoice"] = explain_choice(graph[0], graph[1])
+    record["whySmartChoice"] = explain_choice(names, graph[1])
 
-    (out / "layouts.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-    print(f"smart choice for this graph: {smart} ({explain_choice(graph[0], graph[1])})")
+    (out / "layouts.json").write_text(
+        json.dumps(record, indent=2) + "\n", encoding="utf-8"
+    )
+    print(f"smart choice for this graph: {smart} ({explain_choice(names, graph[1])})")
     print(f"wrote {len(items) + 1} files to {out}")
 
 

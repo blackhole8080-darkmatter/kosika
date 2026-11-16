@@ -1,0 +1,129 @@
+// std/maths.kos: foundational maths for Kosika — the knowledge aspect of
+// brains/intelligence. Provides a typed knowledge graph (nodes + edges),
+// a memory context that holds a graph, and the algorithms that operate on
+// it (lookup, neighbours, paths, subgraph). This is the substrate that
+// kosika science builds on.
+//
+//   import "std/maths.kos"
+//
+// Graph g = graph()
+// add_node(g, "a", "concept", "algebra")
+// add_edge(g, "a", "b", "depends_on")
+// neighbours(g, "a")            the nodes one step away
+// path(g, "a", "c")             shortest path of node ids
+// subgraph(g, ["a","b"])        a graph keeping only those nodes
+// remember(ctx, "fact", value)  store a fact in memory
+// recall(ctx, "fact")           read a fact back
+//
+// A graph is a record with two lists; memory is a map from key to value.
+// Nothing here depends on a model — every operation is checked code.
+
+export [Graph, Node, Edge, graph, add_node, add_edge, has_node, node_of, neighbours, path, subgraph, node_count, edge_count, Memory, memory, remember, recall, forget, memory_keys]
+
+record Node { id: Text label: Text kind: Text }
+record Edge { from: Text to: Text rel: Text }
+record Graph { nodes: Node[] edges: Edge[] }
+record Memory { facts: Text{} }
+
+fn graph() -> Graph { return { nodes: [], edges: [] } }
+
+fn add_node(g: Graph, id: Text, kind: Text, label: Text) -> Graph {
+  if has_node(g, id) { return g }
+  let n: Node = { id: id, label: label, kind: kind }
+  return { nodes: g.nodes.concat([n]), edges: g.edges }
+}
+
+fn add_edge(g: Graph, from: Text, to: Text, rel: Text) -> Graph {
+  let e: Edge = { from: from, to: to, rel: rel }
+  return { nodes: g.nodes, edges: g.edges.concat([e]) }
+}
+
+fn has_node(g: Graph, id: Text) -> Bool {
+  for n in g.nodes { if n.id == id { return true } }
+  return false
+}
+
+fn node_of(g: Graph, id: Text) -> Node {
+  for n in g.nodes { if n.id == id { return n } }
+  return { id: "", label: "", kind: "" }
+}
+
+fn neighbours(g: Graph, id: Text) -> Text[] {
+  var out: Text[] = []
+  for e in g.edges { if e.from == id { out = out.concat([e.to]) } }
+  return out
+}
+
+fn node_count(g: Graph) -> Number { return g.nodes.length() }
+fn edge_count(g: Graph) -> Number { return g.edges.length() }
+
+fn path(g: Graph, start: Text, goal: Text) -> Text[] {
+  if start == goal { return [start] }
+  var visited: Text[] = [start]
+  var frontier: Text[] = [start]
+  var parent: Text{} = {}
+  var found = false
+  while frontier.length() > 0 and not found {
+    let cur: Text = frontier[0]
+    frontier = frontier.slice(1, frontier.length())
+    if cur == goal { found = true }
+    else {
+      for nb in neighbours(g, cur) {
+        if not visited.contains(nb) {
+          visited = visited.append(nb)
+          parent = parent.set(nb, cur)
+          frontier = frontier.append(nb)
+        }
+      }
+    }
+  }
+  if not visited.contains(goal) { return [] }
+  var out: Text[] = [goal]
+  var cur: Text = goal
+  while cur != start {
+    cur = parent.get(cur).or(start)
+    out = [cur].concat(out)
+  }
+  return out
+}
+
+fn subgraph(g: Graph, ids: Text[]) -> Graph {
+  var out: Graph = graph()
+  for n in g.nodes { if ids.contains(n.id) { out = add_node(out, n.id, n.kind, n.label) } }
+  for e in g.edges { if ids.contains(e.from) and ids.contains(e.to) { out = add_edge(out, e.from, e.to, e.rel) } }
+  return out
+}
+
+fn memory() -> Memory { return { facts: {} } }
+
+fn remember(m: Memory, key: Text, value: Text) -> Memory {
+  return { facts: m.facts.set(key, value) }
+}
+
+fn recall(m: Memory, key: Text) -> Text {
+  if m.facts.has(key) { return m.facts.get(key).or("") }
+  return ""
+}
+
+fn forget(m: Memory, key: Text) -> Memory {
+  return { facts: m.facts.remove(key) }
+}
+
+fn memory_keys(m: Memory) -> Text[] { return m.facts.keys() }
+
+test "graph basics" {
+  expect node_count(add_edge(add_node(add_node(graph(), "a", "concept", "algebra"), "b", "concept", "calculus"), "a", "b", "depends_on")) == 2
+  expect edge_count(add_edge(add_node(add_node(graph(), "a", "concept", "algebra"), "b", "concept", "calculus"), "a", "b", "depends_on")) == 1
+  expect has_node(add_node(graph(), "a", "concept", "algebra"), "a")
+  expect neighbours(add_edge(add_node(add_node(graph(), "a", "concept", "algebra"), "b", "concept", "calculus"), "a", "b", "depends_on"), "a") == ["b"]
+}
+
+test "shortest path" {
+  expect path(add_edge(add_edge(add_node(add_node(add_node(graph(), "a", "concept", "a"), "b", "concept", "b"), "c", "concept", "c"), "a", "b", "r"), "b", "c", "r"), "a", "c") == ["a", "b", "c"]
+  expect path(add_edge(add_edge(add_node(add_node(add_node(graph(), "a", "concept", "a"), "b", "concept", "b"), "c", "concept", "c"), "a", "b", "r"), "b", "c", "r"), "a", "z") == []
+}
+
+test "memory round trip" {
+  expect recall(remember(memory(), "exam", "Friday"), "exam") == "Friday"
+  expect recall(forget(remember(memory(), "exam", "Friday"), "exam"), "exam") == ""
+}

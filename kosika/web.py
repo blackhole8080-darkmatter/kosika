@@ -41,10 +41,10 @@ from __future__ import annotations
 
 import html.parser
 import ipaddress
-import zlib
 import re
 import urllib.error
 import urllib.request
+import zlib
 from typing import Any, Callable, Sequence
 from urllib.parse import urljoin, urlsplit
 
@@ -267,6 +267,13 @@ class _Feed(html.parser.HTMLParser):
         if data.startswith("[CDATA[") and data.endswith("]]"):
             self.handle_data(data[len("[CDATA[") : -2])
 
+    def unknown_decl(self, data: str) -> None:
+        # A feed may wrap a field's words in <![CDATA[...]]>; the words are
+        # the field's. In an HTML page such a section stays dropped, as
+        # browsers treat it as nothing.
+        if data.startswith("CDATA["):
+            self.handle_data(data[len("CDATA[") :])
+
 
 def readable_feed(body: str) -> str:
     """The entries of an Atom or RSS feed, one labelled line each."""
@@ -341,7 +348,12 @@ def fetch_from(
     after it begins, or -1 when this one ends the page. A paper of 80,000
     characters is read in four calls."""
 
-    if isinstance(start, bool) or not isinstance(start, (int, float)) or start < 0 or start != int(start):
+    if (
+        isinstance(start, bool)
+        or not isinstance(start, (int, float))
+        or start < 0
+        or start != int(start)
+    ):
         raise WebError(f"start must be a whole number from 0, got {start!r}")
     page = _whole(url, sites, opener)
     begin = int(start)
@@ -369,7 +381,12 @@ def _whole(url: str, sites: Sequence[str], opener: Opener) -> dict[str, str]:
         if status != 200:
             raise WebError(f"{current} answered with status {status}")
         kind = headers.get("content-type", "").split(";")[0].strip().lower()
-        if kind not in ("text/html", "text/plain", "application/xhtml+xml", *FEED_TYPES):
+        if kind not in (
+            "text/html",
+            "text/plain",
+            "application/xhtml+xml",
+            *FEED_TYPES,
+        ):
             raise WebError(f"{current} is {kind or 'of unknown type'}, not a text page")
         if headers.get("content-encoding", "").strip().lower() in ("gzip", "x-gzip"):
             # Sent packed although nothing asked for it, as some sites do.
@@ -377,7 +394,9 @@ def _whole(url: str, sites: Sequence[str], opener: Opener) -> dict[str, str]:
             try:
                 body = unpacker.decompress(body, MAX_BYTES + 1)
             except zlib.error as exc:
-                raise WebError(f"{current} sent a packed page that cannot be read") from exc
+                raise WebError(
+                    f"{current} sent a packed page that cannot be read"
+                ) from exc
         if len(body) > MAX_BYTES:
             raise WebError(f"{current} is larger than 2 MiB")
         match = re.search(r"charset=([\w-]+)", headers.get("content-type", ""))

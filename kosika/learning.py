@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 class LearningMode(Enum):
     """Learning modes for agents."""
+
     SUPERVISED = "supervised"  # Learning from labeled examples
     REINFORCEMENT = "reinforcement"  # Learning from rewards
     UNSUPERVISED = "unsupervised"  # Learning from patterns
@@ -34,6 +35,7 @@ class LearningMode(Enum):
 
 class PatternKind(Enum):
     """Types of patterns that can be learned."""
+
     SEQUENCE = "sequence"  # Sequential patterns
     ASSOCIATION = "association"  # Item associations
     CLASSIFICATION = "classification"  # Classification rules
@@ -44,6 +46,7 @@ class PatternKind(Enum):
 @dataclass
 class Experience:
     """A single experience for learning."""
+
     id: str
     context: Dict[str, Any]
     action: str
@@ -56,6 +59,7 @@ class Experience:
 @dataclass
 class Pattern:
     """A learned pattern."""
+
     id: str
     kind: PatternKind
     pattern: Any  # The pattern representation
@@ -68,6 +72,7 @@ class Pattern:
 @dataclass
 class Strategy:
     """A strategy for solving a task."""
+
     id: str
     name: str
     description: str
@@ -139,6 +144,57 @@ class ExperienceBuffer:
             "max_reward": max(rewards),
         }
 
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get detailed performance metrics over time."""
+        if not self.experiences:
+            return {
+                "count": 0,
+                "reward_trend": [],
+                "action_distribution": {},
+                "context_diversity": 0,
+                "learning_progress": 0.0,
+            }
+
+        rewards = [exp.reward for exp in self.experiences]
+        actions = [exp.action for exp in self.experiences]
+        contexts = [tuple(sorted(exp.context.items())) for exp in self.experiences]
+
+        # Reward trend (moving average over last 100 experiences)
+        window = min(100, len(rewards))
+        reward_trend = []
+        for i in range(window, len(rewards) + 1):
+            window_rewards = rewards[i - window : i]
+            reward_trend.append(sum(window_rewards) / len(window_rewards))
+
+        # Action distribution
+        action_dist: dict[str, int] = {}
+        for action in actions:
+            action_dist[action] = action_dist.get(action, 0) + 1
+
+        # Context diversity (unique contexts)
+        context_diversity = len(set(contexts))
+
+        # Learning progress (improvement in reward over time)
+        if len(rewards) >= 2:
+            early_avg = sum(rewards[: len(rewards) // 2]) / (len(rewards) // 2)
+            late_avg = sum(rewards[len(rewards) // 2 :]) / (
+                len(rewards) - len(rewards) // 2
+            )
+            learning_progress = late_avg - early_avg
+        else:
+            learning_progress = 0.0
+
+        return {
+            "count": len(self.experiences),
+            "avg_reward": sum(rewards) / len(rewards),
+            "min_reward": min(rewards),
+            "max_reward": max(rewards),
+            "reward_trend": reward_trend,
+            "action_distribution": action_dist,
+            "context_diversity": context_diversity,
+            "learning_progress": learning_progress,
+        }
+
 
 class PatternExtractor:
     """Extract patterns from experiences."""
@@ -154,7 +210,9 @@ class PatternExtractor:
     ) -> List[Pattern]:
         """Extract sequential patterns from experiences."""
         # Group experiences by context
-        context_groups: Dict[frozenset[Tuple[str, Any]], List[Experience]] = defaultdict(list)
+        context_groups: Dict[frozenset[Tuple[str, Any]], List[Experience]] = (
+            defaultdict(list)
+        )
         for exp in experiences:
             context_key = frozenset(exp.context.items())
             context_groups[context_key].append(exp)
@@ -231,7 +289,11 @@ class PatternExtractor:
         # Group by target value
         target_groups: Dict[Any, List[Experience]] = defaultdict(list)
         for exp in experiences:
-            target_value = exp.result.get(target_field) if isinstance(exp.result, dict) else exp.result
+            target_value = (
+                exp.result.get(target_field)
+                if isinstance(exp.result, dict)
+                else exp.result
+            )
             target_groups[target_value].append(exp)
 
         patterns = []
@@ -296,7 +358,9 @@ class StrategySelector:
         # Otherwise, select by usage count
         return max(candidates, key=lambda s: s.usage_count)
 
-    def update_performance(self, strategy_id: str, success: bool, metrics: Dict[str, float]):
+    def update_performance(
+        self, strategy_id: str, success: bool, metrics: Dict[str, float]
+    ):
         """Update strategy performance metrics."""
         strategy = self.strategies.get(strategy_id)
         if not strategy:
@@ -323,7 +387,9 @@ class StrategySelector:
             metric_samples = samples.setdefault(key, [])
             metric_samples.append(value)
             strategy.performance[key] = value
-            strategy.performance[f"{key}_avg"] = sum(metric_samples) / len(metric_samples)
+            strategy.performance[f"{key}_avg"] = sum(metric_samples) / len(
+                metric_samples
+            )
 
 
 class HyperparameterTuner:
@@ -350,7 +416,9 @@ class HyperparameterTuner:
                 elif param_type == "int":
                     suggestion[param] = random.randint(min_val, max_val)
                 elif param_type == "categorical":
-                    suggestion[param] = random.choice(min_val)  # min_val is list of options
+                    suggestion[param] = random.choice(
+                        min_val
+                    )  # min_val is list of options
 
             suggestions.append(suggestion)
 
@@ -463,8 +531,12 @@ class LearningAgent:
         """Learn patterns from experiences."""
         experiences = self.experience_buffer.experiences
 
-        sequence_patterns = self.pattern_extractor.extract_sequence_patterns(experiences)
-        association_patterns = self.pattern_extractor.extract_association_patterns(experiences)
+        sequence_patterns = self.pattern_extractor.extract_sequence_patterns(
+            experiences
+        )
+        association_patterns = self.pattern_extractor.extract_association_patterns(
+            experiences
+        )
 
         return sequence_patterns + association_patterns
 

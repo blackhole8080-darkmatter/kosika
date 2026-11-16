@@ -44,6 +44,9 @@ node_modules/
 # Holding folder for scratch files cleared out of the root; safe to delete.
 /_trash/
 
+# What a self-development run remembers: one append-only ledger of attempts.
+.kosika/
+
 # Editor and agent tool state
 .commandcode/
 .cursor/

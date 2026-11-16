@@ -43,7 +43,9 @@ class LangflowError(Exception):
     """A flow could not be run, or answered with nothing to give back."""
 
 
-def _post(url: str, payload: Mapping[str, Any], headers: Mapping[str, str], timeout: float) -> Any:
+def _post(
+    url: str, payload: Mapping[str, Any], headers: Mapping[str, str], timeout: float
+) -> Any:
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -55,15 +57,21 @@ def _post(url: str, payload: Mapping[str, Any], headers: Mapping[str, str], time
             body = response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300].strip()
-        raise LangflowError(f"Langflow answered {exc.code} for {url}: {detail}") from exc
+        raise LangflowError(
+            f"Langflow answered {exc.code} for {url}: {detail}"
+        ) from exc
     except urllib.error.URLError as exc:
         raise LangflowError(f"Cannot reach Langflow at {url}: {exc.reason}") from exc
     except TimeoutError as exc:
-        raise LangflowError(f"Langflow did not answer {url} within {timeout:g} seconds") from exc
+        raise LangflowError(
+            f"Langflow did not answer {url} within {timeout:g} seconds"
+        ) from exc
     try:
         return json.loads(body)
     except ValueError as exc:
-        raise LangflowError(f"Langflow answered {url} with something other than JSON") from exc
+        raise LangflowError(
+            f"Langflow answered {url} with something other than JSON"
+        ) from exc
 
 
 def _get(url: str, headers: Mapping[str, str], timeout: float) -> Any:
@@ -73,15 +81,21 @@ def _get(url: str, headers: Mapping[str, str], timeout: float) -> Any:
             body = response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300].strip()
-        raise LangflowError(f"Langflow answered {exc.code} for {url}: {detail}") from exc
+        raise LangflowError(
+            f"Langflow answered {exc.code} for {url}: {detail}"
+        ) from exc
     except urllib.error.URLError as exc:
         raise LangflowError(f"Cannot reach Langflow at {url}: {exc.reason}") from exc
     except TimeoutError as exc:
-        raise LangflowError(f"Langflow did not answer {url} within {timeout:g} seconds") from exc
+        raise LangflowError(
+            f"Langflow did not answer {url} within {timeout:g} seconds"
+        ) from exc
     try:
         return json.loads(body)
     except ValueError as exc:
-        raise LangflowError(f"Langflow answered {url} with something other than JSON") from exc
+        raise LangflowError(
+            f"Langflow answered {url} with something other than JSON"
+        ) from exc
 
 
 def auto_login_token(base_url: str, timeout: float) -> str:

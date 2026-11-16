@@ -20,6 +20,7 @@ from typing import Any, List, Tuple, Union
 _np: Any
 try:
     import numpy as _numpy
+
     _np = _numpy
 except Exception:
     _np = None
@@ -44,6 +45,7 @@ def shape(tensor: Tensor) -> Shape:
     Checks that the tensor is rectangular (all sublists at each level have
     the same length) and within size limits.
     """
+
     def _get_shape(t: Any, depth: int = 0) -> Tuple[int, ...]:
         if not isinstance(t, list):
             return ()
@@ -53,7 +55,9 @@ def shape(tensor: Tensor) -> Shape:
             return (0,)
         first_len = len(t)
         if first_len > MAX_TENSOR_DIMENSION:
-            raise TensorError(f"Tensor dimension {depth} exceeds maximum of {MAX_TENSOR_DIMENSION}")
+            raise TensorError(
+                f"Tensor dimension {depth} exceeds maximum of {MAX_TENSOR_DIMENSION}"
+            )
         # Check all elements at this level have the same shape
         shapes = [_get_shape(elem, depth + 1) for elem in t]
         if not shapes:
@@ -191,7 +195,9 @@ def _expand(tensor: Tensor, target_shape: Shape) -> Tensor:
             else:
                 return [t[0] for _ in range(target_dim)]
         else:
-            raise TensorError(f"Cannot expand dimension {depth} from {curr_dim} to {target_dim}")
+            raise TensorError(
+                f"Cannot expand dimension {depth} from {curr_dim} to {target_dim}"
+            )
 
     return _expand_at_depth(tensor, current_shape, target_shape)
 
@@ -301,7 +307,9 @@ def matmul(a: Tensor, b: Tensor) -> Tensor:
     elif len(a_shape) == 3 and len(b_shape) == 3:
         # Batched matmul
         if a_shape[0] != b_shape[0]:
-            raise TensorError(f"Batch dimensions don't match: {a_shape[0]} vs {b_shape[0]}")
+            raise TensorError(
+                f"Batch dimensions don't match: {a_shape[0]} vs {b_shape[0]}"
+            )
         return [_matmul_2d(a[i], b[i]) for i in range(a_shape[0])]
     else:
         raise TensorError(
@@ -355,9 +363,11 @@ def reshape(tensor: Tensor, new_shape: Shape) -> Tensor:
 
     flat = _flatten(tensor)
 
-    def _build_from_flat(flat_list: List[Any], s: Shape, index: int = 0) -> Tuple[Any, int]:
+    def _build_from_flat(
+        flat_list: List[Any], s: Shape, index: int = 0
+    ) -> Tuple[Any, int]:
         if len(s) == 1:
-            result = flat_list[index:index + s[0]]
+            result = flat_list[index : index + s[0]]
             return result, index + s[0]
         result = []
         for _ in range(s[0]):
@@ -383,7 +393,7 @@ def transpose(tensor: Tensor, axes: Tuple[int, ...] | None = None) -> Tensor:
         if len(axes) != rank:
             raise TensorError(f"axes length {len(axes)} must match tensor rank {rank}")
         if set(axes) != set(range(rank)):
-            raise TensorError(f"axes must be a permutation of 0..{rank-1}")
+            raise TensorError(f"axes must be a permutation of 0..{rank - 1}")
 
     def _transpose_at_depth(t: Any, current_shape: Shape, depth: int = 0) -> Any:
         if depth >= rank:
@@ -473,7 +483,9 @@ def softmax(tensor: Tensor, axis: int = -1) -> Tensor:
     def _max_along_axis(t: Any, current_axis: int, target_axis: int) -> Any:
         if current_axis == target_axis:
             if isinstance(t[0], list):
-                return max(_max_along_axis(elem, current_axis + 1, target_axis) for elem in t)
+                return max(
+                    _max_along_axis(elem, current_axis + 1, target_axis) for elem in t
+                )
             return max(t)
         return [_max_along_axis(elem, current_axis + 1, target_axis) for elem in t]
 
@@ -483,7 +495,9 @@ def softmax(tensor: Tensor, axis: int = -1) -> Tensor:
     def _subtract_max(t: Any, current_axis: int, target_axis: int, m: Any) -> Any:
         if current_axis == target_axis:
             if isinstance(t, list):
-                return [_subtract_max(elem, current_axis + 1, target_axis, m) for elem in t]
+                return [
+                    _subtract_max(elem, current_axis + 1, target_axis, m) for elem in t
+                ]
             return t - m
         return [_subtract_max(elem, current_axis + 1, target_axis, m) for elem in t]
 
@@ -513,6 +527,7 @@ def softmax(tensor: Tensor, axis: int = -1) -> Tensor:
 
 def relu(tensor: Tensor) -> Tensor:
     """Apply ReLU activation: max(0, x)."""
+
     def _relu_at_depth(t: Any) -> Any:
         if isinstance(t, list):
             return [_relu_at_depth(elem) for elem in t]
@@ -523,6 +538,7 @@ def relu(tensor: Tensor) -> Tensor:
 
 def sigmoid(tensor: Tensor) -> Tensor:
     """Apply sigmoid activation: 1 / (1 + exp(-x))."""
+
     def _sigmoid_at_depth(t: Any) -> Any:
         if isinstance(t, list):
             return [_sigmoid_at_depth(elem) for elem in t]
@@ -533,6 +549,7 @@ def sigmoid(tensor: Tensor) -> Tensor:
 
 def tanh(tensor: Tensor) -> Tensor:
     """Apply tanh activation."""
+
     def _tanh_at_depth(t: Any) -> Any:
         if isinstance(t, list):
             return [_tanh_at_depth(elem) for elem in t]
@@ -543,16 +560,22 @@ def tanh(tensor: Tensor) -> Tensor:
 
 def gelu(tensor: Tensor) -> Tensor:
     """Apply GELU activation (Gaussian Error Linear Unit)."""
+
     def _gelu_at_depth(t: Any) -> Any:
         if isinstance(t, list):
             return [_gelu_at_depth(elem) for elem in t]
-        return 0.5 * t * (1.0 + math.tanh(math.sqrt(2.0 / math.pi) * (t + 0.044715 * t ** 3)))
+        return (
+            0.5
+            * t
+            * (1.0 + math.tanh(math.sqrt(2.0 / math.pi) * (t + 0.044715 * t**3)))
+        )
 
     return _gelu_at_depth(tensor)
 
 
 def flatten(tensor: Tensor) -> Tensor:
     """Flatten a tensor to 1D."""
+
     def _flatten_at_depth(t: Any) -> List[Any]:
         if isinstance(t, list):
             result = []
@@ -604,9 +627,7 @@ def concat(tensors: List[Tensor], axis: int) -> Tensor:
     for i, t in enumerate(tensors):
         t_shape = shape(t)
         if len(t_shape) != rank:
-            raise TensorError(
-                f"Tensor {i} has rank {len(t_shape)}, expected {rank}"
-            )
+            raise TensorError(f"Tensor {i} has rank {len(t_shape)}, expected {rank}")
         for d in range(rank):
             if d != axis and t_shape[d] != first_shape[d]:
                 raise TensorError(
@@ -624,8 +645,10 @@ def concat(tensors: List[Tensor], axis: int) -> Tensor:
             return t_list  # Scalars
         else:
             # Recurse
-            return [_concat_at_depth([t[i] for t in t_list], current_axis + 1, target_axis)
-                    for i in range(len(t_list[0]))]
+            return [
+                _concat_at_depth([t[i] for t in t_list], current_axis + 1, target_axis)
+                for i in range(len(t_list[0]))
+            ]
 
     return _concat_at_depth(tensors, 0, axis)
 
@@ -642,9 +665,7 @@ def stack(tensors: List[Tensor], axis: int) -> Tensor:
     for i, t in enumerate(tensors):
         t_shape = shape(t)
         if t_shape != first_shape:
-            raise TensorError(
-                f"Tensor {i} has shape {t_shape}, expected {first_shape}"
-            )
+            raise TensorError(f"Tensor {i} has shape {t_shape}, expected {first_shape}")
 
     # Insert new axis
     if axis < 0 or axis > rank:
@@ -656,8 +677,10 @@ def stack(tensors: List[Tensor], axis: int) -> Tensor:
             return t_list
         else:
             # Recurse
-            return [_stack_at_depth([t[i] for t in t_list], current_axis + 1, target_axis)
-                    for i in range(len(t_list[0]))]
+            return [
+                _stack_at_depth([t[i] for t in t_list], current_axis + 1, target_axis)
+                for i in range(len(t_list[0]))
+            ]
 
     return _stack_at_depth(tensors, 0, axis)
 

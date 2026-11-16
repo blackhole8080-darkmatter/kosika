@@ -12,11 +12,11 @@ from kosika.system_tools import SystemToolError, bind_system_tools
 from kosika.web import (
     MAX_BYTES,
     MAX_CHARACTERS,
-    fetch_from,
     WebError,
     allowed_address,
     clean_site,
     fetch,
+    fetch_from,
     readable,
     readable_feed,
 )
@@ -179,7 +179,15 @@ class FetchTests(unittest.TestCase):
         got = fetch(
             "https://example.org/feed",
             SITES,
-            opener({"https://example.org/feed": (200, {"content-type": "application/atom+xml"}, feed)}),
+            opener(
+                {
+                    "https://example.org/feed": (
+                        200,
+                        {"content-type": "application/atom+xml"},
+                        feed,
+                    )
+                }
+            ),
         )
         self.assertEqual(
             got["text"],
@@ -188,7 +196,9 @@ class FetchTests(unittest.TestCase):
             "---\nTitle: Second",
         )
         self.assertEqual(
-            readable_feed("<rss><item><title>A</title><description>B</description></item></rss>"),
+            readable_feed(
+                "<rss><item><title>A</title><description>B</description></item></rss>"
+            ),
             "---\nTitle: A\nSummary: B",
         )
 
@@ -256,14 +266,30 @@ class FetchTests(unittest.TestCase):
         page = fetch(
             "https://example.org/x",
             SITES,
-            opener({"https://example.org/x": (200, {"content-type": "text/html", "content-encoding": "gzip"}, packed)}),
+            opener(
+                {
+                    "https://example.org/x": (
+                        200,
+                        {"content-type": "text/html", "content-encoding": "gzip"},
+                        packed,
+                    )
+                }
+            ),
         )
         self.assertEqual((page["title"], page["text"]), ("Packed", "Unpacked text"))
         with self.assertRaisesRegex(WebError, "cannot be read"):
             fetch(
                 "https://example.org/x",
                 SITES,
-                opener({"https://example.org/x": (200, {"content-type": "text/html", "content-encoding": "gzip"}, b"not packed")}),
+                opener(
+                    {
+                        "https://example.org/x": (
+                            200,
+                            {"content-type": "text/html", "content-encoding": "gzip"},
+                            b"not packed",
+                        )
+                    }
+                ),
             )
 
     def test_a_long_page_is_read_a_part_at_a_time(self) -> None:
@@ -282,7 +308,10 @@ class FetchTests(unittest.TestCase):
         past = fetch_from("https://example.org/x", 10**6, SITES, pages)
         self.assertEqual((past["text"], past["next"]), ("", -1))
         for bad in (-1, 1.5, True):
-            with self.subTest(start=bad), self.assertRaisesRegex(WebError, "whole number"):
+            with (
+                self.subTest(start=bad),
+                self.assertRaisesRegex(WebError, "whole number"),
+            ):
                 fetch_from("https://example.org/x", bad, SITES, pages)
 
     def test_an_address_that_is_not_allowed_is_never_requested(self) -> None:

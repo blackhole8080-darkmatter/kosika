@@ -1,0 +1,292 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "main",
+        "label": "main",
+        "kind": "workflow"
+      },
+      {
+        "id": "research",
+        "label": "research",
+        "kind": "function"
+      },
+      {
+        "id": "total",
+        "label": "total",
+        "kind": "function"
+      },
+      {
+        "id": "search",
+        "label": "search",
+        "kind": "tool"
+      },
+      {
+        "id": "writer",
+        "label": "writer",
+        "kind": "model"
+      },
+      {
+        "id": "Answer",
+        "label": "Answer",
+        "kind": "record"
+      },
+      {
+        "id": "Question",
+        "label": "Question",
+        "kind": "record"
+      },
+      {
+        "id": "Quote",
+        "label": "Quote",
+        "kind": "record"
+      },
+      {
+        "id": "Hit",
+        "label": "Hit",
+        "kind": "record"
+      },
+      {
+        "id": "sum",
+        "label": "sum",
+        "kind": "function"
+      }
+    ],
+    "edges": [
+      {
+        "source": "main",
+        "target": "research",
+        "kind": "call"
+      },
+      {
+        "source": "main",
+        "target": "total",
+        "kind": "call"
+      },
+      {
+        "source": "main",
+        "target": "Question",
+        "kind": "call"
+      },
+      {
+        "source": "research",
+        "target": "search",
+        "kind": "call"
+      },
+      {
+        "source": "research",
+        "target": "writer",
+        "kind": "call"
+      },
+      {
+        "source": "research",
+        "target": "Answer",
+        "kind": "call"
+      },
+      {
+        "source": "writer",
+        "target": "Quote",
+        "kind": "call"
+      },
+      {
+        "source": "Answer",
+        "target": "Quote",
+        "kind": "call"
+      },
+      {
+        "source": "search",
+        "target": "Hit",
+        "kind": "call"
+      },
+      {
+        "source": "total",
+        "target": "sum",
+        "kind": "call"
+      }
+    ]
+  },
+  "layouts": {
+    "layered": {
+      "digest": "4342c7fd16f9",
+      "positions": {
+        "main": [
+          480.0,
+          112.0
+        ],
+        "Question": [
+          336.67,
+          255.33
+        ],
+        "research": [
+          480.0,
+          255.33
+        ],
+        "total": [
+          623.33,
+          255.33
+        ],
+        "search": [
+          265.0,
+          398.67
+        ],
+        "Answer": [
+          408.33,
+          398.67
+        ],
+        "writer": [
+          551.67,
+          398.67
+        ],
+        "sum": [
+          695.0,
+          398.67
+        ],
+        "Hit": [
+          408.33,
+          542.0
+        ],
+        "Quote": [
+          551.67,
+          542.0
+        ]
+      }
+    },
+    "circular": {
+      "digest": "38ce38fb7f44",
+      "positions": {
+        "main": [
+          706.06,
+          327.0
+        ],
+        "Answer": [
+          662.89,
+          459.88
+        ],
+        "research": [
+          549.86,
+          542.0
+        ],
+        "search": [
+          410.14,
+          542.0
+        ],
+        "writer": [
+          297.11,
+          459.88
+        ],
+        "Quote": [
+          253.94,
+          327.0
+        ],
+        "Hit": [
+          297.11,
+          194.12
+        ],
+        "Question": [
+          410.14,
+          112.0
+        ],
+        "total": [
+          549.86,
+          112.0
+        ],
+        "sum": [
+          662.89,
+          194.12
+        ]
+      }
+    },
+    "grid": {
+      "digest": "e907b3580411",
+      "positions": {
+        "research": [
+          157.5,
+          112.0
+        ],
+        "Answer": [
+          372.5,
+          112.0
+        ],
+        "main": [
+          587.5,
+          112.0
+        ],
+        "search": [
+          802.5,
+          112.0
+        ],
+        "writer": [
+          157.5,
+          327.0
+        ],
+        "Quote": [
+          372.5,
+          327.0
+        ],
+        "Question": [
+          587.5,
+          327.0
+        ],
+        "total": [
+          802.5,
+          327.0
+        ],
+        "Hit": [
+          157.5,
+          542.0
+        ],
+        "sum": [
+          372.5,
+          542.0
+        ]
+      }
+    },
+    "force": {
+      "digest": "02858a8b4d66",
+      "positions": {
+        "Answer": [
+          707.74,
+          503.82
+        ],
+        "Hit": [
+          707.35,
+          112.0
+        ],
+        "Question": [
+          371.46,
+          542.0
+        ],
+        "Quote": [
+          818.45,
+          515.99
+        ],
+        "main": [
+          429.76,
+          431.96
+        ],
+        "research": [
+          619.01,
+          392.36
+        ],
+        "search": [
+          664.43,
+          235.04
+        ],
+        "sum": [
+          141.55,
+          386.5
+        ],
+        "total": [
+          269.2,
+          403.19
+        ],
+        "writer": [
+          758.0,
+          423.38
+        ]
+      }
+    }
+  },
+  "smartChoice": "layered",
+  "whySmartChoice": "acyclic, so the layers of dependency are the honest picture"
+}

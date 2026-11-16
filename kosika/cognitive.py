@@ -28,6 +28,7 @@ from .ast import Program
 
 class MemoryKind(Enum):
     """Types of memory bubbles."""
+
     EPISODIC = "episodic"  # Specific events
     SEMANTIC = "semantic"  # General knowledge
     PROCEDURAL = "procedural"  # How to do things
@@ -40,6 +41,7 @@ class MemoryKind(Enum):
 
 class MemoryStatus(Enum):
     """Lifecycle states of memory items, in promotion order."""
+
     UNVERIFIED = "unverified"
     SUPPORTED = "supported"
     TRUSTED = "trusted"
@@ -54,6 +56,7 @@ class MemoryStatus(Enum):
 
 class RetentionPolicy(Enum):
     """How long memory should be retained."""
+
     EPHEMERAL = "ephemeral"  # Single session
     SESSION = "session"  # Current session only
     TEMPORARY = "temporary"  # Short-term (hours/days)
@@ -62,6 +65,7 @@ class RetentionPolicy(Enum):
 
 class PermissionScope(Enum):
     """Who can access this memory."""
+
     PRIVATE = "private"  # Only the owner
     SESSION = "session"  # All agents in session
     SHARED = "shared"  # Across sessions
@@ -89,6 +93,7 @@ PERSONALITY_ATTENTION: frozenset[str] = frozenset({"focused", "broad", "adaptive
 @dataclass
 class MemoryBubble:
     """A bounded, contextual knowledge item with provenance."""
+
     id: str
     content: Any
     kind: MemoryKind
@@ -147,6 +152,7 @@ class MemoryBubble:
 @dataclass
 class Assumption:
     """An explicit assumption with invalidation conditions."""
+
     id: str
     statement: str
     confidence: float
@@ -175,6 +181,7 @@ class Assumption:
 @dataclass
 class Judgment:
     """A judgment with evidence chain and confidence."""
+
     id: str
     claim: str
     confidence: float
@@ -212,6 +219,7 @@ class Judgment:
 @dataclass
 class PersonalityPolicy:
     """Personality settings that influence agent behavior."""
+
     id: str
     tone: str  # precise, casual, formal, friendly
     priorities: List[str]  # What the agent prioritizes
@@ -227,7 +235,10 @@ class PersonalityPolicy:
 
     def should_explain_uncertainty(self) -> bool:
         """Check if agent should explicitly state uncertainty."""
-        return self.uncertainty_style == "explicit" or self.uncertainty_style == "probabilistic"
+        return (
+            self.uncertainty_style == "explicit"
+            or self.uncertainty_style == "probabilistic"
+        )
 
     def risk_tolerance_level(self) -> float:
         """Get risk tolerance as a number (0.0 to 1.0)."""
@@ -330,10 +341,9 @@ class CognitiveStore:
             if existing.kind != new_memory.kind:
                 continue
             # Simple contradiction check: same kind, similar content, opposite confidence
-            if (
-                abs(existing.confidence + new_memory.confidence - 1.0) < 0.1
-                and str(existing.content) != str(new_memory.content)
-            ):
+            if abs(existing.confidence + new_memory.confidence - 1.0) < 0.1 and str(
+                existing.content
+            ) != str(new_memory.content):
                 self.contradictions.append(
                     {
                         "timestamp": time.time(),
@@ -352,7 +362,8 @@ class CognitiveStore:
         now = time.time()
         # Clean expired memories
         expired_memories = [
-            mid for mid, m in self.memories.items()
+            mid
+            for mid, m in self.memories.items()
             if m.expires_at and m.expires_at < now
         ]
         for mid in expired_memories:
@@ -360,7 +371,8 @@ class CognitiveStore:
 
         # Clean expired judgments
         expired_judgments = [
-            jid for jid, j in self.judgments.items()
+            jid
+            for jid, j in self.judgments.items()
             if j.expires_at and j.expires_at < now
         ]
         for jid in expired_judgments:

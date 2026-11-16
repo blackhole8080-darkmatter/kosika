@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 class DifficultyLevel(Enum):
     """Difficulty levels for agent evaluation."""
+
     LEVEL_0 = 0  # Basic tasks, single step
     LEVEL_1 = 1  # Simple multi-step tasks
     LEVEL_2 = 2  # Moderate complexity, some reasoning
@@ -27,6 +28,7 @@ class DifficultyLevel(Enum):
 
 class ExerciseCategory(Enum):
     """Categories of exercises."""
+
     AI_PROBLEM = "ai_problem"
     PROJECT_BUILD = "project_build"
     WRITING = "writing"
@@ -36,6 +38,7 @@ class ExerciseCategory(Enum):
 
 class ExerciseResult(Enum):
     """Result of an exercise attempt."""
+
     PASSED = "passed"
     FAILED = "failed"
     PARTIAL = "partial"
@@ -45,6 +48,7 @@ class ExerciseResult(Enum):
 @dataclass
 class Exercise:
     """An exercise for testing agent capabilities."""
+
     id: str
     level: DifficultyLevel
     category: ExerciseCategory
@@ -60,6 +64,7 @@ class Exercise:
 @dataclass
 class Attempt:
     """An attempt at an exercise."""
+
     exercise_id: str
     output: Any
     execution_time: float
@@ -73,6 +78,7 @@ class Attempt:
 @dataclass
 class LevelProgress:
     """Progress through a difficulty level."""
+
     level: DifficultyLevel
     total_exercises: int
     passed: int
@@ -87,7 +93,9 @@ class ExerciseEvaluator(ABC):
     """Base class for exercise evaluators."""
 
     @abstractmethod
-    def evaluate(self, exercise: Exercise, output: Any) -> Tuple[ExerciseResult, float, List[str]]:
+    def evaluate(
+        self, exercise: Exercise, output: Any
+    ) -> Tuple[ExerciseResult, float, List[str]]:
         """Evaluate exercise output. Returns (result, score, errors)."""
         pass
 
@@ -105,7 +113,9 @@ class AgentEvaluator:
         """Register an exercise."""
         self.exercises[exercise.id] = exercise
 
-    def register_evaluator(self, category: ExerciseCategory, evaluator: ExerciseEvaluator):
+    def register_evaluator(
+        self, category: ExerciseCategory, evaluator: ExerciseEvaluator
+    ):
         """Register an evaluator for a category."""
         self.evaluators[category] = evaluator
 
@@ -168,7 +178,9 @@ class AgentEvaluator:
         self.attempts.append(attempt)
         return attempt
 
-    def _default_evaluate(self, exercise: Exercise, output: Any) -> Tuple[ExerciseResult, float, List[str]]:
+    def _default_evaluate(
+        self, exercise: Exercise, output: Any
+    ) -> Tuple[ExerciseResult, float, List[str]]:
         """Default evaluation if no evaluator registered."""
         if output == exercise.expected_output:
             return ExerciseResult.PASSED, 1.0, []
@@ -200,7 +212,9 @@ class AgentEvaluator:
     def get_level_progress(self, level: DifficultyLevel) -> LevelProgress:
         """Get progress for a specific level."""
         level_exercises = [e for e in self.exercises.values() if e.level == level]
-        level_attempts = [a for a in self.attempts if self.exercises[a.exercise_id].level == level]
+        level_attempts = [
+            a for a in self.attempts if self.exercises[a.exercise_id].level == level
+        ]
 
         passed = sum(1 for a in level_attempts if a.result == ExerciseResult.PASSED)
         failed = sum(1 for a in level_attempts if a.result == ExerciseResult.FAILED)
@@ -229,7 +243,11 @@ class AgentEvaluator:
         """Check if agent can advance to next level."""
         progress = self.get_level_progress(current_level)
         # Require 80% pass rate and average score > 0.7
-        pass_rate = progress.passed / progress.total_exercises if progress.total_exercises > 0 else 0
+        pass_rate = (
+            progress.passed / progress.total_exercises
+            if progress.total_exercises > 0
+            else 0
+        )
         return pass_rate >= 0.8 and progress.average_score >= 0.7
 
     def get_summary(self) -> Dict[str, Any]:

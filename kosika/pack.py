@@ -14,27 +14,43 @@ grants its own models and approves its own tools, exactly as it would for a
 program written there, so a pack cannot bring authority with it.
 
 What checking proves: the modules are byte for byte the ones that were packed
-(their SHA-256 hashes), and they load to the same program (its hash). Two
-devices that hold packs with the same program hash run the same program.
+(their SHA-256 hashes), and they load to a program whose identity is the one
+recorded (`kosika.identity`: a hash of the sources, which the native engine
+computes the same way). Two devices that hold packs with the same program
+hash run the same program.
 
-What it does not prove: who made the pack. A pack is not signed, so the hash
-must reach the second device by a way its owner trusts.
+A pack may also be signed: `kosika pack sign` covers the program hash and the
+module hashes with this device's Ed25519 key, kept in `.kosika/`, and
+`kosika pack check --require-signature` refuses a pack that carries no
+signature, or one whose signature does not verify. A signature adds who made
+the pack. It does not make the program safe: the device that runs it still
+grants its own models and approves its own tools.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import secrets
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .ast import Program, program_payload
+from .ast import Program
+from .identity import program_identity
 from .modules import load_program
+from .signature import public_key as ed25519_public
+from .signature import sign as ed25519_sign
+from .signature import verify as ed25519_verify
 
 SCHEMA = "kosika.pack/v1"
 MAX_PACK_BYTES = 4 * 1024 * 1024
+SIGNATURE_ALG = "ed25519"
+KEY_SCHEMA = "kosika.pack-key/v1"
+#: Where this device's signing key lives when no other path is named.
+DEFAULT_KEY = Path(".kosika") / "pack-key.json"
 
 
 class PackError(ValueError):
@@ -42,9 +58,137 @@ class PackError(ValueError):
 
 
 def program_hash(program: Program) -> str:
-    return hashlib.sha256(
-        json.dumps(program_payload(program), sort_keys=True).encode("utf-8")
-    ).hexdigest()
+    """The program's identity, which both engines compute the same way."""
+
+    return program_identity(program)
+
+
+def _canonical(value: Any) -> bytes:
+    """The bytes a hash or a signature is taken over: sorted keys, no spaces."""
+
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+
+
+def signing_payload(pack: dict[str, Any]) -> bytes:
+    """What a pack's signature covers: its program and its modules' hashes."""
+
+    return _canonical(
+        {"program_hash": pack["program_hash"], "module_hashes": pack["module_hashes"]}
+    )
+
+
+def read_key(path: str | Path = DEFAULT_KEY) -> tuple[bytes, bytes]:
+    """The seed and public key at `path`, made once and then kept.
+
+    A key that cannot be read is refused rather than replaced: silently
+    minting a new key would make a device's earlier signatures unverifiable
+    without saying so.
+    """
+
+    file = Path(path)
+    try:
+        data = json.loads(file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        seed = secrets.token_bytes(32)
+        public = ed25519_public(seed)
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(
+            json.dumps(
+                {
+                    "schema": KEY_SCHEMA,
+                    "alg": SIGNATURE_ALG,
+                    "seed": seed.hex(),
+                    "public_key": public.hex(),
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        try:
+            os.chmod(file, 0o600)
+        except OSError:
+            # Some filesystems cannot narrow a mode; the key is the owner's own.
+            pass
+        return seed, public
+    except (OSError, ValueError) as exc:
+        raise PackError(f"Cannot read signing key {file}: {exc}") from exc
+    if (
+        not isinstance(data, dict)
+        or data.get("schema") != KEY_SCHEMA
+        or data.get("alg") != SIGNATURE_ALG
+    ):
+        raise PackError(f"{file} is not a {KEY_SCHEMA} key")
+    seed_text = data.get("seed")
+    public_text = data.get("public_key")
+    try:
+        seed = bytes.fromhex(seed_text) if isinstance(seed_text, str) else b""
+        public = bytes.fromhex(public_text) if isinstance(public_text, str) else b""
+    except ValueError as exc:
+        raise PackError(f"Signing key {file} is not hexadecimal") from exc
+    if len(seed) != 32 or len(public) != 32:
+        raise PackError(f"Signing key {file} must hold a 32-byte seed and public key")
+    if ed25519_public(seed) != public:
+        raise PackError(f"Signing key {file} does not match its public key")
+    return seed, public
+
+
+def _signature_of(pack: dict[str, Any]) -> dict[str, str] | None:
+    """The verified signature a pack carries, or None when it carries none."""
+
+    signature = pack.get("signature")
+    if signature is None:
+        return None
+    if not isinstance(signature, dict):
+        raise PackError("Pack signature is not an object")
+    alg = signature.get("alg")
+    public_text = signature.get("public_key")
+    made = signature.get("signature")
+    if alg != SIGNATURE_ALG:
+        raise PackError(f"Pack signature names an unknown algorithm: {alg!r}")
+    if not isinstance(public_text, str) or not isinstance(made, str):
+        raise PackError("Pack signature has no public key or signature")
+    try:
+        public = bytes.fromhex(public_text)
+        raw = bytes.fromhex(made)
+    except ValueError as exc:
+        raise PackError("Pack signature is not hexadecimal") from exc
+    if len(public) != 32 or len(raw) != 64:
+        raise PackError("Pack signature is not a 32-byte key and 64 bytes more")
+    if not ed25519_verify(public, signing_payload(pack), raw):
+        raise PackError("Pack signature does not match its program and modules")
+    return {"alg": SIGNATURE_ALG, "public_key": public_text}
+
+
+def sign_pack(path: str | Path, key_path: str | Path = DEFAULT_KEY) -> dict[str, Any]:
+    """Sign a pack where it sits, proving which device made it.
+
+    The modules are re-hashed first, so a pack that no longer holds what it
+    records is refused rather than signed.
+    """
+
+    pack = read_pack(path)
+    for key, text in pack["modules"].items():
+        if (
+            hashlib.sha256(text.encode("utf-8")).hexdigest()
+            != pack["module_hashes"][key]
+        ):
+            raise PackError(f"Module {key} does not match its recorded hash")
+    seed, public = read_key(key_path)
+    pack["signature"] = {
+        "alg": SIGNATURE_ALG,
+        "public_key": public.hex(),
+        "signature": ed25519_sign(seed, signing_payload(pack)).hex(),
+    }
+    Path(path).write_text(
+        json.dumps(pack, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+    return pack
 
 
 def _needs(program: Program) -> dict[str, Any]:
@@ -157,6 +301,8 @@ class PackReport:
     modules: tuple[str, ...]
     needs: dict[str, Any]
     tests: tuple[dict[str, Any], ...] = ()
+    #: The public key a pack's signature verified under, when it has one.
+    signed_by: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -165,17 +311,25 @@ class PackReport:
             "modules": list(self.modules),
             "needs": self.needs,
             "tests": list(self.tests),
+            "signed_by": self.signed_by,
         }
 
 
-def check_pack(path: str | Path, *, run_tests: bool = False) -> PackReport:
+def check_pack(
+    path: str | Path, *, run_tests: bool = False, require_signature: bool = False
+) -> PackReport:
     """Prove a pack holds what it says, and report what it would ask for.
 
     Nothing in the pack is run, except its own tests when `run_tests` is set;
-    those use scripted answers and reach no model, tool, or file.
+    those use scripted answers and reach no model, tool, or file. A signature
+    is always verified when a pack carries one, and `require_signature` makes
+    an unsigned pack a refusal instead of a weaker success.
     """
 
     pack = read_pack(path)
+    if require_signature and pack.get("signature") is None:
+        raise PackError("Pack is not signed, and a signature was required")
+    signature = _signature_of(pack)
     for key, text in pack["modules"].items():
         if (
             hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -207,6 +361,7 @@ def check_pack(path: str | Path, *, run_tests: bool = False) -> PackReport:
             tuple(sorted(pack["modules"])),
             _needs(program),
             results,
+            signature["public_key"] if signature else None,
         )
 
 
@@ -224,8 +379,10 @@ def unpack(path: str | Path, directory: str | Path) -> PackReport:
 
 def to_text(report: PackReport) -> str:
     needs = report.needs
+    signer = f"ed25519 {report.signed_by[:16]}…" if report.signed_by else "unsigned"
     lines = [
         f"Program  {report.program_hash}",
+        f"Signer   {signer}",
         f"Entry    {report.entry}",
         f"Modules  {', '.join(report.modules)}",
         f"Runs     {', '.join(needs['workflows']) or 'nothing'}",

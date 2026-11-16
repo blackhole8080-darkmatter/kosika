@@ -1,0 +1,242 @@
+// CPU-only toy neural model. Model policy is Kosika; no foundation-model claim.
+export [TrainInput, TinyLanguageModel, ModelRun, ModelEvaluation, ModelArtifact, SampleInput, SampleOutput, tl_one_hot, tl_next, tl_rounds_valid, tl_tokens_valid, tl_corpus_valid, tl_train, tl_generate, tl_run, tl_parameter_count, tl_gate_passes, tl_evaluate, tl_promote, tl_generate_result, tl_validate_artifact, validate_artifact, ArtifactSampleInput, infer_artifact]
+
+import "std/nn.kos"
+
+record TrainInput {
+  corpus: Text
+  prefix: Text
+  tokens: Number
+  seed: Number
+  rounds: Number
+}
+
+record TinyLanguageModel {
+  schema: Text
+  alphabet: Text[]
+  net: Net
+  seed: Number
+  rounds: Number
+  starting_loss: Number
+  final_loss: Number
+}
+
+record ModelRun {
+  model: TinyLanguageModel
+  generated: Text
+}
+
+record ModelEvaluation {
+  gate: Text
+  passed: Bool
+  starting_loss: Number
+  final_loss: Number
+  generated: Text
+  expected_sample: Text
+  parameter_count: Number
+  note: Text
+}
+
+record ModelArtifact {
+  artifact_schema: Text
+  model: TinyLanguageModel
+  evaluation: ModelEvaluation
+}
+
+record SampleInput {
+  model: TinyLanguageModel
+  prefix: Text
+  tokens: Number
+}
+
+record SampleOutput {
+  generated: Text
+}
+
+fn tl_one_hot(symbol: Text, alphabet: Text[]) -> Number[] {
+  var at = -1
+  for i in 0 until alphabet.length() {
+    if alphabet[i] == symbol { at = i }
+  }
+  if at < 0 { fail "symbol is not in this model's alphabet" }
+  return for i in 0 until alphabet.length() {
+    if i == at { 1 } else { 0 }
+  }
+}
+
+fn tl_next(model: TinyLanguageModel, symbol: Text) -> Text {
+  let input = tl_one_hot(symbol, model.alphabet)
+  let scores = predict(model.net, input)
+  var best = 0
+  var best_score = -1
+  for i in 0 until scores.length() {
+    if scores[i] > best_score {
+      best = i
+      best_score = scores[i]
+    }
+  }
+  return model.alphabet[best]
+}
+
+fn tl_rounds_valid(rounds: Number) -> Bool {
+  return rounds.is_whole() and rounds >= 1 and rounds <= 300
+}
+
+fn tl_tokens_valid(tokens: Number) -> Bool {
+  return tokens.is_whole() and tokens >= 0 and tokens <= 128
+}
+
+fn tl_corpus_valid(corpus: Text) -> Bool {
+  return corpus.length() >= 4 and corpus.length() <= 512
+}
+
+fn tl_train(corpus: Text, seed: Number, rounds: Number) -> TinyLanguageModel {
+  if not tl_corpus_valid(corpus) {
+    fail "the demo corpus must contain 4 to 512 characters"
+  }
+  if not tl_rounds_valid(rounds) {
+    fail "training rounds must be a whole number from 1 to 300"
+  }
+  let chars = corpus.chars()
+  let alphabet = chars.unique().sort()
+  if alphabet.length() < 2 or alphabet.length() > 32 {
+    fail "the demo alphabet must contain 2 to 32 distinct characters"
+  }
+  var xs: Number[][] = []
+  var ys: Number[][] = []
+  for i in 0 until chars.length() - 1 {
+    xs = xs.append(tl_one_hot(chars[i], alphabet))
+    ys = ys.append(tl_one_hot(chars[i + 1], alphabet))
+  }
+  let start = net([alphabet.length(), 8, alphabet.length()], seed)
+  let starting_loss = loss(start, xs, ys)
+  let trained = train(start, xs, ys, 0.2, rounds)
+  let final_loss = loss(trained, xs, ys)
+  return {
+    schema: "kosika.demo.char-neural-model/v1",
+    alphabet: alphabet,
+    net: trained,
+    seed: seed,
+    rounds: rounds,
+    starting_loss: starting_loss,
+    final_loss: final_loss
+  }
+}
+
+fn tl_generate(model: TinyLanguageModel, prefix: Text, tokens: Number) -> Text {
+  if prefix.is_empty() { fail "generation needs a starting character" }
+  if not tl_tokens_valid(tokens) {
+    fail "generation length must be a whole number from 0 to 128"
+  }
+  let chars = prefix.chars()
+  var current = chars[chars.length() - 1]
+  var result = prefix
+  for i in 0 until tokens {
+    let next = tl_next(model, current)
+    result = result + next
+    current = next
+  }
+  return result
+}
+
+fn tl_run(input: TrainInput) -> ModelRun {
+  let model = tl_train(input.corpus, input.seed, input.rounds)
+  let generated = tl_generate(model, input.prefix, input.tokens)
+  return {model: model, generated: generated}
+}
+
+fn tl_parameter_count(model: TinyLanguageModel) -> Number {
+  var count = 0
+  for layer in model.net.layers {
+    for row in layer.weights { count += row.length() }
+    count += layer.biases.length()
+  }
+  return count
+}
+
+fn tl_gate_passes(starting_loss: Number, final_loss: Number, generated: Text, expected: Text) -> Bool {
+  return final_loss < starting_loss and generated == expected
+}
+
+fn tl_evaluate(run: ModelRun) -> ModelEvaluation {
+  let expected = "abababab"
+  let passed = tl_gate_passes(run.model.starting_loss, run.model.final_loss, run.generated, expected)
+  return {
+    gate: "training_loss_reduced_and_seeded_sample_matches",
+    passed: passed,
+    starting_loss: run.model.starting_loss,
+    final_loss: run.model.final_loss,
+    generated: run.generated,
+    expected_sample: expected,
+    parameter_count: tl_parameter_count(run.model),
+    note: "Toy repeated two-symbol sample; no held-out generalization claim."
+  }
+}
+
+fn tl_promote(run: ModelRun) -> ModelArtifact {
+  let evaluation = tl_evaluate(run)
+  if not evaluation.passed { fail "model artifact candidate failed the Kosika evaluation gate" }
+  return {
+    artifact_schema: "kosika.virtual_model_artifact/v1",
+    model: run.model,
+    evaluation: evaluation
+  }
+}
+
+
+fn tl_generate_result(input: SampleInput) -> SampleOutput {
+  return {generated: tl_generate(input.model, input.prefix, input.tokens)}
+}
+
+
+
+
+// Admission policy for this versioned TOY architecture, not a general model format.
+fn tl_validate_artifact(input: ModelArtifact) -> ModelArtifact {
+  if input.artifact_schema != "kosika.virtual_model_artifact/v1" { fail "unsupported artifact schema" }
+  let m = input.model
+  if m.schema != "kosika.demo.char-neural-model/v1" { fail "unsupported model schema" }
+  let width = m.alphabet.length()
+  if width < 2 or width > 32 or m.alphabet.unique().length() != width { fail "invalid alphabet" }
+  for symbol in m.alphabet {
+    if symbol.chars().length() != 1 { fail "alphabet entries must be single characters" }
+  }
+  if not tl_rounds_valid(m.rounds) or not m.seed.is_whole() or m.seed.abs() > 2147483647 { fail "invalid training configuration" }
+  if m.starting_loss < 0 or m.final_loss < 0 { fail "loss must be nonnegative" }
+  if m.net.layers.length() != 2 { fail "expected two network layers" }
+  var previous = width
+  for i in 0 until 2 {
+    let layer = m.net.layers[i]
+    let units = if i == 0 { 8 } else { width }
+    if layer.weights.length() != units or layer.biases.length() != units { fail "layer shape mismatch" }
+    for row in layer.weights {
+      if row.length() != previous { fail "weight row shape mismatch" }
+      for weight in row { if weight.abs() > 1000 { fail "weight exceeds numeric bound" } }
+    }
+    for bias in layer.biases { if bias.abs() > 1000 { fail "bias exceeds numeric bound" } }
+    previous = units
+  }
+  let e = input.evaluation
+  if e.gate != "training_loss_reduced_and_seeded_sample_matches" or not e.passed { fail "evaluation gate is not passed" }
+  if e.starting_loss != m.starting_loss or e.final_loss != m.final_loss { fail "evaluation losses disagree" }
+  if e.parameter_count != tl_parameter_count(m) { fail "parameter count disagrees" }
+  if e.expected_sample != "abababab" or not tl_gate_passes(m.starting_loss, m.final_loss, e.generated, e.expected_sample) { fail "evaluation evidence disagrees" }
+  if tl_generate(m, "a", 7) != e.generated { fail "saved weights do not reproduce evaluation sample" }
+  return input
+}
+
+record ArtifactSampleInput { artifact: ModelArtifact prefix: Text tokens: Number }
+
+fn tl_sample_artifact(input: ArtifactSampleInput) -> SampleOutput {
+  let checked = tl_validate_artifact(input.artifact)
+  if input.prefix.length() > 128 { fail "prefix exceeds 128 characters" }
+  return tl_generate_result({model: checked.model, prefix: input.prefix, tokens: input.tokens})
+}
+
+workflow validate_artifact(input: ModelArtifact) -> ModelArtifact {
+  result = tl_validate_artifact(input)
+}
+
+workflow infer_artifact(input: ArtifactSampleInput) -> SampleOutput {
+  result = tl_sample_artifact(input)
+}

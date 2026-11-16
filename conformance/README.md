@@ -51,8 +51,12 @@ it must be what Kosika should do, not merely what one engine happens to do.
 
 ## What the suite does not cover yet
 
-- An agent calling its tools, `verify`, `vote`, `escalate`, `with
-  evidence` and `parallel`. Memories, boards and swarms.
-- Vectors and matrices.
-- 27 passing programs, 10 failing ones and 79 refused ones are a beginning. A method or rule
+- Swarms.
+- Stores and tables: `store ... at ... { table ... }` and the database file
+  behind it.
+- A change that waits for an approval and then runs: `require approval` is
+  refused and checked by these programs, but none carries an approval
+  through to the tool that runs.
+- Vectors and matrices, and `std/nn.kos` beyond loading it.
+- 33 passing programs, 11 failing ones and 81 refused ones are a beginning. A method or rule
   that no case uses is not held to anything.

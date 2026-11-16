@@ -151,7 +151,7 @@ class ChoiceTests(unittest.TestCase):
             root = Path(directory)
             (root / "lib").mkdir()
             (root / "lib" / "types.kos").write_text(
-                'export [Filing]\nchoice Filing { filed(invoice: Text) pending }\n',
+                "export [Filing]\nchoice Filing { filed(invoice: Text) pending }\n",
                 encoding="utf-8",
             )
             (root / "main.kos").write_text(
@@ -165,7 +165,7 @@ class ChoiceTests(unittest.TestCase):
                 "record Ticket { filing: Filing }\n"
                 "workflow main(ticket: Ticket) -> Said {\n"
                 "  said = describe(ticket.filing)\n"
-                '  out = {text: said}\n'
+                "  out = {text: said}\n"
                 "}\n"
                 "record Said { text: Text }\n",
                 encoding="utf-8",

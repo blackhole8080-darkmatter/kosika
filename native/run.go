@@ -23,7 +23,7 @@ func runCommand(args []string) int {
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true, "--json": true}
 	var givenSites []string
-	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--approve-in": true, "--approve-wait": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--approve-in": true, "--standing": true, "--model-context": true, "--max-function-calls": true, "--approve-wait": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -63,6 +63,29 @@ func runCommand(args []string) int {
 	if err != nil || maxOutput < 1 {
 		fmt.Fprintln(os.Stderr, "--max-output-tokens must be a positive integer")
 		return 2
+	}
+	// A context window named here is asked for exactly; none named means the
+	// smallest tier that fits each request.
+	window := 0
+	if given := options["--model-context"]; given != "" {
+		size, err := strconv.Atoi(given)
+		if err != nil || size < 1 {
+			fmt.Fprintln(os.Stderr, "--model-context must be a positive whole number of tokens")
+			return 2
+		}
+		window = size
+	}
+	if window > 0 && protocol != "ollama" {
+		fmt.Fprintln(os.Stderr, "--model-context needs --model-protocol ollama: an OpenAI-shaped endpoint is given no way to be told a context window")
+		return 2
+	}
+	if given := options["--max-function-calls"]; given != "" {
+		calls, err := strconv.Atoi(given)
+		if err != nil || calls < 1 || calls > 1_000_000 {
+			fmt.Fprintln(os.Stderr, "max_function_calls must be an integer from 1 to 1000000")
+			return 2
+		}
+		maxFunctionCalls = calls
 	}
 	// The program is checked first, as the reference checks it, before
 	// anything it would reach is looked at.
@@ -126,12 +149,21 @@ func runCommand(args []string) int {
 		}
 		approvals = append(approvals, record)
 	}
+	var standing []standingRule
+	if file := options["--standing"]; file != "" {
+		rules, problem := readStanding(file)
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		standing = rules
+	}
 	journalPath, bindingID := options["--journal"], options["--binding-id"]
 	if options["--approve"] != "" && options["--approve-in"] != "" {
 		fmt.Fprintln(os.Stderr, "Workflow failed: Use --approve or --approve-in, not both")
 		return 2
 	}
-	if (options["--approve"] != "" || options["--approve-in"] != "") && journalPath == "" {
+	if (options["--approve"] != "" || options["--approve-in"] != "" || len(standing) > 0) && journalPath == "" {
 		// Approval needs a journal to remember what was approved between
 		// the pause and the resume; an asked-for run keeps one for itself.
 		scratch, err := os.MkdirTemp("", "kosika-approve-")
@@ -151,7 +183,7 @@ func runCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "Workflow failed: Use --journal with --binding-id; approvals also require a journal")
 		return 2
 	}
-	providers, problem := modelBindings(program, options, protocol, seconds, maxOutput)
+	providers, problem := modelBindings(program, options, protocol, seconds, maxOutput, window)
 	if env != nil {
 		providers, problem = env.bindings(program, maxOutput)
 	}
@@ -289,7 +321,7 @@ func runCommand(args []string) int {
 			}
 		}
 		running.traced = true
-		running.hash = programHash(read(path))
+		running.hash = running.checker.program.Identity
 		running.machine.tracing = newTracer(running.checker)
 		running.machine.tracing.events = &[]Value{}
 		running.session = session
@@ -342,12 +374,17 @@ func runCommand(args []string) int {
 		return result, "", ""
 	}
 	result, stopped, failure := attempt()
-	for pending != nil && (options["--approve"] != "" || options["--approve-in"] != "") {
-		var granted *approvalRecord
-		if folder := options["--approve-in"]; folder != "" {
-			granted = askInFolder(folder, pending, approveWait(options["--approve-wait"]))
-		} else {
-			granted = askApproval(pending, options["--approved-by"])
+	for pending != nil {
+		// A standing permission the person set once answers first; then
+		// the person, in a folder (--approve-in) or at the terminal
+		// (--approve).
+		granted := standingGrant(pending, standing)
+		if granted == nil {
+			if folder := options["--approve-in"]; folder != "" {
+				granted = askInFolder(folder, pending, approveWait(options["--approve-wait"]))
+			} else if options["--approve"] != "" {
+				granted = askApproval(pending, options["--approved-by"])
+			}
 		}
 		if granted == nil {
 			break
@@ -453,7 +490,7 @@ func fixtureBindings(path string) (map[string]modelProvider, string) {
 // the reference's --model, --model-url and --model-binding do. With
 // --model alone every declared model is answered by it; `--model
 // fast,strong=big` answers the one called strong with big.
-func modelBindings(program *Program, options map[string]string, protocol string, seconds float64, maxOutput int) (map[string]modelProvider, string) {
+func modelBindings(program *Program, options map[string]string, protocol string, seconds float64, maxOutput, window int) (map[string]modelProvider, string) {
 	providers := map[string]modelProvider{}
 	modelName, url, binding := options["--model"], options["--model-url"], options["--model-binding"]
 	if modelName == "" && url == "" && binding == "" {
@@ -511,7 +548,7 @@ func modelBindings(program *Program, options map[string]string, protocol string,
 		if real, ok := overrides[name]; ok {
 			answering = real
 		}
-		providers[name] = newHTTPProvider(url, answering, protocol, seconds, maxOutput)
+		providers[name] = newHTTPProvider(url, answering, protocol, seconds, maxOutput, window)
 	}
 	return providers, ""
 }

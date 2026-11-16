@@ -1,0 +1,662 @@
+{
+ "conformance/cases/agents.kos": [
+  "ce737be1be49d1fec842500cafde0a47d8ac9ea02ea558f9ec1666f4736a28f0",
+  "e63bdb8760b57f41efe12205703987a496d56e907eefa865c851737928e5da62"
+ ],
+ "conformance/cases/choice_modules.kos": [
+  "17dd28931701354d7084c39a28eaa7245360e81206c1e735c4537293499e52e3",
+  "b0dfa81dda6ae25cc2c3c2b338f335b1b3c0dfe3299a1cbdd5fc9a83fc46ff6a"
+ ],
+ "conformance/cases/choice_outputs.kos": [
+  "0694c294e1f85e8ee0105d3eac3f8492c8acc0ff4b9ce504375cc75d8d08c11e",
+  "128a0e1bf1ad5cc34bc5b0dbc4937d48fdc8ee28c8837bb53eb2a73e0bd41e98"
+ ],
+ "conformance/cases/choices.kos": [
+  "8f635f9a573e499d9270e062f42786cd2e167b915264181b0ba37681df17a465",
+  "649c226578d56f61da8a7f80f729eae62307880312c5129a73ea09a804adf3c1"
+ ],
+ "conformance/cases/clock.kos": [
+  "4425425d6546f3b783f4c098722e6f0a095f4a60fa897c704ed94f690cb04fae",
+  "36e4dcc9ec9efca84033fc65d07dcb30de7ac75152041024c9d9cd7d75d6fb07"
+ ],
+ "conformance/cases/defaults.kos": [
+  "ad36f9b98d6dedfc1e7bbc87d4f8609032d11c0602c0a7d7e43ccac31e7c7b75",
+  "35a9fca521a5ca91198f8bbfc5057b3da0962b886874a723a18e148886a2a7c7"
+ ],
+ "conformance/cases/enums.kos": [
+  "1a290075ccacd0551b77052a265882d6b5b8f878ece24f69ff38c7fe3e3662ac",
+  "5b01d5182fdbb812905bc5fa6d27d6c8617ceadb4b85b1fc88d857e59c804bb4"
+ ],
+ "conformance/cases/everyday.kos": [
+  "9d1e7fe1da0835efbfe54ea18e8f1b3b2a61845f64b744a3affbdebc5448a47d",
+  "2a526a2750c7a8406f96c60b114bc3755b284632deec0334d6719dadf84aef4a"
+ ],
+ "conformance/cases/evidence.kos": [
+  "bf61d30286995a784009c686cbf626c26449688f1abaefed34288684d1f76138",
+  "fa7f71755dcb4e9d6809203a3886cbb5e81c11de3d677b534f0dcf37e3a6c4de"
+ ],
+ "conformance/cases/learn.kos": [
+  "6833d3da68b5f2f47217d3d9df82bbf8b49e3c0d82638902c3b4ca1746cb55ae",
+  "9c87066c35946611cb48eac89c6f5c05e2b1ce712c98e63689601b25ad20c16b"
+ ],
+ "conformance/cases/lib/filings.kos": [
+  "2edc26647b1622f823c384df6a24acf250169af428eab6226e6312922f68515b",
+  "2509743bc964eb0e8a4aabc61b5bab24d293c4ac777be79f0c2a9ad2a4cc1cf6"
+ ],
+ "conformance/cases/lib/labels.kos": [
+  "2fc9c4a1bb3b0e02924ef645d82ab67e674a79c8b2984b59e40547a248387887",
+  "c5c849c73946abdb7fd2498528bac3e91ed5bd2b6d86450adf49b6f350ac33ec"
+ ],
+ "conformance/cases/lib/shapes.kos": [
+  "05e9f852053060f8dac0bc413d7f4b9a7051314e8c55a17658d2c78287bdcc5e",
+  "bdef1b7b63001e5320ec47559c4901c2aad846aab4729d4a36ec118ae97eefb0"
+ ],
+ "conformance/cases/lists.kos": [
+  "30dc179f71c612861f7af6669720adc26b3a3c24ab84380c9f4778454a456da5",
+  "98fb83675c6c9dc5514fe6abb060258cdd3fe184575b17a18f7761b99b4fe141"
+ ],
+ "conformance/cases/memories.kos": [
+  "be3896a298ac1d563a519028147504700e408e47a18e3aefee2c0f08fcfcd0d2",
+  "f2dd42e9258eb59eae77acb3b37fc7cde9b8a1fa59159293565e3f49197654cb"
+ ],
+ "conformance/cases/memory_like.kos": [
+  "7836f7f9cd22099a989d3731d33c6f929f8fd39c0fb0e9d4537947db9cd633c1",
+  "d23298ac1642e747a51a15d120c57afa66d8df908602fa510ee60f8508d4c91d"
+ ],
+ "conformance/cases/model_evidence.kos": [
+  "aea73feb2e29ad005acba27ad748cedb610ce583a17945e20833ea1bbc73b56a",
+  "a74111687ac790a6f082c96cc6f470e082f86ad08ec6483a6bc6b0ae9098f344"
+ ],
+ "conformance/cases/models.kos": [
+  "515f58c366ae12699720180dbe42f827d9e8da84beb3a2f120288ceb4a1c61b8",
+  "677867eadbdce9c956766fa35c21832872a9fbd37d7ee6e587ad3c11994b671c"
+ ],
+ "conformance/cases/modules.kos": [
+  "fc1410fc5a3b02c8436ddb17d1d47561ab8b8a3070d5ac93542c86664540c1f9",
+  "d6f92c81903663467e7d2e50df786510113ce993e98d3ebe3450d056a5dfd6db"
+ ],
+ "conformance/cases/numbers.kos": [
+  "3640a068c74245c08360b0cb743352ddae6b2ee97ceb3bc027861c817c89ace8",
+  "26d74b93c9399f120148beaf7be1f600195b6900dadacc382d9da904f0fd6ca8"
+ ],
+ "conformance/cases/parallel.kos": [
+  "6af68c91296f361b79ec19066d76cc7a81c34837f3be0c1e86d772afc4bba907",
+  "feb8869e4f8c8a9dce3cfbf45ea3f14df349c0a540578969a9a10769fa224b37"
+ ],
+ "conformance/cases/paths.kos": [
+  "b3a8c42c6b00d0eb18c1053e7809d74db20006dcb4e0165214b67f93b23dd9f1",
+  "15c0347a6c1bafb706ad76901af850831697c48d84e085a3a1f7c72494656d3c"
+ ],
+ "conformance/cases/plain.kos": [
+  "138dcd55589f8f55433b7a739fde82134182f18752faefacbf0bbeada28ee612",
+  "468658213efc0935eccebf2e907d124bc6f524ba9ab41d60e0bae653f874d77d"
+ ],
+ "conformance/cases/records.kos": [
+  "8da2190162cdcc830224c4b5812569d8de42348322b0f23233778387052a1fd5",
+  "530be07cb6e4c6139edb5ecef46d06e07d6f92c0cc014060b7146aba96258c86"
+ ],
+ "conformance/cases/shapes.kos": [
+  "ab79d3c7cacec84f077cb6cd3f828860f5bc7f1f83e7a801452da7f0416da0b8",
+  "14b0eae731e43781f1ffa4a707b92fb598e9dd50cc3edb9a1503b9e8af840948"
+ ],
+ "conformance/cases/std.kos": [
+  "cc5eb6aab26e92e8a608471f5760005f6198521c2f9adbe0d1f777979004695e",
+  "8e4ff80cadfdcdda02df9fd3e470c8bb0f6b0e45578353b4b4d8fdb3d3ae9468"
+ ],
+ "conformance/cases/std_nn.kos": [
+  "e591e3cbf4ed62ca03678ba0496d0cbc2c59dc206bf4f475711221ba96bead11",
+  "0f7f25dbe7b326c9134758be91438059e0233426d075f096ec8218b713c41f13"
+ ],
+ "conformance/cases/steps.kos": [
+  "1e20568c064264fc924212d779b849efe5b2b3828a32511cb0ebbce1af4dde64",
+  "6fe32c7bdfe9ab00f0bc150c1b61db256113b64c5fb857a611404b67a75fc667"
+ ],
+ "conformance/cases/text.kos": [
+  "9e65f51c5f6c70b7ea2e88991d55ef6ca12d04502300d70cb71665c6f5a00529",
+  "cbf3329c9ac61febc28a7c9b502216bf749794da0ab6581f2c9a531c7f8ac8b6"
+ ],
+ "conformance/cases/thinking.kos": [
+  "b20199ed151115feb406b33b25cbe79539b3d2ec3ce8c949035a55e074aaa1e7",
+  "83259fc4ae34a8837757083becf4767dcd5ae84a247be29d2435d39df0538efa"
+ ],
+ "conformance/cases/unions.kos": [
+  "fe6cb582bd52657ae90331c1cfaeac357786a6ccd9419635fd3114849f9e2609",
+  "20d866aed7f462905dbbe589cb1afe1499be92688b718d82686cedfa33d424b6"
+ ],
+ "conformance/cases/values.kos": [
+  "de1b9d811b26435dfc78e65e8f6368894ee2a2b8e849ab81d4e7e6a6001eca95",
+  "e4f873ed08aaf09bd99163cca005d716bb2d215e63695dd89227456a8c3b5d8c"
+ ],
+ "conformance/cases/values_call.kos": [
+  "c0f70f5d5c146a231131cd31cb70ba7463bf0fb9502ace02cb44cfdfe26a14b6",
+  "9bee5fca88cd5efad109cf7151819501ccbe05a88ae94f2f14cdb24d930d8cb1"
+ ],
+ "conformance/cases/verify.kos": [
+  "ecd788293c3093b306d46d5e1eebf71b43507136689f77b8a04e53715626111a",
+  "efe36d1c27192c44169b281fef236f0aa100863578bdcfec9e76c1e00c231af0"
+ ],
+ "conformance/cases/votes.kos": [
+  "7e33a9b7ea98efd5a4f8a4a643a6e89377f49b5d5c8b6b0c58f1e7f09c816723",
+  "bd1501787d7cc007940e5dc4b4ca04cd7698e1b39cc13bd2191642e59f2b7de3"
+ ],
+ "conformance/cases/workflows.kos": [
+  "ded8466c038a1f37aa7ec15195b12916218062a0d1c1bf04a9f8b3d48b0aed66",
+  "32704551f624efdd185508d4822823bc67e78fe9fda4af8e418a15e240a2f9f5"
+ ],
+ "conformance/failing/agents.kos": [
+  "ae039b98ed284b99e2744dcec6c94836343f8e846a5685c0a340fd2cdb0f8380",
+  "57acb4cecb832d74d0a9cf93b2467d14b08486d59f6500c25efc20d3574b8cee"
+ ],
+ "conformance/failing/everyday.kos": [
+  "b9f1da403cdca880cdcc340d30fe175519df502e4b0a22f37a3c0a69c5df97a8",
+  "01412e111e1fb21e080a47086bfffad4bddfa89c5823f69e365e087a2da399ab"
+ ],
+ "conformance/failing/evidence.kos": [
+  "efde49420e287aa9073d30926fa08e28f66f33d406ed0bd3ecebd404a8155829",
+  "a39f71fe7ebd0404aa4096eefab96d428343b7dc84e11c6685195435fd95e692"
+ ],
+ "conformance/failing/memory_key.kos": [
+  "c1e10911b73713027a7b43c046c281456caf7eb7e52a596c6d25c70f92269e4c",
+  "7ef5d398a7e456195b376185e7493e6a217dccbbe2c57827519f579decf871de"
+ ],
+ "conformance/failing/models.kos": [
+  "62ad67cc47946304dcbe834b74d6176df4ce26eb7b4a42bf7fc745e44fb8277d",
+  "d5aa8a3d3b09e8ff9e26ba05977dc0642fe842aea51c8fd7c759be1dd5dee56d"
+ ],
+ "conformance/failing/random_order.kos": [
+  "882b97ef2511d040452645d77e66b6af7c405039691bb8223173b3d5e9835a19",
+  "75759512269af9664c9bc4a695f6841e71aecdc60e49d19adc433939168d358d"
+ ],
+ "conformance/failing/std.kos": [
+  "979c23d4ede14fa642cbe76f4ece09167d53e29cd9d97a0678e77f7d3d751b23",
+  "5fe29684a0c94687a804f889be4f23e79265b5efcb70508b6530ba935919c31d"
+ ],
+ "conformance/failing/steps.kos": [
+  "6cba14dd67e70aedb7e9d5b3864e156d2f2a9117482184c2583c6ba40b47deab",
+  "701a1879271448fc8ba109fcf028f94f364fc82ed65ff14bea707c5261546ec1"
+ ],
+ "conformance/failing/thinking.kos": [
+  "344d5965baae0ec3c193f5c536bde648444ebc458d2128e63009c46eb5ed60fb",
+  "d13ceab4c865c6fb50265a73faefc048aece9acf79351799aaa58095914857b2"
+ ],
+ "conformance/failing/workflows.kos": [
+  "b89b80ce2494503718a45d1e25f09b2e98f35e11110111b80546dfdf0e5e38f3",
+  "ea12bda4b13f6c59b75aaf64df54be12aefa021f4c45aee547d68a0ec856efb7"
+ ],
+ "conformance/failing/wrong.kos": [
+  "fa7dd145473ead7a4c9c178330925e734a7e85f370a0b0c7da45389a0f675200",
+  "0bdac77a0793e5c6f9fb4b22aaf7b55eb9545bd0f1de45de031d658711e52f13"
+ ],
+ "conformance/refused/lib/clash.kos": [
+  "945617e25b0675c71aaab54ced135b0f9d45174186114a78a1f90ac4f492eb68",
+  "ce02665b82c31563a245322bb9eba612bb6a708d1c6e06c8cf61cc086ee0b11f"
+ ],
+ "examples/agent_factory.kos": [
+  "40d7ea1cf999006c1b23eb4d1071118e95138795f40c05ad9c7a4caa884ca7df",
+  "4d3222ddb41cd361a4d46e63ee63643e2999ee642846e18033a8dda8e4999279"
+ ],
+ "examples/agents/animator/main.kos": [
+  "98ba0b955535b4aa9a3d7f2ede439ccd56d6980e0816c99f2a4ed478aac566df",
+  "5b2157bc0d001a3b61b21d80edcaed57ef2f5cf3ca5951ea26c90ab4de3c3e63"
+ ],
+ "examples/agents/assistant/main.kos": [
+  "33db47a3c5d12010988f3d24552516612c4bc6da28d6ce2349b4b5b7c2e7671b",
+  "15f4b97eb8d4025e59deef1bf6c3608368cacde4c920a940ca4582ae9324b128"
+ ],
+ "examples/agents/author/main.kos": [
+  "9245ec7e17cbade764bfa567265e3c6f4a9c613c04e37ff0d4df49d42b78ef17",
+  "45291bde729b79281b241f04bcde0c6fee89c8853cb6a4a4004b46cc42ed3f9c"
+ ],
+ "examples/agents/builder/main.kos": [
+  "365ad2c3deae3bbfc9a34e48a20c817adf1878be93ac995db8ec5025fc66c707",
+  "a5cfb86a5a47f937ba722ed9e6f8cb5367f040f64a8c5a734739ad1abca7caca"
+ ],
+ "examples/agents/coach/main.kos": [
+  "607a7bde53fcee55377540298797a411a85ecf6c24ba9cc96544b179bedf7874",
+  "cc94c886203d7e5466c11159b75cef9c61ca9f1edbc66df8f8eb03dec4fff715"
+ ],
+ "examples/agents/coder/main.kos": [
+  "06c5d9c5de96f64e31ed4b7ab5650df58f64e4012947e76365955b48344dbca2",
+  "250c2bb5bf92f4da6928bb3df3c3a32d33b739efacac7acd326ade9a567adff9"
+ ],
+ "examples/agents/companion/main.kos": [
+  "03cc8cad0fa84b9afc44f9fc09013f345c2f4cf7553c276338a457309bc99163",
+  "f46fbf1cdfa47d23410ee9bfad57375a0d36063f55c2d41d8dbb0de4eb3c8a46"
+ ],
+ "examples/agents/crew/main.kos": [
+  "31c19e4996c04ce8a1cb88719fe3d3e13829e122118dc6e71a0887d0313a37a4",
+  "9eb514990cf8bc442d79b564f1753770b2e76cfd9be7cda4a6355d19506165fd"
+ ],
+ "examples/agents/designs/art.kos": [
+  "e300b1c38089829489f3871d178b09ef2a7626d16f5cb15394f638ec18616d49",
+  "a924d59a946a8464234638f0eca06d6fd2da646190b0671949d2858ea5874d3b"
+ ],
+ "examples/agents/designs/design.kos": [
+  "4bba11c41007c65cbab8a246e86e03de996d19d23d6d13cbf395ecc26160bc71",
+  "f851f2636bc408968291310bb2fb4229bd81782f615efcf32028e8df5b9552bc"
+ ],
+ "examples/agents/designs/draw.kos": [
+  "15c396bb6a782f3a4044b82be69ecfe15f9606539e0147ebd31eafb142ec864f",
+  "ccf1dc01c8024f890442dbb43965973e41332419d164aee9b964677de9a031ee"
+ ],
+ "examples/agents/designs/explain.kos": [
+  "448d820a1eaae10d4b487e8ab65529f83c6ea0bc60df7ea3d7088420a20cc3ad",
+  "a1a7a6ef4e8f359ad77801292a20ef3b149bd1eed2618946db69ac118103fade"
+ ],
+ "examples/agents/designs/generative.kos": [
+  "44bf09ee2442bc91af304ab4bb5df19a2ceb6161de177cc821803d76ed3da5e7",
+  "58fab6b1169a20c3033aec1da3efd91bad3ee08fb945b58aefeffd51e271e9fa"
+ ],
+ "examples/agents/designs/main.kos": [
+  "7039583179382e70a6d925d41d56730589af624dc0483687b75e29dc883490e6",
+  "bd32648bb20025df500ed021a543f5c7141bad7fa3c1b94048ad7abcabfb82d6"
+ ],
+ "examples/agents/designs/palette.kos": [
+  "946515766bd844378e60f90866147561ffe78961792db91ccdb1b645a1ef61e2",
+  "226cf6ae43a5edc79b877b326946d351b20bd7bcb24f88479083465987be298c"
+ ],
+ "examples/agents/designs/paper.kos": [
+  "c40e716007a17c5ea4b61e87047092667c80f8788e4e13f1bdd59e7f303f9d93",
+  "b0f940e70a3ec8c7a0294b2ed1c3046ae8bde57a140a3aa2621d0ff5c253cf8b"
+ ],
+ "examples/agents/designs/studio.kos": [
+  "0d1bedb7e789b03a315cd945f074520ea47a835e7d0c67adf012b442019f5b88",
+  "f46249837cd83f7c509d5e537be2e6c07081a320fbc6e4a6a2bc2d2a7b3a1c13"
+ ],
+ "examples/agents/designs/sunflower.kos": [
+  "d2f03a871a4464d81f836a32ad6ae5a41aedb993ebf9f65e731fc76077e6b547",
+  "a24330ffde5beeaf28c59eb202d98204e6989e222cabcba80902ee13f7c70b20"
+ ],
+ "examples/agents/desk/main.kos": [
+  "7a85798ab49ee558b443a8f6f6a41a1b635e8ee962cba6a5e7d0b8c20b03ec7e",
+  "c8c09948021aaa7293103ee78ab4ace6974dd01c473ac50e242d4c98866539ee"
+ ],
+ "examples/agents/digest/figures.kos": [
+  "d82635f02b2d2e2eb102b77920e889ef32ec6d4e3fb212da1648ba976522031b",
+  "8037e474e36049537cde97ecb20dc67898bd4c3283a89bf75900ba2622825d0f"
+ ],
+ "examples/agents/digest/main.kos": [
+  "0c4f47781e0db8fb8d35066941f63d62cd569e4432375a48d86083460e0cc11d",
+  "b8cb98768d44f66abde491f12daae4468ea383a327ffe0709ab0480a96e130fa"
+ ],
+ "examples/agents/digest/render.kos": [
+  "b8c27d903aacf09f1d5c60879a41e4894e9b9b195a53895fea7d590cc859fe90",
+  "5f0a21346918057da770c5e434a44f33a8157cbe679645939a597248d5d837ee"
+ ],
+ "examples/agents/doctor/main.kos": [
+  "ac0eb642233487530cb5936ccbe89e23c7e1ee2203d5158f2e09128ef837dca1",
+  "0d9db7770c86fbb85d89b0b8572edd9fce9378c209348a151d7bcb5c27e825d9"
+ ],
+ "examples/agents/gatherer/main.kos": [
+  "30fd2b4639ca2f6bacdc549b5a8dfad67299b9828dcf9e0ce4916d4ea874e6cb",
+  "5527cd5a0b05fb60b9e013e50ce350fd659c3d982cecf32770c7b056b7f10ba0"
+ ],
+ "examples/agents/ideas/main.kos": [
+  "1f17f17db4fc1dab4f07cfa34058d08a255b9587b9d60fad8c256c6d1bed88eb",
+  "27591a6fe1fb1c9c76a83571a014b2aa9fb17fc394945b6e8e6b159113e07a11"
+ ],
+ "examples/agents/keeper/note.kos": [
+  "2b32da56de54e280de42c84b9aa2b393f6bd6ea373947bd55d9dce47554be800",
+  "cb5b412ace67dc0d77939ac5c0550a645ec35ad94b1dc5dea98684f0b6af7de5"
+ ],
+ "examples/agents/kosi/facts.kos": [
+  "a08bf4e27d44ef07f1f52a377ce98ebc5e9a30099f272b0e0a1ddb250e492c48",
+  "b7094e5f253dc6f70d1971580c4b30e0a7af72c643e22b7f41c472c33bdcbb52"
+ ],
+ "examples/agents/kosi/friends.kos": [
+  "9d6f725f2fe98a13cdef9b19face5e333c790c888d48588782f242a7a10453c3",
+  "ad45aa107fdda376340584b05f0ec58ad54046185e9b0ef36bbc462ba7caeee0"
+ ],
+ "examples/agents/kosi/main.kos": [
+  "2e1e5e431683e744935d625b5aecb236e0c721ea6b956c3d1423b75a32ebc333",
+  "2dd8a21d4af4e0d73ed7f6c4b50ed3a1269b172c77d2a19ed42daa6b33e53ade"
+ ],
+ "examples/agents/kosi/thinking.kos": [
+  "cc73e4ad4749b7a2bca416ccced9f5bcf30737383b139d270c691e4c417c0640",
+  "4a0c115f5f1df243c56d363a2fdd637dff61d31877931b2c62973bcc1d97dcba"
+ ],
+ "examples/agents/kosi/worked.kos": [
+  "d5c91c74de0f49d1793cc5245f87f382c8ae70f7efc62e2c59fff2b640f6f617",
+  "2edb8fccf9293a7ba2668a26df95bfcdc66411364923ae2b9cfa867512d5f61f"
+ ],
+ "examples/agents/lookout/main.kos": [
+  "b0b9e157b2c79c97e5535f865baa9f61b83377e7fb73422af5a8d034b0ceba4b",
+  "a8ce9dc56281a856a631fcd529d4ccfece17fac7ea4a2f70024f7eaaf99695f3"
+ ],
+ "examples/agents/notebook/main.kos": [
+  "82cc132be500ef28e4bd83ad1b705a5c331f6a4baa6083e65beeff2548f43e03",
+  "9469858bf82003571daa2b0324bee588e550e070511254e64f2c2ac6b8caac0a"
+ ],
+ "examples/agents/osbuilder/main.kos": [
+  "35c2c6ecfe0e87ecebc83bd1c2f75c48afe8ed17fd844c63a43802959907b8e3",
+  "8a66d780bba42be2c36722083b56d8029acc90a63b41fbdec965d2288066e723"
+ ],
+ "examples/agents/planner/main.kos": [
+  "82eb98843074ba8f3ac4476332bb9bc57a73441fcd93cb5e70db3fdf18868404",
+  "2ebaa56c7f716ee9af66fa5090dcb8e1b1ceeff5250e912993fdc2fe8812185e"
+ ],
+ "examples/agents/research/main.kos": [
+  "89a819d865435bb929bcc7edea02a51bd9afda8e933d1c4c41fb05be3095e636",
+  "bcce8eb45d2be0fa72aa815a6b6af5117cfdc777eb8390ba9c4d567caee2decb"
+ ],
+ "examples/agents/researcher/main.kos": [
+  "c345c213699f17a26a236ca61fae12c340e22bda23528aad7627a6216dd363ca",
+  "61035f327856f4e2f85c1a8144407822bc455cc1798de37e0385aeac831dbbec"
+ ],
+ "examples/agents/router/main.kos": [
+  "863465518f0f03f1bb9f1a07eba1f3c739de5f2147d3a49a78fc54895161a10e",
+  "048fbfc785a68cb3384fac2a84791552e65ccb95994abe63785a218b0284e391"
+ ],
+ "examples/agents/scout/main.kos": [
+  "f9049b9d6b556d1578758e5d130fafb780b96e6266fa8c2673005b6dbfaa5404",
+  "57322ae204f9d58bd0cb002d2b9e8cbb55626798dae87ab4bf503869ac746ff6"
+ ],
+ "examples/agents/steward/main.kos": [
+  "d8101b8b95f3b4804a3ddf7a646a5f93b3b6f99bfb026046ea1d8eda4e6ca759",
+  "c8eed502f2e01be91e80851aff62c15cac296600db856d30141bd8b3070ff7e4"
+ ],
+ "examples/agents/study/main.kos": [
+  "64aa3cb40c874b95bb4f28ea5870521940e47125ac4579646e522f9d095082f1",
+  "334a9bcf020fc8d6c6d2060cc54227fc8af3ed04005b2124a2c2c97e9cd67279"
+ ],
+ "examples/agents/workbench/main.kos": [
+  "dabfd84391688315f6151a5e407c67fe13a46d474606d1338647bba1cbddd593",
+  "e604d09faf7d1cc63ad4d76e45d5434baf40013ac614df5ef9c8421c99849382"
+ ],
+ "examples/approval_mutation.kos": [
+  "ad6c598e90d70e20c8f8293801fcddbdc15943f873933f2c29e7b331a5cd5e64",
+  "5fe6e057865fc6b50f0994fe5c5edf45661fc34d4ceb2ea16b423c6da78ec70f"
+ ],
+ "examples/apps/chat/chat.kos": [
+  "ad4e170584f857ec65adecd1ac501604c192d6db0417af31ac03ca9a12a5a922",
+  "4e958f664d42994312d803d961c36f58c4e69697e2126c79bf2d70f3a0966174"
+ ],
+ "examples/apps/chat/chat_service.kos": [
+  "81e36687a0a0afb18e730ab7907716784192c2df5ed3c597dabef83b45af6435",
+  "7932584c08fbc98c0758fe7cfa9b3d24bab490b431731634ca247e0ad5bd9f98"
+ ],
+ "examples/choices.kos": [
+  "2674152d0e3590628072e840419b1e7f78cbb8ec6f3493b6f8cfacd04f62e982",
+  "c2a700e6a84181a13141c88c932aaf2bcc9b2cf44e820c901cf4aa0d27f30d2c"
+ ],
+ "examples/city/ai.kos": [
+  "73301dc7e7202a99f753c659e653cc4aa0012a6cf2461f2e52af98676f1004d6",
+  "fd0dd5f8faa2d01494f37f13f8f2942102a587d8bf9fe7ab159a463b87f71c61"
+ ],
+ "examples/city/code.kos": [
+  "3e1bc2bdfa7b1484717a17d9d0f12642f8c0f140eb4a33ab1a38db763f8bdca3",
+  "9e0db283a812aff3ab1b9b11e95e5bd0109017441c2f1d4fd97444cfe1619828"
+ ],
+ "examples/city/education.kos": [
+  "bff2b2260027bcbf0d41174863fde5e0318443b1284c677676470b0aab292189",
+  "e2d99b4e93b3242751fc8dfaa4b8047d5c3033a9a49c38fc5df5f24354ffdbb8"
+ ],
+ "examples/city/history.kos": [
+  "d2d2e8c3e4442123495f24b00bb5238ffa5499ebae3ad9df8f49aee8fdf6b2e1",
+  "4ea59d35e059ad714b5840def7836d0fd94469eb5a80d4a22d46969e7f6e720f"
+ ],
+ "examples/city/research.kos": [
+  "9af9a7d902339f3b5c03c91c689e0de97f6721819b0f36dd5acc4a91d169de71",
+  "491b530e11edf33b25052b859bd091b2e74b5ffeace340f926fc68d4069971cf"
+ ],
+ "examples/city/science.kos": [
+  "6cf62a61d4791b76e3ef9e62fd94c6a64c9db7da4b33a42722eea74b510f582c",
+  "9284e594bd608a92ea16ec4f51a17da0d6ad2fdb13516d40be6423beec5a6de8"
+ ],
+ "examples/closures.kos": [
+  "75f557ca15f6b2b6bc89bc7b0bbd85b8b25a17f3c27326673973087eb977c73c",
+  "4a5e7c0806dfea3adef9127d6bba0add0ca9c80ad3a5a269bf3a81bf21a2632b"
+ ],
+ "examples/component_uppercase.kos": [
+  "cbbf95fda6c0fb9216995f108a5de43c1b98383850cecc91a29d893ff9f6e593",
+  "1dcb635a9621448264468798fed306b405b4259eb33708bb07df3caaa97f2857"
+ ],
+ "examples/component_uppercase_python.kos": [
+  "19f9dabfd7aaee78893f339d25024b766fd440f424a8bc17b21d171734fd5f16",
+  "fff11678d2396ce3dc79afc92a14958e41930c2eb6641bae74dbe2ec7c83f0b3"
+ ],
+ "examples/composed/main.kos": [
+  "e7101f642afee0602778d0811444dfc5fef4075b0948a15a52b8a9cb0712ce8e",
+  "58aa3d31ea6f4a80d117215425a378e245191be9ba59ea7b8663751597c6b15a"
+ ],
+ "examples/composed/research.kos": [
+  "d2d61616e3313f0d4425ade81be6099623e056d189884a6ad14fd766e3c7b067",
+  "98c75963d58cc4790512c08895c8d7778f62725f2f0329b42d6e56a646917c43"
+ ],
+ "examples/composed/types.kos": [
+  "2e0fb1d6c53fc6490134e8434bb895f8e2b4112dcd0a23c1b5cc8695e556efae",
+  "cc817d31a1897d3ad60131cf3bad7cd30cf079e688d5db2c63a346a7223676f2"
+ ],
+ "examples/debate/main.kos": [
+  "41e548ea4e25393887faf623b688947180d276cb689d52045bb5fbe112efd33f",
+  "25f3f9da46421e6d85e2e23a270af12ee4ca1cf1116bcd83c10a919f02427a9a"
+ ],
+ "examples/discrete_maths.kos": [
+  "8321ee84711a12867351c2c9f20cab8041cc50c49799c0b6a9b842617d72ff6f",
+  "d88071af8ea955468a6750d5cc233b993dc2185d41f514b2d3790ee37cae5996"
+ ],
+ "examples/document_assistant.kos": [
+  "1e30c6f2439d23a9d39fc95a0e33f05153ca74c70362c2a3b0e811f8e79389fa",
+  "b94bde8b18166c766e62ca1ba6a257ca30219bb5f20e30fe0bfa8ae7977738a1"
+ ],
+ "examples/hello_world.kos": [
+  "ae9afb302f21535e48edbb33f1d6406adfb9ca719bcb3e039dd98189509af6f7",
+  "f2755df280ceca4570aa5079a14ac8cca78e36c74309f270ae2c3164bd385668"
+ ],
+ "examples/langflow/agent.kos": [
+  "67fc883c4b32b4da6e10a6c09e3300cad74567949dd0e3ecd11f668b7261e60e",
+  "9683651195708238357f724e62210252cc0e78862acf8621186e802303976019"
+ ],
+ "examples/langflow/brief.kos": [
+  "20b10f39789dfe94a9d08914ec8c3880075dc0a6f052c85ce84556c347e9d273",
+  "ff7d79b75b8a425625f226a2a9460e6dbbf83b3f4f0e7cffbd7fd483dc62c5bb"
+ ],
+ "examples/langflow/main.kos": [
+  "93522ec5a802080dab2b0c85c8f6a4c3004f208c64def6fb6ffb98b7a64e08f4",
+  "afd1996709283ff4ea88325640ea0c9bb2d904a748faef034dbdc7dc1172b98f"
+ ],
+ "examples/local_bindings.kos": [
+  "c1738f0fd004f2cb23a321ddace953c513a299d2041e249dacc107f34bdadfa1",
+  "517c8117957bc6ab797e5ae73b69b69816f3dd0634bf7aa4b16c2d49e3e8cf30"
+ ],
+ "examples/maya_city.kos": [
+  "82834a264ffd4bb9b3f519a54377dae643241df747f78fcad14ab573d39eef2d",
+  "c35ae449d7f638e20851380105a626afcf6d319a2521f36add32ef2205a84e0b"
+ ],
+ "examples/mcp/librarian.kos": [
+  "a775531e25c50bcfb7226c58f0149b3118f424b583307c4d1b8a529cec6a226c",
+  "7e3d60883fa7e4ede9bb9f114c3bf099022e438967001eba5532a1e4b732d214"
+ ],
+ "examples/mcp/studio_helper.kos": [
+  "b3cf44410eee6f5f94f206495f899c86e3c2ff252f76d41bb1848daa4b6cbe6d",
+  "53bf44c17fa9ac972401e11ddf6c652a7d96eca669a39d32b162cc8c70b1a965"
+ ],
+ "examples/model_answer.kos": [
+  "4f0aa4c6898434e487f650972d63e1b3d86253201f34ffefc4b9c5c34ed9bb97",
+  "9f5493c203c6cd7b4a8ca4804538e19f41d4530317f39632a1db36666693892c"
+ ],
+ "examples/motion/logo.kos": [
+  "f34d73a25f896b4711efeaabcb50b6d988ee20a36a74ed6d5ccd2d0c51428705",
+  "1e154fc804fa4085c1897b04b12334ac22af0ebb098317ebbd9e1d267f6fb4d8"
+ ],
+ "examples/nested_functions.kos": [
+  "1c2979d9deac627231eb340f8438170f8302e2f4551ef9c1c690accd76c063ea",
+  "6bce86b605eff26bea4fd1a4f972e194fa2144cfe80689ecb45f9313e71e8305"
+ ],
+ "examples/pure_function.kos": [
+  "df93f3549dc13750a552dbaad2a96a53ae79d3884c831d44889e5cf8022f8792",
+  "a610d584ba790a0d9b265e35ac594ae9eb798ff77c1d7ec911960eab4da00b93"
+ ],
+ "examples/recursion_match.kos": [
+  "de871d232e74551d5d8ecbe8f2797be2bca1af407d4ece9b8201c058e22353ca",
+  "7a25e0798abcc2f80c9a71114c1a57ae1f508974ad39ef89009259fc5ef93025"
+ ],
+ "examples/research_agent.kos": [
+  "7a4c2a76b730776927022a93a6936d2d35e7c1fae4d8c5e984ada28033553c4c",
+  "b4a8635d3bfa76513b7d1adb85470888a2f022737a26186ff6ecb3b8eece3610"
+ ],
+ "examples/research_analyst/main.kos": [
+  "1c9d896edb525271d42fef8d379e3f88f01a51ffd6e56b3419b4161d149e6210",
+  "2dbfc273e77430aab36c2809293f1acc7d9ffaec6e6f6931be2f16c15c07d014"
+ ],
+ "examples/research_assistant.kos": [
+  "d31f6d82e5fd68d9d73249290b107d3e2cf4b7e203908a7a542cd5034e2f9837",
+  "0131e6aa90a3398814140e11a5a7c54e7aa1f9bffe3fecfeeff42ed679f6cff0"
+ ],
+ "examples/self_improve/context.kos": [
+  "70f357a91de0c26f6e04830cc9184b4525b0056005246a2000ec520721d9d97f",
+  "28c1aa68cc123f3f23088b8c41e05a0659115203078a06870f6b1e62b4890e09"
+ ],
+ "examples/self_improve/develop.kos": [
+  "524307b51638fd30873086cd444b6136e490792fe672d5178bf0e749772266d6",
+  "95a75a6db8366f302308848396842743e05aa337fc1c968198474a2c5db42b38"
+ ],
+ "examples/self_improve/mind.kos": [
+  "1fa6421c0bb989386458b58b8d495bbb5c5dc82d83c8fbb4446ecd6fcf8c17a5",
+  "58f39ec0f66e8a05e6664dcfcebf050babb3ce375f75fd436a1607ff5fee6bd9"
+ ],
+ "examples/self_improve/team.kos": [
+  "f7cd890566f4a4dfd765bd7ff70ebce5de2cf55bc28d5d959da224923c1d2715",
+  "f288fa5f6fa0eef9d286d5e5023165991d55d56b3d483029ec1171fe4ade6246"
+ ],
+ "examples/self_improve/team_support.kos": [
+  "80400498775c4c54bf3bb4dc80358e1fd0032ac4d4a0d6b8007cb811ab2339c0",
+  "1bf0465e3ff578a2c2e3ae8b4b3502e5ce32b41d760dc11748794736b422a150"
+ ],
+ "examples/structured_values.kos": [
+  "28c12a0be3ab171951a990e5b807e8a496449f85035af320be2cf871de43ad03",
+  "ab390f951a0dfd3ce47afd067e1afc357a75994a0d4295ae37ff5819215517d7"
+ ],
+ "examples/studios/main.kos": [
+  "6c61ab3c565c15b0078cd565a1874650d889dec9e7f831839e6229ad79df5a86",
+  "58abacd0fb94a0c0158dd50754a07dcec59ce699a6910712d604f21ce6e8710d"
+ ],
+ "examples/swarm_review.kos": [
+  "8f01f7073aca881455fbdb7c9d7d3e6fecc626684f9146a991f83f44689e1fe6",
+  "e61bac838f848147ca9b601b9bdcf973b3ff436ff40f3984124442f0bc825b25"
+ ],
+ "examples/test_host.kos": [
+  "6f68512f62f5ff982240b8d2eb9f8362c302d86bec06e8198d10c8e5b2221f61",
+  "227298e06f184943f886c3a073c9803f0937075b151c6ea60ff9b12a9a53fefd"
+ ],
+ "examples/test_host_live.kos": [
+  "74b4928e6a84ac185e5077231b7e3e80116f9362a17943f283bdf3f1480acfbc",
+  "e4441789b3f346aa23ba2315f8a8574ae671e93e47b366e839b876857f8191df"
+ ],
+ "examples/typed_input.kos": [
+  "2f1c7ca83564ac55289529c973e757dd380d25f1cd7a82df9208a7479765ee43",
+  "afe99c8b288a03c7f9c1fef400d7152fbb2947946d8ca9b61f657210b9f94466"
+ ],
+ "examples/typed_input_output.kos": [
+  "dd2d09937fbe9fff40c87e3f5ffedc2b0a01db01c03e2ec607e767ad0acd5093",
+  "5f4eb145bc984f885512099e9c485ed305a872b63a1c957c919eaab07fa3b8e4"
+ ],
+ "kosika/std/algorithms.kos": [
+  "b67f3ee39e9661011eddd954f4d3811889bf8961c6b127d286f3a4d58a968b3a",
+  "90faf9066efa59ae6552cc11415b3a87ae9329927e60c9ce0d3c6fac4ba875ca"
+ ],
+ "kosika/std/brain.kos": [
+  "e672de9fc5c8883868f4c2bbdad2007adc1453aedcf190c75a0fd7b14b356b8e",
+  "7050f96f8d0a072983ff6b1c978e01191538e0b6f3390a7a6883a9c920ac5166"
+ ],
+ "kosika/std/db.kos": [
+  "cd701d18bd7e12df3ae33f9ea186d1d1c9456cb6a2f9f8b3a38382e2189b4656",
+  "af93a0f00396ff5ea431ad8b88be131ce05721dba9f244bb7009a60c31dc303c"
+ ],
+ "kosika/std/designs.kos": [
+  "1ce28524548a8499e8dd9cedc5195bcbb11266f6601b286db5e84fa2b9711ae6",
+  "5795618c2c12ff8333ede0283249994a620c56a01ddfcf3212cb2d3cc2d64593"
+ ],
+ "kosika/std/designs_anim.kos": [
+  "000ce9d30546c4a39b6900881affeba427bf47391743ff970e875aabcffb16b2",
+  "0090172930589910c657370a718f92e149ffcfe7646cb39ef1338999df5c697a"
+ ],
+ "kosika/std/designs_art.kos": [
+  "0a118aa413191f92b4704ffc7faafae5586ee99a787a30aeac77fbad673ee9a6",
+  "7cfae860182c1b0ef84361b9fb436eea1ed3cd70a4c34b6a6626d0ff85817cc4"
+ ],
+ "kosika/std/designs_draw.kos": [
+  "ab7ba0908feffb4a0e54a70d653b7b217c1f98ad9876a5e1650d89d6fed765ee",
+  "baa4a8e56cf1111f0c1d2c09e1dd27e6ade4aa3cc2e9f84c7e7de1fd03987889"
+ ],
+ "kosika/std/designs_forms.kos": [
+  "db9e957d5402aeebe4e2f5852ed2693fba77a796030df453c0ee9b66bccbb222",
+  "a92fc08f226f274c16e134479a29090df2ae17bf69d75be1daab1a181fe5705f"
+ ],
+ "kosika/std/designs_generative.kos": [
+  "2011aff60923f1095b065ad6811fa8df0487e55ed2b76791a6721ad92b732fea",
+  "e13d342addd10b0da9c5287257750fa51a61f1b61d6d028da772cccc7b792c5e"
+ ],
+ "kosika/std/designs_main.kos": [
+  "e26b908724814630d276defff03e681b3abb6659bc1d23e26a2b1a8fc086fc7b",
+  "d134cd37bed8b26cfad84f8102ee65c93e72a7bd7429bba5cb23ae76a45eb182"
+ ],
+ "kosika/std/designs_palette.kos": [
+  "b85569bd040f99b1aca35b0b6a5d26f33e4f76bc0892f5a2d1d8c22bace21309",
+  "b80a07904bd00135062938fac133c5df8b909e1b6fda513fb4f720e0c59e2950"
+ ],
+ "kosika/std/designs_paper.kos": [
+  "dda3ed52cab0c1c5a3f7a48cb3e04d07ff51d55f0f0f422dd41a5340e06cd46c",
+  "8349cc232b3a14708b8172845cece1139717c59942c5989f30943178a0eeb11e"
+ ],
+ "kosika/std/designs_quiz.kos": [
+  "4e2b05bb0141d7ea8bf0da5d8f9261d8dc0f2539d75530b5b7fea5c40b6ecb6a",
+  "94ce69d87879b105389c01060ad1e9353644d351717da02d44b4fb388f36cfe1"
+ ],
+ "kosika/std/designs_scene.kos": [
+  "3252b9e70a63f84925991ebae80007c5fcb65543694a1243563bc907f0a9f6c4",
+  "ecac23a54cd1186c26a837aa1247034c19e043be2e5d91085d8fb018aacc1a12"
+ ],
+ "kosika/std/designs_swarm.kos": [
+  "e162d966d1686825b6ef5c7634a5841149bcc26b86c9ba72e9f6dedd0ce258cd",
+  "3b9f124470df84bad8c7cebdc317a6057b602984e5e537240b607aca6f67e3d4"
+ ],
+ "kosika/std/evidence.kos": [
+  "3d86cd25fed8dfce518f2508bc9e7e0b87db7d305c7d5637b48ae4bef5c3ed92",
+  "414b631e0a040f9f3f536a376ed05d54b0cee54f282de6f0c281e67e8491f6d4"
+ ],
+ "kosika/std/math.kos": [
+  "6135c3a48e09c7d656e5b6f62662cf9dfdb58bef62d857e8ea738826919ead4b",
+  "49f94af1115c1ec5e1383beff3c491e262d282b032a5f6679e132b71eaace7f8"
+ ],
+ "kosika/std/nn.kos": [
+  "f7a9cbfb0cfeb4dcb9261c238a617416487c3569f9c894889f5bcc65cfe81973",
+  "63b8e6bd0e38aa2159ec7fc216575d0c37aa99485f14dc0cf404dd5819f75b6d"
+ ],
+ "kosika/std/paths.kos": [
+  "86d2bd2ac73b8a21f98f3a416e1dca4b2a08722aaad67f941ee7181a4c59a32b",
+  "feae6ed316ec28bad5523d4e5ea97e55ca27f84149a6d953523e5b7c8526fb83"
+ ],
+ "kosika/std/scene.kos": [
+  "40e500bf5dba16a0675aa13bf99ea1ea105a70d99b862405107b8428f335d045",
+  "de96133e51664a4954c265bfd00f723f6bab903f526e276f61201a8762e116f1"
+ ],
+ "kosika/std/science_chem.kos": [
+  "16b71efd90f375f6d7995b410b4912699e50a5440b1c496cba14f5a0e1af0017",
+  "8b67356872f88dd0655b42a574920392cf28036b90c33716dac8da5c608e80d8"
+ ],
+ "kosika/std/science_elements.kos": [
+  "463c74bccfe39205df1a096710dde8b4b5ee8607d6911d7f85d5f3646a9034c0",
+  "26d5a8857a68f5c85e747bcb3d5970caf7e1dd6b8b7572323e1754f0fe9ee465"
+ ],
+ "kosika/std/science_molecules.kos": [
+  "c7ca5a220add42b16d3dde981d2f5cf12d0490b254999d4e409671852754349c",
+  "901e60b6afc1e727d04ce4a58259a0e0e51c74f000eaf50be09458994c21dd06"
+ ],
+ "kosika/std/science_units.kos": [
+  "52bcac23733fd0d297a8f3f509622ca00ad54d487e8985f1b509dc70294631d3",
+  "365f2d3ac00f2d5acdce85e7da11888e8f956a7422c0eb1d6a7b6090ddfa0bed"
+ ],
+ "kosika/std/search.kos": [
+  "64c544d8292c208e277fdf11e5ae0c0520ea35d479b86e7ac7f29ab219739542",
+  "82264886237168ef4da0785d636e5c78d33b58d048efa3c0e759f41a2c7a3a02"
+ ],
+ "kosika/std/stats.kos": [
+  "10f1cd4f2fe505afde858a9a9d7a8809e65d18ab1a3fb99f4a4ba4ccfb27b6cc",
+  "8ee8b95135320a3718345c2c5c496886de0d8df945cf6bd8239cf8543af80561"
+ ],
+ "kosika/std/text.kos": [
+  "879bd0160a86f0e3ea7d7c54e9d8688db8e990eb6c9d2f948a65f9089e8b01e5",
+  "33c1b39df0717a5a94c979dc63b0e25879ddc518496689ccbd8064ec7c355981"
+ ]
+}

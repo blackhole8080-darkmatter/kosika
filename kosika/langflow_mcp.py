@@ -90,7 +90,9 @@ def endpoint_for(base_url: str, project: str) -> str:
     """The Streamable HTTP endpoint of one project's MCP server."""
 
     base = base_url.rstrip("/")
-    return f"{base}/api/v1/mcp/project/{urllib.parse.quote(project, safe='')}/streamable"
+    return (
+        f"{base}/api/v1/mcp/project/{urllib.parse.quote(project, safe='')}/streamable"
+    )
 
 
 def _get_token(base_url: str, timeout: float) -> str:
@@ -106,10 +108,14 @@ def _get_token(base_url: str, timeout: float) -> str:
             f"Langflow answered {exc.code} for {url}; set LANGFLOW_API_KEY"
         ) from exc
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        raise LangflowMCPError(f"Langflow did not give an auto-login session: {exc}") from exc
+        raise LangflowMCPError(
+            f"Langflow did not give an auto-login session: {exc}"
+        ) from exc
     token = payload.get("access_token") if isinstance(payload, dict) else None
     if not isinstance(token, str) or not token:
-        raise LangflowMCPError("Langflow did not give an auto-login session; set LANGFLOW_API_KEY")
+        raise LangflowMCPError(
+            "Langflow did not give an auto-login session; set LANGFLOW_API_KEY"
+        )
     return token
 
 
@@ -128,7 +134,9 @@ def event_messages(body: str) -> list[Any]:
         try:
             payload = json.loads(stripped)
         except ValueError as exc:
-            raise LangflowMCPError(f"Langflow answered with something other than JSON: {exc}") from exc
+            raise LangflowMCPError(
+                f"Langflow answered with something other than JSON: {exc}"
+            ) from exc
         return payload if isinstance(payload, list) else [payload]
     messages: list[Any] = []
     data: list[str] = []
@@ -153,7 +161,9 @@ def _json_or_error(text: str) -> Any:
     try:
         return json.loads(text)
     except ValueError as exc:
-        raise LangflowMCPError(f"Langflow sent a message that is not JSON: {exc}") from exc
+        raise LangflowMCPError(
+            f"Langflow sent a message that is not JSON: {exc}"
+        ) from exc
 
 
 class LangflowToolServer:
@@ -195,8 +205,12 @@ class LangflowToolServer:
     def post(self, message: dict[str, Any]) -> dict[str, Any] | None:
         """Send one JSON-RPC message and return its reply, if it has one."""
 
-        body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        request = urllib.request.Request(self.url, data=body, headers=self._headers(), method="POST")
+        body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        request = urllib.request.Request(
+            self.url, data=body, headers=self._headers(), method="POST"
+        )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 session = response.headers.get("Mcp-Session-Id")
@@ -210,7 +224,9 @@ class LangflowToolServer:
                 f"Langflow answered {exc.code} for {self.url}: {detail}"
             ) from exc
         except urllib.error.URLError as exc:
-            raise LangflowMCPError(f"Cannot reach Langflow at {self.url}: {exc.reason}") from exc
+            raise LangflowMCPError(
+                f"Cannot reach Langflow at {self.url}: {exc.reason}"
+            ) from exc
         except TimeoutError as exc:
             raise LangflowMCPError(
                 f"Langflow did not answer {self.url} within {self.timeout:g} seconds"
@@ -222,14 +238,20 @@ class LangflowToolServer:
         for reply in messages:
             if isinstance(reply, dict) and reply.get("id") == wanted:
                 return reply
-        if len(messages) == 1 and isinstance(messages[0], dict) and "id" not in messages[0]:
+        if (
+            len(messages) == 1
+            and isinstance(messages[0], dict)
+            and "id" not in messages[0]
+        ):
             return messages[0]
         raise LangflowMCPError(
             f"Langflow did not answer request {wanted!r} ({content_type.split(';')[0]})"
         )
 
 
-def handle(message: dict[str, Any], server: LangflowToolServer) -> dict[str, Any] | None:
+def handle(
+    message: dict[str, Any], server: LangflowToolServer
+) -> dict[str, Any] | None:
     """One JSON-RPC message in, one reply out, or none for a notification."""
 
     method = message.get("method")
@@ -259,15 +281,17 @@ def handle(message: dict[str, Any], server: LangflowToolServer) -> dict[str, Any
         error = reply.get("error")
         code = error.get("code") if isinstance(error, dict) else None
         data = error.get("message") if isinstance(error, dict) else error
-        return _error(
-            identifier, code if isinstance(code, int) else -32603, str(data)
-        )
+        return _error(identifier, code if isinstance(code, int) else -32603, str(data))
     result = reply.get("result")
     if method == "tools/call" and isinstance(result, dict):
         result = one_answer(result)
         if server.schemas == "kosika":
             result = kosika_answer(result)
-    if method == "tools/list" and server.schemas == "kosika" and isinstance(result, dict):
+    if (
+        method == "tools/list"
+        and server.schemas == "kosika"
+        and isinstance(result, dict)
+    ):
         result = kosika_tools(result)
     return {"jsonrpc": "2.0", "id": identifier, "result": result}
 
@@ -341,7 +365,9 @@ def one_answer(result: dict[str, Any]) -> dict[str, Any]:
     content = result.get("content")
     if not isinstance(content, list) or len(content) < 2:
         return result
-    if any(not isinstance(item, dict) or item.get("type") != "text" for item in content):
+    if any(
+        not isinstance(item, dict) or item.get("type") != "text" for item in content
+    ):
         return result
     texts = [item.get("text") for item in content]
     if any(not isinstance(text, str) for text in texts):
@@ -384,7 +410,9 @@ def serve(
         reply = handle(message, server)
         if reply is None:
             continue
-        stdout.write(json.dumps(reply, ensure_ascii=False, separators=(",", ":")) + "\n")
+        stdout.write(
+            json.dumps(reply, ensure_ascii=False, separators=(",", ":")) + "\n"
+        )
         stdout.flush()
     return 0
 

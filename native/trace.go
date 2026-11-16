@@ -141,11 +141,11 @@ func writeTrace(path string, events []Value) error {
 	return os.Rename(temporary, path)
 }
 
-// programHash names the program a trace was made from. It is a hash of
-// the program's text, not the reference's hash of its tree; a trace only
-// needs it to say that a workflow it called is of the same program.
-func programHash(source string) string {
-	sum := sha256.Sum256([]byte("kosika-native\x00" + source))
+// nativeDigest names something only this engine makes, such as an agent's
+// plan. A program is not one of those: its identity is of its sources, so
+// both engines name it the same way (identity.go).
+func nativeDigest(text string) string {
+	sum := sha256.Sum256([]byte("kosika-native\x00" + text))
 	return hex.EncodeToString(sum[:])
 }
 

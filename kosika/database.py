@@ -358,14 +358,10 @@ def check_stores(
 def store_for(program: Program, path: Path, folder: Path) -> StoreDecl:
     """The one store a program declares for this file."""
 
-    matching = [
-        store for store in program.stores if store_file(store, folder) == path
-    ]
+    matching = [store for store in program.stores if store_file(store, folder) == path]
     if matching:
         return matching[0]
-    declared = ", ".join(
-        f"{store.name} ({store.file})" for store in program.stores
-    )
+    declared = ", ".join(f"{store.name} ({store.file})" for store in program.stores)
     raise DatabaseError(
         f"the program declares no store for {path.name!r}"
         + (f"; its stores name: {declared}" if declared else "; it declares no store")
@@ -529,8 +525,7 @@ def create_statement(table: TableDecl) -> str:
     """The statement that makes one declared table, with plain columns."""
 
     columns = ", ".join(
-        f'"{column.name}" {AFFINITY_OF[column.type_name]}'
-        for column in table.columns
+        f'"{column.name}" {AFFINITY_OF[column.type_name]}' for column in table.columns
     )
     return f'create table "{table.name}" ({columns})'
 

@@ -20,6 +20,9 @@ from .ast import (
     ColumnDecl,
     ConditionalExpr,
     ContinueExpr,
+    DeclList,
+    DeclMap,
+    DeclRef,
     EnumDecl,
     Expression,
     FailExpr,
@@ -92,6 +95,7 @@ _AFTER_A_CALL = frozenset(
     {"verify", "vote", "retry", "escalate", "learn", "otherwise", "}"}
 )
 
+
 def _is_value_call(call: object) -> bool:
     return isinstance(call, FunctionCall) and call.function_name == VALUE_CALL
 
@@ -99,7 +103,18 @@ def _is_value_call(call: object) -> bool:
 #: Words that begin a workflow step. Written where a value is expected, they
 #: are reported as such; see `parse_primary_expression`.
 _STEP_WORDS = frozenset(
-    {"classify", "extract", "summarize", "decide", "use_model", "ask", "execute", "recall", "remember", "call"}
+    {
+        "classify",
+        "extract",
+        "summarize",
+        "decide",
+        "use_model",
+        "ask",
+        "execute",
+        "recall",
+        "remember",
+        "call",
+    }
 )
 
 
@@ -161,7 +176,9 @@ class Parser:
                     depth += 1
                 elif token.value in ("]", ")"):
                     depth -= 1
-                elif token.value == "=" and depth == 0 and token.kind in {"SYMBOL", "OP"}:
+                elif (
+                    token.value == "=" and depth == 0 and token.kind in {"SYMBOL", "OP"}
+                ):
                     return True
                 elif token.line != following.line or token.value in ("{", "}"):
                     return False
@@ -375,9 +392,7 @@ class Parser:
                         self.expect("{")
                         value = self.expression()
                         self.expect("}")
-                        arms.append(
-                            MatchArm(None, value, token.value, tuple(bindings))
-                        )
+                        arms.append(MatchArm(None, value, token.value, tuple(bindings)))
                         continue
                     else:
                         raise ParseError(
@@ -522,7 +537,11 @@ class Parser:
                 value = LiteralExpr(token.value)
             elif token.kind == "NUMBER":
                 self.advance()
-                number = float(token.value) if any(ch in token.value for ch in ".eE") else int(token.value)
+                number = (
+                    float(token.value)
+                    if any(ch in token.value for ch in ".eE")
+                    else int(token.value)
+                )
                 value = LiteralExpr(number)
             elif token.kind == "IDENT":
                 self.advance()
@@ -710,10 +729,7 @@ class Parser:
             fields.append((name, self.expression()))
             if self.accept("}"):
                 return RecordExpr(tuple(fields), base)
-            if (
-                self.current.kind in ("IDENT", "STRING")
-                and self.peek().value == ":"
-            ):
+            if self.current.kind in ("IDENT", "STRING") and self.peek().value == ":":
                 # `{title: t field: f}`: fields need no comma between them,
                 # as in a record's declaration.
                 continue
@@ -844,6 +860,7 @@ class Parser:
         parameters = ModelParameters()
         seen: set[str] = set()
         plain = False
+        config: list[tuple[str, Any]] = []
         while not self.accept("}"):
             key = self.identifier()
             if key in seen:
@@ -852,6 +869,10 @@ class Parser:
             if key == "parameters":
                 self.expect(":")
                 parameters = self.parse_model_parameters()
+                continue
+            if key in self.MODEL_CONFIG_KEYS:
+                self.expect(":")
+                config.append((key, self.parse_declaration_value()))
                 continue
             if key not in {"input", "output", "deployment"}:
                 raise ParseError(f"Invalid model field {key!r}")
@@ -870,7 +891,13 @@ class Parser:
         if set(values) != {"input", "output"}:
             raise ParseError(f"Model {name!r} requires input and output records")
         return ModelDecl(
-            name, values["input"], values["output"], deployment, parameters, plain=plain
+            name,
+            values["input"],
+            values["output"],
+            deployment,
+            parameters,
+            plain=plain,
+            config=tuple(config),
         )
 
     def parse_model_parameters(self) -> ModelParameters:
@@ -926,6 +953,81 @@ class Parser:
             frequency_penalty,
             presence_penalty,
             stop,
+        )
+
+    #: The model-body keys that take a declaration value rather than a record
+    #: name or a typed parameter block. Slice 1 parses and types these; what
+    #: they mean is settled later.
+    MODEL_CONFIG_KEYS = frozenset(
+        {"base", "embed", "sources", "limits", "cache", "fallback"}
+    )
+
+    def parse_declaration_value(self, depth: int = 0) -> Any:
+        """One value of a declaration body.
+
+        Text, a whole or decimal number, `on`/`off`, `none`, a bare identifier
+        (a reference), a list, or a map — the last two nesting arbitrarily.
+        Nothing here is typed: a decimal in a whole-number field is refused by
+        the checker, so that the suite can hold it as a refusal.
+        """
+
+        if depth >= 32:
+            raise ParseError("Declaration value nesting exceeds 32")
+        if self.check("["):
+            self.advance()
+            items: list[Any] = []
+            if not self.check("]"):
+                while True:
+                    items.append(self.parse_declaration_value(depth + 1))
+                    if not self.accept(","):
+                        break
+            self.expect("]")
+            return DeclList(tuple(items))
+        if self.check("{"):
+            self.advance()
+            entries: list[tuple[str, Any]] = []
+            seen: set[str] = set()
+            if not self.check("}"):
+                while True:
+                    key = self.identifier()
+                    if key in seen:
+                        raise ParseError(f"Invalid or duplicate model field {key!r}")
+                    seen.add(key)
+                    self.expect(":")
+                    entries.append((key, self.parse_declaration_value(depth + 1)))
+                    if not self.accept(","):
+                        break
+            self.expect("}")
+            return DeclMap(tuple(entries))
+        token = self.current
+        if token.kind == "STRING":
+            self.advance()
+            return token.value
+        if token.kind == "NUMBER":
+            self.advance()
+            return int(token.value) if token.value.isdigit() else float(token.value)
+        if token.kind == "IDENT":
+            self.advance()
+            if token.value == "on":
+                return True
+            if token.value == "off":
+                return False
+            if token.value == "none":
+                return None
+            return DeclRef(token.value)
+        if token.value == "-":
+            self.advance()
+            number = self.current
+            if number.kind != "NUMBER":
+                raise ParseError(
+                    f"Expected number at {number.line}:{number.column}, "
+                    f"got {number.value!r}"
+                )
+            self.advance()
+            value = int(number.value) if number.value.isdigit() else float(number.value)
+            return -value
+        raise ParseError(
+            f"Expected value at {token.line}:{token.column}, got {token.value!r}"
         )
 
     def parse_string_list(self) -> tuple[str, ...]:
@@ -1255,6 +1357,9 @@ class Parser:
                         raise ParseError(
                             f"Unexpected workflow item {token.value!r} at "
                             f"{token.line}:{token.column}"
+                            "; a workflow step is one line `name = <one call>`,"
+                            " and the last step's value is the result, so put"
+                            " logic in a fn"
                         )
                     steps.append(replace(self.parse_short_step(), group=groups))
             elif self.accept("require"):
@@ -1265,7 +1370,10 @@ class Parser:
             else:
                 token = self.current
                 raise ParseError(
-                    f"Unexpected workflow item {token.value!r} at {token.line}:{token.column}"
+                    f"Unexpected workflow item {token.value!r} at "
+                    f"{token.line}:{token.column}"
+                    "; a workflow step is one line `name = <one call>`, and"
+                    " the last step's value is the result, so put logic in a fn"
                 )
         return WorkflowDecl(
             name,
@@ -1316,15 +1424,11 @@ class Parser:
                     while True:
                         field_name = self.identifier()
                         self.expect(":")
-                        fields.append(
-                            ChoiceField(field_name, self.parse_type_name())
-                        )
+                        fields.append(ChoiceField(field_name, self.parse_type_name()))
                         if self.accept(")"):
                             break
                         self.expect(",")
-            alternatives.append(
-                ChoiceAlternative(alternative_name, tuple(fields))
-            )
+            alternatives.append(ChoiceAlternative(alternative_name, tuple(fields)))
             self.accept(",")
         return ChoiceDecl(name, tuple(alternatives))
 
@@ -1351,7 +1455,9 @@ class Parser:
                 if not self.check(")"):
                     self.expect(",")
             self.expect("->")
-            methods.append(ShapeMethod(method, tuple(parameters), self.parse_type_name()))
+            methods.append(
+                ShapeMethod(method, tuple(parameters), self.parse_type_name())
+            )
         return ShapeDecl(name, tuple(methods))
 
     def parse_default(self) -> Expression | None:
@@ -1524,7 +1630,7 @@ class Parser:
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
-        learns, learn_by = self.parse_learn()
+        learns, learn_by, learn_near = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         return Step(
             name,
@@ -1539,6 +1645,7 @@ class Parser:
             escalate=escalate,
             learns=learns,
             learn_by=learn_by,
+            learn_near=learn_near,
         )
 
     def parse_match_step(self, name: str) -> Step | None:
@@ -1573,9 +1680,7 @@ class Parser:
                     pattern = token.value
                 elif token.kind == "NUMBER":
                     pattern = (
-                        float(token.value)
-                        if "." in token.value
-                        else int(token.value)
+                        float(token.value) if "." in token.value else int(token.value)
                     )
                 elif token.kind == "IDENT" and token.value in ("true", "false"):
                     pattern = token.value == "true"
@@ -1635,14 +1740,21 @@ class Parser:
         self.index = start
         return FunctionCall(VALUE_CALL, (("value", self.expression()),))
 
-    def parse_learn(self) -> tuple[bool, Expression | None]:
-        """An optional `learn` or `learn by EXPRESSION` after a step's call.
-        `learn` followed by `=` or `:` is the name of the next step."""
+    def parse_learn(self) -> tuple[bool, Expression | None, bool]:
+        """An optional `learn`, `learn near`, or `learn near by EXPRESSION`
+        after a step's call. `learn` followed by `=` or `:` is the name of
+        the next step."""
 
         if not self.check("learn") or self.peek().value in ("=", ":"):
-            return False, None
+            return False, None, False
         self.advance()
-        return True, (self.expression() if self.accept("by") else None)
+        learned = self.tokens[self.index - 1]
+        # `near` is the modifier only when it is written on the same line:
+        # a step named `near` on the next line is a step, not a modifier.
+        near = self.check("near") and self.current.line == learned.line
+        if near:
+            self.advance()
+        return True, (self.expression() if self.accept("by") else None), near
 
     def parse_step_count(self, word: str) -> int:
         """Parse an optional `vote N` or `retry N` after a step's call."""
@@ -1670,9 +1782,17 @@ class Parser:
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
-        learns, learn_by = self.parse_learn()
+        learns, learn_by, learn_near = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
-        self.expect("return")
+        if not self.check("return"):
+            token = self.current
+            raise ParseError(
+                f"Expected 'return' at {token.line}:{token.column}, "
+                f"got {token.value!r}"
+                "; a step block is one call followed by `return <name>`, so"
+                " put any other statement in a fn"
+            )
+        self.advance()
         return_name = self.identifier()
         self.expect("}")
         return Step(
@@ -1688,6 +1808,7 @@ class Parser:
             escalate=escalate,
             learns=learns,
             learn_by=learn_by,
+            learn_near=learn_near,
         )
 
     def parse_think_call(self) -> ThinkCall:
@@ -1819,13 +1940,29 @@ class Parser:
         elif self.accept("use_model"):
             model_name = self.identifier()
             self.expect("(")
-            call = ModelCall(model_name, self.parse_arguments())
+            arguments = self.parse_arguments()
+            evidence = None
+            if self.check("with") and self.peek().value == "evidence":
+                # `with evidence`: the answer must quote the text it was given.
+                # Lowered to a generated model; see kosika.model_evidence.
+                self.advance()
+                self.advance()
+                evidence = "input"
+            call = ModelCall(model_name, arguments, evidence)
         elif self.current.kind == "IDENT" and self.current.value != "execute":
             function_name = self.identifier()
             self.expect("(")
             call = FunctionCall(function_name, self.parse_arguments())
         else:
-            self.expect("execute")
+            if not self.check("execute"):
+                token = self.current
+                raise ParseError(
+                    f"Expected 'execute' at {token.line}:{token.column}, "
+                    f"got {token.value!r}"
+                    "; a step's body must be one call, so work a plain value"
+                    " out in a fn and call that"
+                )
+            self.advance()
             agent_name = self.identifier()
             self.expect(".")
             tool_name = self.identifier()
@@ -1853,10 +1990,13 @@ def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
         from .board import lower_board
         from .direct import lower_direct
         from .memory import lower_memory
+        from .model_evidence import lower_model_evidence
 
         return lower_sugar(
             lower_thinking(
-                lower_board(lower_memory(lower_direct(lower_ambient(program))))
+                lower_model_evidence(
+                    lower_board(lower_memory(lower_direct(lower_ambient(program))))
+                )
             )
         )
     except ValueError as exc:

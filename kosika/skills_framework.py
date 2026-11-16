@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 class SkillKind(Enum):
     """Types of skills."""
+
     TOOL = "tool"  # External tool or capability
     ALGORITHM = "algorithm"  # Algorithmic procedure
     KNOWLEDGE = "knowledge"  # Knowledge retrieval
@@ -34,6 +35,7 @@ class SkillKind(Enum):
 
 class SkillStatus(Enum):
     """Skill lifecycle status."""
+
     DRAFT = "draft"
     TESTING = "testing"
     VALIDATED = "validated"
@@ -43,6 +45,7 @@ class SkillStatus(Enum):
 @dataclass
 class SkillParameter:
     """A parameter for a skill."""
+
     name: str
     type: str  # Text, Number, Bool, record type, etc.
     required: bool = True
@@ -54,6 +57,7 @@ class SkillParameter:
 @dataclass
 class SkillOutput:
     """The output of a skill."""
+
     type: str
     description: str = ""
     examples: List[Any] = field(default_factory=list)
@@ -62,6 +66,7 @@ class SkillOutput:
 @dataclass
 class SkillExample:
     """An example of skill usage."""
+
     input: Dict[str, Any]
     output: Any
     description: str = ""
@@ -70,6 +75,7 @@ class SkillExample:
 @dataclass
 class Skill:
     """A reusable agent skill."""
+
     id: str
     name: str
     kind: SkillKind
@@ -100,11 +106,15 @@ class Skill:
                 value = input_data[param.name]
                 # Type check
                 if not self._check_type(value, param.type):
-                    errors.append(f"Parameter {param.name} has wrong type: expected {param.type}")
+                    errors.append(
+                        f"Parameter {param.name} has wrong type: expected {param.type}"
+                    )
 
                 # Constraint checks
                 for constraint_name, constraint_value in param.constraints.items():
-                    if not self._check_constraint(value, constraint_name, constraint_value):
+                    if not self._check_constraint(
+                        value, constraint_name, constraint_value
+                    ):
                         errors.append(
                             f"Parameter {param.name} violates constraint {constraint_name}"
                         )
@@ -125,7 +135,9 @@ class Skill:
         expected = type_map.get(expected_type)
         return True if expected is None else isinstance(value, expected)
 
-    def _check_constraint(self, value: Any, constraint: str, constraint_value: Any) -> bool:
+    def _check_constraint(
+        self, value: Any, constraint: str, constraint_value: Any
+    ) -> bool:
         """Check if value satisfies a constraint."""
         if constraint == "min" and isinstance(value, (int, float)):
             return value >= constraint_value
@@ -137,6 +149,7 @@ class Skill:
             return len(value) <= constraint_value
         if constraint == "pattern" and isinstance(value, str):
             import re
+
             return bool(re.match(constraint_value, value))
         if constraint == "enum":
             return value in constraint_value
@@ -284,7 +297,9 @@ class SkillRegistry:
         # Create a copy with overrides
         skill_data = template.to_dict()
         skill_data.update(overrides)
-        skill_data["id"] = overrides.get("id", f"{template_id}_{datetime.now().timestamp()}")
+        skill_data["id"] = overrides.get(
+            "id", f"{template_id}_{datetime.now().timestamp()}"
+        )
 
         return Skill.from_dict(skill_data)
 
@@ -325,7 +340,12 @@ def _initialize_builtin_templates():
         kind=SkillKind.TOOL,
         description="Template for creating tool skills",
         parameters=[
-            SkillParameter(name="input", type="Text", required=True, description="Input to the tool"),
+            SkillParameter(
+                name="input",
+                type="Text",
+                required=True,
+                description="Input to the tool",
+            ),
         ],
         output=SkillOutput(type="Text", description="Tool output"),
     )
@@ -338,8 +358,15 @@ def _initialize_builtin_templates():
         kind=SkillKind.ALGORITHM,
         description="Template for creating algorithmic skills",
         parameters=[
-            SkillParameter(name="data", type="Text[]", required=True, description="Input data"),
-            SkillParameter(name="config", type="Text{}", required=False, description="Configuration"),
+            SkillParameter(
+                name="data", type="Text[]", required=True, description="Input data"
+            ),
+            SkillParameter(
+                name="config",
+                type="Text{}",
+                required=False,
+                description="Configuration",
+            ),
         ],
         output=SkillOutput(type="Text", description="Algorithm result"),
     )
@@ -352,8 +379,15 @@ def _initialize_builtin_templates():
         kind=SkillKind.KNOWLEDGE,
         description="Template for creating knowledge retrieval skills",
         parameters=[
-            SkillParameter(name="query", type="Text", required=True, description="Knowledge query"),
-            SkillParameter(name="context", type="Text", required=False, description="Additional context"),
+            SkillParameter(
+                name="query", type="Text", required=True, description="Knowledge query"
+            ),
+            SkillParameter(
+                name="context",
+                type="Text",
+                required=False,
+                description="Additional context",
+            ),
         ],
         output=SkillOutput(type="Text[]", description="Retrieved knowledge items"),
     )

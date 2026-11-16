@@ -24,7 +24,10 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "input_value": {"type": "string", "description": "Message to be passed as input."},
+                "input_value": {
+                    "type": "string",
+                    "description": "Message to be passed as input.",
+                },
                 "session_id": {"type": "string", "description": "Optional session."},
             },
             "required": [],
@@ -41,8 +44,7 @@ def sse(message: dict[str, Any]) -> bytes:
     """What Langflow writes: a keep-alive comment, then one event."""
 
     return (
-        ": ping - now\r\n\r\n"
-        f"event: message\r\ndata: {json.dumps(message)}\r\n\r\n"
+        f": ping - now\r\n\r\nevent: message\r\ndata: {json.dumps(message)}\r\n\r\n"
     ).encode("utf-8")
 
 
@@ -76,9 +78,17 @@ class StubLangflowMCP:
                     return
                 method = message.get("method")
                 if stub.error is not None:
-                    reply: dict[str, Any] = {"jsonrpc": "2.0", "id": message["id"], "error": stub.error}
+                    reply: dict[str, Any] = {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "error": stub.error,
+                    }
                 elif method == "tools/list":
-                    reply = {"jsonrpc": "2.0", "id": message["id"], "result": {"tools": TOOLS}}
+                    reply = {
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "result": {"tools": TOOLS},
+                    }
                 elif method == "tools/call":
                     # The answer comes twice: as the message, and as its text.
                     reply = {
@@ -99,7 +109,10 @@ class StubLangflowMCP:
                         "result": {
                             "protocolVersion": "2025-06-18",
                             "capabilities": {"tools": {}},
-                            "serverInfo": {"name": "langflow-mcp-project-" + PROJECT, "version": "1.30.0"},
+                            "serverInfo": {
+                                "name": "langflow-mcp-project-" + PROJECT,
+                                "version": "1.30.0",
+                            },
                         },
                     }
                 body = sse(reply)
@@ -129,7 +142,9 @@ class StubLangflowMCP:
         return langflow_mcp.endpoint_for(self.url, PROJECT)
 
 
-def ask(server: langflow_mcp.LangflowToolServer, *messages: dict[str, Any]) -> list[dict[str, Any]]:
+def ask(
+    server: langflow_mcp.LangflowToolServer, *messages: dict[str, Any]
+) -> list[dict[str, Any]]:
     """Run messages through the bridge and read the replies it wrote."""
 
     stdin = io.StringIO("".join(json.dumps(message) + "\n" for message in messages))
@@ -139,7 +154,9 @@ def ask(server: langflow_mcp.LangflowToolServer, *messages: dict[str, Any]) -> l
     return [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
 
 
-def request(identifier: int, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+def request(
+    identifier: int, method: str, params: dict[str, Any] | None = None
+) -> dict[str, Any]:
     message: dict[str, Any] = {"jsonrpc": "2.0", "id": identifier, "method": method}
     if params is not None:
         message["params"] = params
@@ -149,7 +166,9 @@ def request(identifier: int, method: str, params: dict[str, Any] | None = None) 
 class EventMessageTests(unittest.TestCase):
     def test_a_keep_alive_comment_is_not_a_message(self) -> None:
         self.assertEqual(
-            langflow_mcp.event_messages(": ping\r\n\r\nevent: message\r\ndata: {\"id\": 1}\r\n\r\n"),
+            langflow_mcp.event_messages(
+                ': ping\r\n\r\nevent: message\r\ndata: {"id": 1}\r\n\r\n'
+            ),
             [{"id": 1}],
         )
 
@@ -185,15 +204,21 @@ class ToolListTests(unittest.TestCase):
 
     def test_langflows_own_schemas_are_relayed_when_asked_for(self) -> None:
         with StubLangflowMCP() as stub:
-            server = langflow_mcp.LangflowToolServer(stub.endpoint(), api_key="k", schemas="langflow")
+            server = langflow_mcp.LangflowToolServer(
+                stub.endpoint(), api_key="k", schemas="langflow"
+            )
             (reply,) = ask(server, request(2, "tools/list", {}))
-        self.assertEqual(reply["result"]["tools"][0]["inputSchema"], TOOLS[0]["inputSchema"])
+        self.assertEqual(
+            reply["result"]["tools"][0]["inputSchema"], TOOLS[0]["inputSchema"]
+        )
 
     def test_the_project_route_is_the_one_called(self) -> None:
         with StubLangflowMCP() as stub:
             server = langflow_mcp.LangflowToolServer(stub.endpoint(), api_key="k")
             ask(server, request(2, "tools/list", {}))
-        self.assertEqual(stub.requests[-1][0], f"/api/v1/mcp/project/{PROJECT}/streamable")
+        self.assertEqual(
+            stub.requests[-1][0], f"/api/v1/mcp/project/{PROJECT}/streamable"
+        )
 
     def test_the_key_is_sent_as_x_api_key(self) -> None:
         with StubLangflowMCP() as stub:
@@ -208,7 +233,11 @@ class ToolCallTests(unittest.TestCase):
             server = langflow_mcp.LangflowToolServer(stub.endpoint(), api_key="k")
             (reply,) = ask(
                 server,
-                request(3, "tools/call", {"name": "kosika_brief", "arguments": {"input_value": "x"}}),
+                request(
+                    3,
+                    "tools/call",
+                    {"name": "kosika_brief", "arguments": {"input_value": "x"}},
+                ),
             )
         self.assertEqual(reply["result"]["structuredContent"], {"text": ANSWER})
         self.assertEqual(reply["result"]["content"], [{"type": "text", "text": ANSWER}])
@@ -218,7 +247,11 @@ class ToolCallTests(unittest.TestCase):
             server = langflow_mcp.LangflowToolServer(stub.endpoint(), api_key="k")
             ask(
                 server,
-                request(3, "tools/call", {"name": "kosika_brief", "arguments": {"input_value": "x"}}),
+                request(
+                    3,
+                    "tools/call",
+                    {"name": "kosika_brief", "arguments": {"input_value": "x"}},
+                ),
             )
         self.assertEqual(
             stub.requests[-1][2]["params"],
@@ -232,7 +265,10 @@ class ToolCallTests(unittest.TestCase):
                 {"type": "text", "text": "two"},
             ]
         }
-        self.assertEqual(langflow_mcp.kosika_answer(result)["structuredContent"], {"text": "one\ntwo"})
+        self.assertEqual(
+            langflow_mcp.kosika_answer(result)["structuredContent"],
+            {"text": "one\ntwo"},
+        )
 
     def test_an_error_answer_is_left_alone(self) -> None:
         result = {"content": [{"type": "text", "text": "bad"}], "isError": True}
@@ -251,14 +287,19 @@ class SessionAndAuthTests(unittest.TestCase):
             server = langflow_mcp.LangflowToolServer(stub.endpoint(), api_key=None)
             ask(server, request(2, "tools/list", {}))
         self.assertEqual(stub.requests[0][0], "/api/v1/auto_login")
-        self.assertEqual(stub.requests[-1][1].get("authorization"), "Bearer session-token")
+        self.assertEqual(
+            stub.requests[-1][1].get("authorization"), "Bearer session-token"
+        )
 
 
 class ReplyTests(unittest.TestCase):
     def test_a_notification_gets_no_reply(self) -> None:
         with StubLangflowMCP() as stub:
             server = langflow_mcp.LangflowToolServer(stub.endpoint(), api_key="k")
-            self.assertEqual(ask(server, {"jsonrpc": "2.0", "method": "notifications/initialized"}), [])
+            self.assertEqual(
+                ask(server, {"jsonrpc": "2.0", "method": "notifications/initialized"}),
+                [],
+            )
         self.assertEqual(stub.requests[-1][2]["method"], "notifications/initialized")
 
     def test_a_method_the_bridge_does_not_offer_is_refused(self) -> None:
@@ -277,11 +318,15 @@ class ReplyTests(unittest.TestCase):
     def test_an_error_from_langflow_keeps_its_code(self) -> None:
         with StubLangflowMCP(error={"code": -32602, "message": "Unknown tool"}) as stub:
             server = langflow_mcp.LangflowToolServer(stub.endpoint(), api_key="k")
-            (reply,) = ask(server, request(3, "tools/call", {"name": "nope", "arguments": {}}))
+            (reply,) = ask(
+                server, request(3, "tools/call", {"name": "nope", "arguments": {}})
+            )
         self.assertEqual(reply["error"], {"code": -32602, "message": "Unknown tool"})
 
     def test_langflow_being_unreachable_is_reported(self) -> None:
-        server = langflow_mcp.LangflowToolServer("http://127.0.0.1:9/api/v1/mcp/project/x/streamable", api_key="k")
+        server = langflow_mcp.LangflowToolServer(
+            "http://127.0.0.1:9/api/v1/mcp/project/x/streamable", api_key="k"
+        )
         (reply,) = ask(server, request(6, "tools/list", {}))
         self.assertEqual(reply["error"]["code"], -32603)
         self.assertIn("Cannot reach Langflow", reply["error"]["message"])
@@ -296,7 +341,9 @@ class ReplyTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def run_main(self, arguments: list[str], stdin: str, environment: dict[str, str]) -> tuple[int, str, str]:
+    def run_main(
+        self, arguments: list[str], stdin: str, environment: dict[str, str]
+    ) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
         with patch.object(sys, "stdin", io.StringIO(stdin)):
             with patch.dict("os.environ", environment):

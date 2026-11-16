@@ -1,0 +1,172 @@
+// The hard test's results, drawn by Kosika Designs on the Kosika canvas.
+//
+//   kosika run board.kos --input scores.json
+//
+// Three stages, each played step by step through Designs' own drawing:
+//   1. how the small brain answers one question, part by part;
+//   2. the three ways of running Kosi, side by side;
+//   3. every area of the test, on a mind map, with what each way scored.
+// The scores come in from the test's own results (made by hard.py), so
+// nothing here is typed in by hand.
+
+import "std/designs.kos"
+import "std/designs_draw.kos"
+
+record Area { name: Text cloud: Number small: Number alone: Number total: Number }
+record Scores { cloud: Number small: Number first: Number total: Number reasoning_small: Number reasoning_alone: Number reasoning_cloud: Number reasoning_total: Number small_seconds: Number areas: Area[] }
+record Board { page: Text }
+
+fn bo_none() -> Picture { return {title: "", author: "", license: "", license_url: "", page_url: "", image: ""} }
+
+fn bo_request(ask: Text, s: Structure) -> Request { return {ask: ask, structure: s, picture: bo_none(), palette: "dark_matter", photos: [], backdrop: ""} }
+
+fn bo_scene(caption: Text, parts: Text[], from: Text, to: Text, known: Text[]) -> DzScene { return {caption: caption, shows: [], from: from, to: to, label: "", known: known, parts: parts, runs: []} }
+
+// ---------------------------------------------------------------- 1. how it answers
+
+fn bo_flow() -> Structure {
+  let parts: Part[] = [
+    {id: "ask", label: "You ask", note: "how many r's in strawberry?", parent: ""},
+    {id: "worked", label: "Kosika works it out", note: "counts: s-t-r-a-w-b-e-r-r-y = 3", parent: ""},
+    {id: "facts", label: "Checked facts", note: "Wikipedia, kept in memory", parent: ""},
+    {id: "memory", label: "Kosi's memory", note: "what you told it, by meaning", parent: ""},
+    {id: "model", label: "Small model, CPU", note: "qwen3 1.7B writes the words", parent: ""},
+    {id: "check", label: "Kosika checks", note: "is the exact answer there?", parent: ""},
+    {id: "speak", label: "Kosi speaks", note: "in George's voice", parent: ""}
+  ]
+  let links: Link[] = [
+    {from: "ask", to: "worked", label: "first"},
+    {from: "worked", to: "facts", label: "names?"},
+    {from: "facts", to: "memory", label: "with"},
+    {from: "memory", to: "model", label: "short brief"},
+    {from: "model", to: "check", label: "reply"},
+    {from: "check", to: "speak", label: "right"}
+  ]
+  let steps: Step[] = [
+    {text: "Kosika reads the question, does the exact part itself and checks what it names.", parts: ["ask", "worked", "facts"]},
+    {text: "The small model gets a short brief and writes the reply.", parts: ["memory", "model"]},
+    {text: "Kosika checks the reply before Kosi says it.", parts: ["check", "speak"]}
+  ]
+  return {title: "How the small brain answers", summary: "Kosika does the exact work; the small model only finds the words.", shape: "flow", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: [], aspects: []}
+}
+
+fn bo_flow_scenes() -> DzScene[] {
+  return [
+    bo_scene("You ask: how many times does r appear in strawberry? A model reads words in pieces and often says two.", ["ask"], "", "", ["ask"]),
+    bo_scene("Kosika works it out first, in Kosika: it spells s-t-r-a-w-b-e-r-r-y and counts 3.", ["worked"], "ask", "worked", ["ask", "worked"]),
+    bo_scene("If the question names something, like Australia or Einstein, Kosi checks it on Wikipedia once and keeps the sentence that answers it.", ["facts"], "worked", "facts", ["ask", "worked", "facts"]),
+    bo_scene("Kosi's memory adds what you have told it that bears on the question.", ["memory"], "facts", "memory", ["ask", "worked", "facts", "memory"]),
+    bo_scene("The small model, on the CPU alone, gets a short brief with the exact answer and checked facts in it, and writes the reply.", ["model"], "memory", "model", ["ask", "worked", "facts", "memory", "model"]),
+    bo_scene("Kosika checks the reply: if the 3 is missing, a wrong weekday or a made-up future is in it, or it only says the question back, the exact answer or the checked fact is said instead.", ["check"], "model", "check", ["ask", "worked", "facts", "memory", "model", "check"]),
+    bo_scene("Kosi speaks the checked answer, about 8 seconds after you asked, with no graphics card.", ["speak"], "check", "speak", ["ask", "worked", "facts", "memory", "model", "check", "speak"])
+  ]
+}
+
+// ---------------------------------------------------------------- 2. side by side
+
+fn bo_cell(id: Text, text: Text, column: Text) -> Part { return {id: id, label: text, note: "", parent: column} }
+
+fn bo_compare(s: Scores) -> Structure {
+  let parts: Part[] = [
+    {id: "cloud", label: "Kosi, cloud model", note: "gpt-oss-20b, free on Groq", parent: ""},
+    bo_cell("c1", f"{s.cloud} of {s.total}", "cloud"),
+    bo_cell("c2", f"{s.reasoning_cloud} of {s.reasoning_total}", "cloud"),
+    bo_cell("c3", "3 to 14 s", "cloud"),
+    bo_cell("c4", "needs the internet", "cloud"),
+    {id: "small", label: "Small brain, laptop", note: "qwen3 1.7B, CPU only", parent: ""},
+    bo_cell("s1", f"{s.small} of {s.total}", "small"),
+    bo_cell("s2", f"{s.reasoning_small} of {s.reasoning_total}", "small"),
+    bo_cell("s3", f"about {s.small_seconds} s", "small"),
+    bo_cell("s4", "offline, no limit", "small"),
+    {id: "alone", label: "Small model alone", note: "the same 1.7B, no Kosika", parent: ""},
+    bo_cell("a1", f"{s.first} of {s.total} (first try)", "alone"),
+    bo_cell("a2", f"{s.reasoning_alone} of {s.reasoning_total}", "alone"),
+    bo_cell("a3", "about 2 s", "alone"),
+    bo_cell("a4", "offline, no limit", "alone")
+  ]
+  let steps: Step[] = [
+    {text: "The free cloud model: the best scores, but it needs the internet and has a daily limit.", parts: ["cloud"]},
+    {text: "The small brain on the laptop: close behind, offline and unlimited.", parts: ["small"]},
+    {text: "The same small model without Kosika's help.", parts: ["alone"]}
+  ]
+  return {title: "Three ways to run Kosi", summary: "The same hard test, three ways.", shape: "compare", figure: "", photo: "", parts: parts, links: [], steps: steps, marks: [], looks: [], aspects: ["Hard test", "Reasoning", "Each answer", "Runs"]}
+}
+
+fn bo_compare_scenes(s: Scores) -> DzScene[] {
+  return [
+    bo_scene(f"Kosi on the free cloud model passes {s.cloud} of {s.total}, but it needs the internet and has a daily limit.", ["cloud", "c1", "c2", "c3", "c4"], "", "", ["cloud"]),
+    bo_scene(f"The same small model asked directly gets {s.reasoning_alone} of the {s.reasoning_total} reasoning questions; Kosi's first small brain passed {s.first} of {s.total}.", ["alone", "a1", "a2", "a3", "a4"], "", "", ["cloud", "alone"]),
+    bo_scene(f"Through the small brain the 1.7B passes {s.small} of {s.total}, on the laptop's CPU, offline and with no limit.", ["small", "s1", "s2", "s3", "s4"], "", "", ["cloud", "alone", "small"])
+  ]
+}
+
+// ---------------------------------------------------------------- 3. every area
+
+fn bo_area_id(k: Number) -> Text { return f"area{k}" }
+
+fn bo_areas(s: Scores) -> Structure {
+  var parts: Part[] = [{id: "test", label: "The hard test", note: f"{s.total} questions", parent: ""}]
+  var links: Link[] = []
+  for k in 0 until s.areas.length() {
+    let a = s.areas[k]
+    parts = parts.append({id: bo_area_id(k), label: a.name, note: f"online {a.cloud}/{a.total} · laptop {a.small}/{a.total}", parent: "test"})
+    links = links.append({from: "test", to: bo_area_id(k), label: ""})
+  }
+  let half = (s.areas.length() / 2).ceil()
+  let steps: Step[] = [
+    {text: "The areas where reasoning and sums are tested.", parts: for k in 0 until half { bo_area_id(k) }},
+    {text: "The areas where memory, feelings and creativity are tested.", parts: for k in half until s.areas.length() { bo_area_id(k) }}
+  ]
+  return {title: "Every area of the test", summary: "Where the small brain keeps up, and where it does not.", shape: "mindmap", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: [], aspects: []}
+}
+
+fn bo_area_line(a: Area) -> Text {
+  let lead = if a.small == a.total { "the laptop got every one" } else { if a.small >= a.cloud { "the laptop kept up" } else { f"the laptop missed {a.total - a.small}" } }
+  return f"{a.name}: the cloud model {a.cloud} of {a.total}, the laptop {a.small} of {a.total}; {lead}."
+}
+
+fn bo_area_scenes(s: Scores) -> DzScene[] {
+  var known: Text[] = ["test"]
+  var out: DzScene[] = [bo_scene(f"The hard test: {s.total} questions in {s.areas.length()} areas.", ["test"], "", "", known)]
+  for k in 0 until s.areas.length() {
+    known = known.append(bo_area_id(k))
+    out = out.append(bo_scene(bo_area_line(s.areas[k]), [bo_area_id(k)], "test", bo_area_id(k), known))
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- the board
+
+fn bo_stage(title: Text, scenes: DzScene[], d: Design, check: Text) -> Text {
+  if not d.problems.is_empty() or d.page.is_empty() { return "<p>Designs could not draw " + title + ": " + d.problems.join("; ") + "</p>" }
+  return dz_canvas_embed(title, dz_play(title, scenes, d, check, true), "dark_matter")
+}
+
+fn bo_board(s: Scores, flow: Design, side: Design, areas: Design) -> Board {
+  let a = bo_stage("How the small brain answers", bo_flow_scenes(), flow, "Checked by Kosika: the exact answer is in what Kosi says")
+  let b = bo_stage("Three ways to run Kosi", bo_compare_scenes(s), side, f"From the test's own results: {s.small} of {s.total} on the laptop")
+  let c = bo_stage("Every area of the test", bo_area_scenes(s), areas, f"{s.areas.length()} areas, {s.total} questions, marked by plain rules")
+  return {page: a + b + c}
+}
+
+workflow main(s: Scores) -> Board {
+  flow  = call draw(bo_request("how the small brain answers", bo_flow()))
+  side  = call draw(bo_request("three ways to run Kosi", bo_compare(s)))
+  areas = call draw(bo_request("every area of the test", bo_areas(s)))
+  out   = bo_board(s, flow, side, areas)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn bo_test_scores() -> Scores {
+  return {cloud: 38, small: 33, first: 25, total: 41, reasoning_small: 17, reasoning_alone: 14, reasoning_cloud: 21, reasoning_total: 22, small_seconds: 8, areas: [{name: "Riddles", cloud: 6, small: 7, alone: 4, total: 7}, {name: "Feelings", cloud: 4, small: 2, alone: 0, total: 4}]}
+}
+
+test "the three drawings are ones Designs can draw" {
+  expect problems(bo_flow()).is_empty()
+  expect problems(bo_compare(bo_test_scores())).is_empty()
+  expect problems(bo_areas(bo_test_scores())).is_empty()
+  expect bo_area_line(bo_test_scores().areas[0]) == "Riddles: the cloud model 6 of 7, the laptop 7 of 7; the laptop got every one."
+  expect bo_area_line(bo_test_scores().areas[1]) == "Feelings: the cloud model 4 of 4, the laptop 2 of 4; the laptop missed 2."
+  expect bo_area_scenes(bo_test_scores()).length() == 3
+}

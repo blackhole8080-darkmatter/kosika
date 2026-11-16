@@ -248,12 +248,13 @@ class LogicTests(unittest.TestCase):
         )
         self.assertEqual(pill.due_now(book, 500, {"100|stretch"}), [])
         self.assertEqual(len(pill.due_now(book, 1000, set())), 2)
-        for broken in (
+        broken_cases: tuple[object, ...] = (
             None,
             [],
             {"reminders": "x"},
             {"reminders": [{"due": True, "what": "x"}]},
-        ):
+        )
+        for broken in broken_cases:
             self.assertEqual(pill.due_now(broken, 1000, set()), [])
 
     def test_a_long_answer_is_cut_and_says_where_the_rest_is(self) -> None:

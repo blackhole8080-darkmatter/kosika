@@ -6,8 +6,12 @@ package main
 //
 //	kosika-native serve FILE.kos [--port 8790] [--page PAGE.html] [run options]
 //
-// With --page, GET / answers that page: a window Kosika Designs drew
-// (designs_ui.kos, ui_app), whose parts call this program's workflows.
+// --page FILE answers GET / with that page (a window Kosika Designs drew,
+// designs_ui.kos, ui_app, whose parts call this program's workflows); --files /PREFIX/=DIR answers
+// GET /PREFIX/NAME with DIR/NAME (one level, no folders), so a program's
+// own web page and its fonts come from here too. --route /PATH=WORKFLOW
+// answers POST /PATH by running WORKFLOW with the body as its one input
+// and replying with the output itself, as an app's page expects.
 //
 // POST /run/WORKFLOW with the workflow's input as JSON ({"ask": {...}})
 // runs it as `run` would, with the run options given here, and answers
@@ -44,6 +48,8 @@ func serveCommand(args []string) int {
 	}
 	port := "8790"
 	page := ""
+	files := map[string]string{}
+	routes := map[string]string{}
 	var passed []string
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
@@ -59,16 +65,33 @@ func serveCommand(args []string) int {
 			port = value
 			continue
 		}
-		if name == "--page" {
+		if name == "--page" || name == "--files" || name == "--route" {
 			if !joined {
 				if i+1 >= len(args) {
-					fmt.Fprintln(os.Stderr, "--page needs a file")
+					fmt.Fprintf(os.Stderr, "%s needs a value\n", name)
 					return 2
 				}
 				i++
 				value = args[i]
 			}
-			page = value
+			switch name {
+			case "--page":
+				page = value
+			case "--files":
+				prefix, dir, ok := strings.Cut(value, "=")
+				if !ok || !strings.HasPrefix(prefix, "/") || !strings.HasSuffix(prefix, "/") {
+					fmt.Fprintln(os.Stderr, "--files is /PREFIX/=DIR")
+					return 2
+				}
+				files[prefix] = dir
+			case "--route":
+				at, workflow, ok := strings.Cut(value, "=")
+				if !ok || !strings.HasPrefix(at, "/") || !workflowName.MatchString(workflow) {
+					fmt.Fprintln(os.Stderr, "--route is /PATH=WORKFLOW")
+					return 2
+				}
+				routes[at] = workflow
+			}
 			continue
 		}
 		if name == "--workflow" || name == "--input" || name == "--json" || name == "--trace" {
@@ -78,12 +101,29 @@ func serveCommand(args []string) int {
 		passed = append(passed, args[i])
 	}
 	// The program must check before anything is served.
-	loadTo(path, os.Stderr)
+	program := loadTo(path, os.Stderr)
+	params := map[string]string{}
+	for _, w := range program.Workflows {
+		if len(w.Params) == 1 {
+			params[w.Name] = w.Params[0].Name
+		}
+	}
+	for at, workflow := range routes {
+		if params[workflow] == "" {
+			fmt.Fprintf(os.Stderr, "--route %s: %s is not a workflow of one input\n", at, workflow)
+			return 2
+		}
+	}
 	self, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		return 2
 	}
+	turns := make(chan struct{}, 2)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		answer(w, http.StatusOK, map[string]any{"ok": true, "program": filepath.Base(path)})
+	})
 	var shown []byte
 	if page != "" {
 		shown, err = os.ReadFile(page)
@@ -92,8 +132,6 @@ func serveCommand(args []string) int {
 			return 2
 		}
 	}
-	turns := make(chan struct{}, 2)
-	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" || shown == nil || r.Method != http.MethodGet {
 			answer(w, http.StatusNotFound, map[string]any{"ok": false, "error": "not here: POST /run/WORKFLOW"})
@@ -103,9 +141,41 @@ func serveCommand(args []string) int {
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(shown)
 	})
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		answer(w, http.StatusOK, map[string]any{"ok": true, "program": filepath.Base(path)})
-	})
+	for prefix, dir := range files {
+		prefix, dir := prefix, dir
+		mux.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
+			name := strings.TrimPrefix(r.URL.Path, prefix)
+			if name == "" || strings.ContainsAny(name, `/\:`) || strings.HasPrefix(name, ".") {
+				http.NotFound(w, r)
+				return
+			}
+			http.ServeFile(w, r, filepath.Join(dir, name))
+		})
+	}
+	for at, workflow := range routes {
+		workflow, param := workflow, params[workflow]
+		mux.HandleFunc(at, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				answer(w, http.StatusMethodNotAllowed, map[string]any{"error": "send it with POST"})
+				return
+			}
+			body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+			var given map[string]any
+			if err != nil || json.Unmarshal(body, &given) != nil {
+				answer(w, http.StatusBadRequest, map[string]any{"error": "the body must be one JSON object"})
+				return
+			}
+			input, _ := json.Marshal(map[string]any{param: given})
+			turns <- struct{}{}
+			defer func() { <-turns }()
+			status, reply := runOnce(self, path, workflow, input, passed)
+			if output, ok := reply["output"].(map[string]any); ok && status == http.StatusOK {
+				answer(w, status, output)
+				return
+			}
+			answer(w, status, reply)
+		})
+	}
 	mux.HandleFunc("/run/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			answer(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "send the input with POST"})

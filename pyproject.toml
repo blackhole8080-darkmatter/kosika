@@ -47,10 +47,22 @@ tracing = ["respan-ai==4.2.4; python_version >= '3.11'"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 cache_dir = ".cache/pytest"
+# A slow test needs something this machine may not have or may be slow at: a
+# server, a browser, a Go build, a subprocess, the network. They are marked
+# where they are defined, so the fast lane is `pytest -m "not slow"` and the
+# whole set is still `pytest`.
+markers = [
+    "slow: needs a server, a browser, a build or the network, or simply takes seconds",
+]
 
 [tool.ruff]
 target-version = "py310"
 line-length = 88
+# Third-party code, kept as submodules. A CI checkout does not initialise
+# them, so their contents are never linted there; a developer who has run
+# `git submodule update` would otherwise see thousands of findings nobody
+# here can act on.
+extend-exclude = ["external-integrations"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
@@ -77,6 +89,7 @@ module = [
     "openai", "openai.*",
     "anthropic", "anthropic.*",
     "respan", "respan.*",
+    "soundfile", "soundfile.*",
     "pytest", "pytest.*",
 ]
 ignore_missing_imports = true

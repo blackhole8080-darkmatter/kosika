@@ -90,7 +90,14 @@ RUN_SECONDS = 600
 KEPT_RUNS = 20
 #: What a service's last answer is cut to when kept.
 KEPT_CHARACTERS = 2000
-UNITS = {"minute": 60, "minutes": 60, "hour": 3600, "hours": 3600, "day": 86400, "days": 86400}
+UNITS = {
+    "minute": 60,
+    "minutes": 60,
+    "hour": 3600,
+    "hours": 3600,
+    "day": 86400,
+    "days": 86400,
+}
 
 
 class ServicesError(ValueError):
@@ -161,7 +168,9 @@ def read_services(path: Path) -> dict[str, Service]:
                     amount = reader.number()
                     unit = reader.name()
                     if unit not in UNITS or not (type(amount) is int and amount >= 1):
-                        reader.fail(f"Service {name!r}: every needs a whole number of minutes, hours or days")
+                        reader.fail(
+                            f"Service {name!r}: every needs a whole number of minutes, hours or days"
+                        )
                     service.every = amount * UNITS[unit]  # type: ignore[assignment]
                     if service.every is not None and service.every < 60:  # type: ignore[operator]
                         reader.fail(f"Service {name!r} may run at most once a minute")
@@ -170,10 +179,14 @@ def read_services(path: Path) -> dict[str, Service]:
                         service.sites.append(reader.text())
                     elif reader.accept("folder"):
                         if service.folder is not None:
-                            reader.fail(f"Service {name!r} allows a second folder; it may allow one")
+                            reader.fail(
+                                f"Service {name!r} allows a second folder; it may allow one"
+                            )
                         service.folder = (folder / reader.text()).resolve()
                     else:
-                        reader.fail(f"Service {name!r}: a service may be allowed a site or a folder, never the shell")
+                        reader.fail(
+                            f"Service {name!r}: a service may be allowed a site or a folder, never the shell"
+                        )
                 elif reader.accept("memory"):
                     service.memory = (folder / reader.text()).resolve()
                 elif reader.accept("notify"):
@@ -207,7 +220,9 @@ def notify_address(service: Service) -> str | None:
     try:
         written = service.notify.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        raise ServicesError(f"Service {service.name!r} cannot read {service.notify}: {exc}") from exc
+        raise ServicesError(
+            f"Service {service.name!r} cannot read {service.notify}: {exc}"
+        ) from exc
     if not written:
         raise ServicesError(f"Service {service.name!r}: {service.notify} is empty")
     return written if written.startswith("https://") else f"https://ntfy.sh/{written}"
@@ -228,7 +243,9 @@ def binding_id(service: Service) -> str:
         parts.append(f"notify={service.notify}")
     if service.model is not None:
         parts.append(f"model={service.model.name}@{service.model.url}")
-    return "service:" + hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
+    return (
+        "service:" + hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
+    )
 
 
 def runs_folder(path: Path) -> Path:
@@ -264,7 +281,15 @@ def command_for(
     """`kosika run` with the service's grants and no others, keeping this
     run's trace and journal where the runner can show and replay them."""
 
-    command = [sys.executable, "-m", "kosika.cli", "run", str(service.program), "--input", str(inputs)]
+    command = [
+        sys.executable,
+        "-m",
+        "kosika.cli",
+        "run",
+        str(service.program),
+        "--input",
+        str(inputs),
+    ]
     if trace is not None:
         command += ["--trace", str(trace)]
     if journal is not None:
@@ -290,13 +315,19 @@ def environment_for(service: Service) -> dict[str, str]:
     """The run's environment: this one, with the model's key under the name
     Kosika reads, and every other model key left out."""
 
-    env = {name: value for name, value in os.environ.items() if not name.endswith("_API_KEY")}
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.endswith("_API_KEY")
+    }
     env["PYTHONPATH"] = str(KOSIKA_ROOT)
     env["PYTHONIOENCODING"] = "utf-8"
     if service.model is not None and service.model.key:
         key = os.environ.get(service.model.key) or _user_variable(service.model.key)
         if not key:
-            raise ServicesError(f"Service {service.name!r}: no key in {service.model.key}")
+            raise ServicesError(
+                f"Service {service.name!r}: no key in {service.model.key}"
+            )
         env["KOSIKA_MODEL_API_KEY"] = key
     return env
 
@@ -333,11 +364,20 @@ def answer_of(stdout: str) -> str:
 Runner = Callable[[list[str], dict[str, str], Path], subprocess.CompletedProcess]
 
 
-def _run(command: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess:
+def _run(
+    command: list[str], env: dict[str, str], cwd: Path
+) -> subprocess.CompletedProcess:
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     return subprocess.run(
-        command, env=env, cwd=cwd, capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=RUN_SECONDS, creationflags=flags,
+        command,
+        env=env,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=RUN_SECONDS,
+        creationflags=flags,
     )
 
 
@@ -404,11 +444,22 @@ def run_once(
         inputs = Path(work) / "input.json"
         inputs.write_text(json.dumps({"msg": {"text": text}}), encoding="utf-8")
         try:
-            done = runner(command_for(service, inputs, trace, journal), environment_for(service), Path(work))
+            done = runner(
+                command_for(service, inputs, trace, journal),
+                environment_for(service),
+                Path(work),
+            )
             ok = done.returncode == 0
-            answer = answer_of(done.stdout) if ok else (done.stderr or done.stdout).strip()[-KEPT_CHARACTERS:]
+            answer = (
+                answer_of(done.stdout)
+                if ok
+                else (done.stderr or done.stdout).strip()[-KEPT_CHARACTERS:]
+            )
         except subprocess.TimeoutExpired:
-            ok, answer = False, f"It took longer than {RUN_SECONDS} seconds and was stopped."
+            ok, answer = (
+                False,
+                f"It took longer than {RUN_SECONDS} seconds and was stopped.",
+            )
         except ServicesError as exc:
             ok, answer = False, str(exc)
     # A run that never reached the program leaves no trace to point at.
@@ -450,14 +501,22 @@ def read_paused(path: Path) -> list[str]:
         text = paused_path(path).read_text(encoding="utf-8")
     except OSError:
         return []
-    return sorted({line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("//")})
+    return sorted(
+        {
+            line.strip()
+            for line in text.splitlines()
+            if line.strip() and not line.strip().startswith("//")
+        }
+    )
 
 
 def write_state(path: Path, state: dict[str, Any]) -> None:
     kept = {key: value for key, value in state.items() if key != "paused"}
     _write(state_path(path), json.dumps(kept, indent=2, ensure_ascii=False))
     try:
-        _write(path.with_name(path.name + ".status.txt"), status_text(path, kept) + "\n")
+        _write(
+            path.with_name(path.name + ".status.txt"), status_text(path, kept) + "\n"
+        )
     except ServicesError:
         pass
 
@@ -477,7 +536,9 @@ def due(service: Service, state: dict[str, Any], now: datetime) -> bool:
     return now >= datetime.fromisoformat(last["at"]) + timedelta(seconds=service.every)
 
 
-def run_due(path: Path, now: datetime | None = None, runner: Runner = _run) -> list[str]:
+def run_due(
+    path: Path, now: datetime | None = None, runner: Runner = _run
+) -> list[str]:
     """Run every service that has fallen due, once. The services file is
     read afresh each time, so a change to it is seen at the next pass."""
 
@@ -486,7 +547,9 @@ def run_due(path: Path, now: datetime | None = None, runner: Runner = _run) -> l
     for service in services.values():
         state = read_state(path)
         if due(service, state, now or datetime.now()):
-            result = run_once(service, runner=runner, folder=run_folder(path, service.name))
+            result = run_once(
+                service, runner=runner, folder=run_folder(path, service.name)
+            )
             state = read_state(path)
             state["last"][service.name] = result
             state["services"] = sorted(services)
@@ -498,7 +561,9 @@ def run_due(path: Path, now: datetime | None = None, runner: Runner = _run) -> l
 def status(path: Path, state: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Each service: what it may touch, how often it runs, how it last went."""
 
-    state = read_state(path) if state is None else {**state, "paused": read_paused(path)}
+    state = (
+        read_state(path) if state is None else {**state, "paused": read_paused(path)}
+    )
     shown = []
     for service in read_services(path).values():
         last = state["last"].get(service.name)

@@ -49,7 +49,7 @@
 import "designs_palette.kos"
 import "science_elements.kos"
 
-export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_esc, art_problems, art_tidy, art_svg, art_style, art_script, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
+export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_shape, art_centre, art_pointed, art_gradients, art_width, art_height, art_px, art_reach, art_round, art_esc, art_problems, art_tidy, art_svg, art_svg_named, art_prefixed, art_style, art_script, art_script_in, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
 
 record Figure { id: Text kind: Text x: Number y: Number w: Number h: Number count: Number hue: Number label: Text points: Number[] }
 // around: the figure an orbit circles, or the path a travel runs along.
@@ -126,11 +126,39 @@ fn art_tidy(a: Art) -> Art {
   let named = for f in a.figures { {..f, id: f.id.trim().lower(), kind: f.kind.trim().lower(), hue: f.hue.abs().floor() % 7} }
   let figures = art_mesh(for f in named { art_fit({..f, count: art_count(f)}) })
   let motions = for m in a.motions { {..m, what: m.what.trim().lower(), kind: m.kind.trim().lower(), around: m.around.trim().lower(), seconds: m.seconds.max(0), delay: m.delay.max(0)} }
-  let kept = art_one_path(motions)
+  let kept = art_one_path(art_settled(motions, figures))
   let beats = for b in a.beats { {..b, text: b.text.trim(), shows: for s in b.shows { s.trim().lower() }} }
   let palette = if palette_names().contains(a.palette) { a.palette } else { "dark_matter" }
   let backdrop = if art_backdrops().contains(a.backdrop.trim().lower()) { a.backdrop.trim().lower() } else { "plain" }
   return {..a, palette: palette, backdrop: backdrop, figures: figures, motions: kept, beats: beats}
+}
+
+// What a flow or a draw means on a figure that is not a line: a drop
+// flowing falls, anything else floats. Kosika settles this itself, as the
+// model often asks it, rather than send the picture back.
+fn art_settled(motions: Motion[], figures: Figure[]) -> Motion[] {
+  let ids = for f in figures { f.id }
+  return for m in motions { art_settle(m, art_kind_of(figures, ids, m.what)) }
+}
+
+fn art_kind_of(figures: Figure[], ids: Text[], id: Text) -> Text {
+  let at = ids.index_of(id).or(-1)
+  return if at < 0 { "" } else { figures[at].kind }
+}
+
+fn art_settle(m: Motion, kind: Text) -> Motion {
+  if kind.is_empty() or not (m.kind == "flow" or m.kind == "draw") { return m }
+  if art_paths().contains(kind) or kind == "ring" or kind == "rainbow" { return m }
+  return {..m, kind: if kind == "drop" { "fall" } else { "float" }}
+}
+
+fn art_settled_names(raw: Art, tidy: Art) -> Text[] {
+  var out: Text[] = []
+  for k in 0 until raw.motions.length().min(tidy.motions.length()) {
+    let was = raw.motions[k].kind.trim().lower()
+    if was != tidy.motions[k].kind and (was == "flow" or was == "draw") { out = out.append(f"made {tidy.motions[k].what} {tidy.motions[k].kind} rather than {was}, as only a line can {was}") }
+  }
+  return out
 }
 
 // A figure moves on one path: a second orbit or travel for it is dropped.
@@ -807,6 +835,22 @@ fn art_atom(cx: Number, cy: Number, r: Number, z: Number) -> Text {
   return out + art_sub(cx, cy + 4, symbol) + art_sub(cx, cy + r + 16, (for s in shells { f"{s}" }).join(", "))
 }
 
+// A ball in the art's own manner, in a colour given rather than the
+// palette's: a lit sphere with its highlight, a soft rim and a name on it.
+// The atoms of a molecule are drawn with it (std/science_molecules), so
+// a reaction looks like the rest of Kosika's art.
+fn art_ball(cx: Number, cy: Number, r: Number, colour: Text, label: Text, ink: Text) -> Text {
+  let body = f"<circle class=\"ab\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" r=\"{art_n(r)}\" style=\"fill:{colour}\"/>"
+  let shade = f"<circle class=\"ab-shade\" cx=\"{art_n(cx + r * 0.18)}\" cy=\"{art_n(cy + r * 0.2)}\" r=\"{art_n(r * 0.8)}\"/>"
+  let shine = f"<circle class=\"ab-shine\" cx=\"{art_n(cx - r * 0.32)}\" cy=\"{art_n(cy - r * 0.34)}\" r=\"{art_n(r * 0.3)}\"/>"
+  let name = if label.is_empty() { "" } else { f"<text class=\"ab-t\" x=\"{art_n(cx)}\" y=\"{art_n(cy + r * 0.34)}\" style=\"fill:{ink};font-size:{art_n(r * 0.95)}px\">{label}</text>" }
+  return "<g class=\"ab-g\">" + body + shade + shine + name + "</g>"
+}
+
+fn art_ball_style() -> Text {
+  return ".ab{stroke:rgba(0,0,0,.35);stroke-width:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}.ab-shade{fill:#000;opacity:.12;pointer-events:none}.ab-shine{fill:#fff;opacity:.45;pointer-events:none}.ab-t{font-family:ui-monospace,Consolas,monospace;font-weight:700;text-anchor:middle}"
+}
+
 // The golden ratio, (1 + sqrt 5) / 2.
 fn art_phi() -> Number { return (1 + (5).sqrt()) / 2 }
 
@@ -880,10 +924,8 @@ fn art_shape(f: Figure) -> Text {
 }
 
 // Where a figure's name goes: under round things and rects, over lines.
-fn art_label(a: Art, i: Number) -> Text {
-  let f = a.figures[i]
+fn art_label(f: Figure, at: Number[]) -> Text {
   if f.label.trim().is_empty() or f.kind == "text" { return "" }
-  let at = art_label_spot(a, i)
   return f"<text class=\"name\" x=\"{art_n(at[0])}\" y=\"{art_n(at[1])}\">{art_esc(f.label)}</text>"
 }
 
@@ -911,44 +953,66 @@ fn art_label_above(f: Figure) -> Number[] {
   return [below[0], c[1] * s - (below[1] - c[1] * s) + 10]
 }
 
-fn art_labelled(a: Art, i: Number) -> Bool {
-  let f = a.figures[i]
-  return not f.label.trim().is_empty() and f.kind != "text" and art_movement(a, f.id) < 0
+// Which figures carry a name: one with a label that is not text and does
+// not travel, since a moving name has no fixed place to clash in.
+fn art_named(a: Art) -> Bool[] {
+  let movers = art_movers()
+  let moving = for m in a.motions where movers.contains(m.kind) { m.what }
+  return for f in a.figures { not f.label.trim().is_empty() and f.kind != "text" and not moving.contains(f.id) }
 }
 
+// Where every figure's name goes, worked out once for the whole picture:
+// under it, or over it, then to its right, then to its left, the first
+// place no earlier name has taken. An earlier name counts at its simple
+// place, under or over, so one name never has to place all the others
+// again. Two names clash when their texts would overlap.
+fn art_spots(a: Art) -> Number[][] {
+  let n = a.figures.length()
+  let named = art_named(a)
+  let wide = for f in a.figures { f.label.length() * 4.6 }
+  let belows = for f in a.figures { art_label_at(f) }
+  var firsts: Number[][] = []
+  for k in 0 until n {
+    var taken = false
+    if named[k] {
+      for m in 0 until k {
+        let p = belows[k]
+        let q = belows[m]
+        if named[m] and (p[0] - q[0]).abs() < wide[k] + wide[m] + 10 and (p[1] - q[1]).abs() < 16 { taken = true }
+      }
+    }
+    firsts = firsts.append(if taken { art_label_above(a.figures[k]) } else { belows[k] })
+  }
+  var spots: Number[][] = []
+  for k in 0 until n {
+    let f = a.figures[k]
+    var chosen = belows[k]
+    if named[k] {
+      let tries = [belows[k], art_label_above(f), art_label_beside(f, 1), art_label_beside(f, -1)]
+      var found = false
+      for spot in tries {
+        if not found {
+          var free = true
+          for m in 0 until k {
+            let q = firsts[m]
+            if named[m] and (spot[0] - q[0]).abs() < wide[k] + wide[m] + 10 and (spot[1] - q[1]).abs() < 16 { free = false }
+          }
+          if free {
+            chosen = spot
+            found = true
+          }
+        }
+      }
+    }
+    spots = spots.append(chosen)
+  }
+  return spots
+}
+
+// Two figures' names, at these places, print over each other.
 fn art_clash(a: Art, i: Number, p: Number[], j: Number, q: Number[]) -> Bool {
   let room = (a.figures[i].label.length() + a.figures[j].label.length()) * 4.6 + 10
   return (p[0] - q[0]).abs() < room and (p[1] - q[1]).abs() < 16
-}
-
-// Where a figure's name goes: under it, or over it when an earlier name
-// already sits there. Kosika moves it rather than send the picture back.
-fn art_label_spot(a: Art, i: Number) -> Number[] {
-  let f = a.figures[i]
-  let below = art_label_at(f)
-  if not art_labelled(a, i) { return below }
-  // under it, then over it, then to its right, then to its left: the first
-  // place no earlier name has taken
-  let tries = [below, art_label_above(f), art_label_beside(f, 1), art_label_beside(f, -1)]
-  for spot in tries {
-    var free = true
-    for j in 0 until i {
-      if art_labelled(a, j) and art_clash(a, i, spot, j, art_label_spot_first(a, j)) { free = false }
-    }
-    if free { return spot }
-  }
-  return below
-}
-
-// An earlier name's place, worked out the simple way (under or over), so
-// placing one name never has to place every name before it again.
-fn art_label_spot_first(a: Art, j: Number) -> Number[] {
-  let f = a.figures[j]
-  let below = art_label_at(f)
-  for k in 0 until j {
-    if art_labelled(a, k) and art_clash(a, j, below, k, art_label_at(a.figures[k])) { return art_label_above(f) }
-  }
-  return below
 }
 
 // Beside a figure, on the right (1) or the left (-1), level with its middle.
@@ -962,10 +1026,11 @@ fn art_label_beside(f: Figure, side: Number) -> Number[] {
 // Two names that would print over each other, for figures that stay put.
 fn art_crowded(a: Art) -> Text[] {
   var out: Text[] = []
-  let spots = for i in 0 until a.figures.length() { art_label_spot(a, i) }
+  let spots = art_spots(a)
+  let named = art_named(a)
   for i in 0 until a.figures.length() {
     for j in i + 1 until a.figures.length() {
-      if art_labelled(a, i) and art_labelled(a, j) and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(f"the names of {a.figures[i].id} and {a.figures[j].id} print over each other: move one figure") }
+      if named[i] and named[j] and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(f"the names of {a.figures[i].id} and {a.figures[j].id} print over each other: move one figure") }
     }
   }
   return out
@@ -984,11 +1049,10 @@ fn art_movement(a: Art, id: Text) -> Number {
 }
 
 // One figure, with what it does, and whatever orbits it riding along.
-fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
+fn art_figure(a: Art, i: Number, depth: Number, spots: Number[][], turns: Number[]) -> Text recurse 4 {
   let f = a.figures[i]
   let s = art_px()
   var body = f"<g class=\"own\" data-of=\"{f.id}\">{art_shape(f)}</g>"
-  let turns = art_gear_turns(a)
   for m in a.motions {
     if m.what == f.id and not art_movers().contains(m.kind) {
       let geared = m.kind == "spin" and turns[i] != 0
@@ -996,11 +1060,11 @@ fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
       body = art_wrap(body, {..m, kind: kind}, if geared { turns[i].abs() } else { art_seconds(a, m) })
     }
   }
-  body = body + f"<g class=\"own tag\" data-of=\"{f.id}\">{art_label(a, i)}</g>"
+  body = body + f"<g class=\"own tag\" data-of=\"{f.id}\">{art_label(f, spots[i])}</g>"
   // what orbits this figure is drawn inside it, so it follows it about
   if depth < 3 {
     for k in 0 until a.figures.length() {
-      if art_rides_on(a, k) == i { body = body + art_figure(a, k, depth + 1) }
+      if art_rides_on(a, k) == i { body = body + art_figure(a, k, depth + 1, spots, turns) }
     }
   }
   let at = art_movement(a, f.id)
@@ -1140,7 +1204,10 @@ fn art_svg(raw: Art) -> Text {
   let a = art_tidy(raw)
   let w = art_width() * art_px()
   let h = art_height() * art_px()
-  let figures = (for i in 0 until a.figures.length() where art_rides_on(a, i) < 0 { art_figure(a, i, 0) }).join("")
+  // Names' places and gear turns, worked out once for every figure.
+  let spots = art_spots(a)
+  let turns = art_gear_turns(a)
+  let figures = (for i in 0 until a.figures.length() where art_rides_on(a, i) < 0 { art_figure(a, i, 0, spots, turns) }).join("")
   let defs = "<defs>" + art_gradients() + "<marker id=\"art-head\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M0 0 L10 5 L0 10 z\" fill=\"context-stroke\"/></marker><radialGradient id=\"art-glow\" cx=\"50%\" cy=\"42%\" r=\"70%\"><stop offset=\"0\" stop-color=\"var(--amber)\" stop-opacity=\".10\"/><stop offset=\"1\" stop-color=\"var(--amber)\" stop-opacity=\"0\"/></radialGradient></defs>"
   return f"<svg class=\"art\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{art_esc(a.title)}\">{defs}<rect class=\"ground\" width=\"{w}\" height=\"{h}\" rx=\"22\"/><rect width=\"{w}\" height=\"{h}\" rx=\"22\" fill=\"url(#art-glow)\"/>{art_backdrop(a.backdrop)}{figures}</svg>"
 }
@@ -1154,6 +1221,46 @@ fn art_style() -> Text {
 // sentence; the pause button stops every motion.
 fn art_script() -> Text {
   return "(function(){var svg=document.querySelector('svg.art'),beats=[].slice.call(document.querySelectorAll('.beat')),own=[].slice.call(document.querySelectorAll('.art .own')),i=-1,held=false,paused=false,bar=document.getElementById('bar'),still=matchMedia('(prefers-reduced-motion: reduce)').matches,named={},seen={};beats.forEach(function(b){b.dataset.shows.split(' ').forEach(function(id){named[id]=1})});function hide(){seen={};if(still)return;own.forEach(function(e){if(named[e.dataset.of])e.classList.add('wait')})}function show(k){i=k;beats.forEach(function(b,j){b.classList.toggle('on',j===k)});var ids=k>=0?beats[k].dataset.shows.split(' '):[];ids.forEach(function(id){seen[id]=1});own.forEach(function(e){var on=ids.indexOf(e.dataset.of)>=0;if(k<0||seen[e.dataset.of])e.classList.remove('wait');e.classList.toggle('lit',k>=0&&on);e.classList.toggle('dim',k>=0&&!on)});if(bar){bar.classList.remove('run');void bar.offsetWidth;if(k>=0&&!held&&!paused)bar.classList.add('run')}}function next(){if(held||paused)return;show(i+1<beats.length?i+1:-1)}beats.forEach(function(b,j){b.addEventListener('mouseenter',function(){held=true;show(j)});b.addEventListener('focus',function(){held=true;show(j)});b.addEventListener('mouseleave',function(){held=false});b.addEventListener('blur',function(){held=false})});own.forEach(function(e){e.style.cursor='pointer';e.addEventListener('click',function(){var id=e.dataset.of;for(var j=0;j<beats.length;j++){if(beats[j].dataset.shows.split(' ').indexOf(id)>=0){held=false;show(j);return}}})});var pb=document.getElementById('pause');if(pb)pb.addEventListener('click',function(){paused=!paused;svg.classList.toggle('paused',paused);if(paused)svg.pauseAnimations();else svg.unpauseAnimations();pb.textContent=paused?'Play':'Pause';show(i)});var rb=document.getElementById('replay');if(rb)rb.addEventListener('click',function(){held=false;paused=false;svg.classList.remove('paused');svg.unpauseAnimations();if(pb)pb.textContent='Pause';hide();show(-1);own.forEach(function(e){if(named[e.dataset.of])e.classList.add('wait')});setTimeout(function(){show(0)},500)});document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){document.documentElement.dataset.palette=b.dataset.p;document.querySelectorAll('.sw').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')})})});hide();setTimeout(function(){show(0)},700);setInterval(next,4600)})();"
+}
+
+// ---------------------------------------------------------------- many pictures on one page
+//
+// One picture can keep the names it gives its figures (f-, path-, art-).
+// Several cannot: two hearts on one page would both be f-heart, and both
+// would point at the same gradients. So a picture drawn for a place on a
+// canvas takes a prefix, and every id and every reference to it is renamed
+// with it. The sentences still work, because the script matches them on the
+// data attributes rather than on the ids.
+
+// The same picture with every id it owns renamed under `prefix`.
+fn art_prefixed(svg: Text, prefix: Text) -> Text {
+  if prefix.is_empty() { return svg }
+  return svg
+    .replace("id=\"art-", "id=\"" + prefix + "art-")
+    .replace("url(#art-", "url(#" + prefix + "art-")
+    .replace("href=\"#art-", "href=\"#" + prefix + "art-")
+    .replace("id=\"f-", "id=\"" + prefix + "f-")
+    .replace("id=\"path-", "id=\"" + prefix + "path-")
+    .replace("url(#path-", "url(#" + prefix + "path-")
+    .replace("href=\"#path-", "href=\"#" + prefix + "path-")
+}
+
+fn art_svg_named(a: Art, prefix: Text) -> Text {
+  return art_prefixed(art_svg(a), prefix)
+}
+
+// The same script, driving only the picture inside `root` (a CSS selector)
+// and the sentences that belong to it, so a page may hold several.
+fn art_script_in(root: Text) -> Text {
+  if root.is_empty() { return art_script() }
+  let at = "document.querySelector('" + root + "')"
+  return art_script()
+    .replace("var svg=document.querySelector('svg.art')", "var root=" + at + ";var svg=root.querySelector('svg.art')")
+    .replace("beats=[].slice.call(document.querySelectorAll('.beat'))", "beats=[].slice.call(root.querySelectorAll('.beat'))")
+    .replace("own=[].slice.call(document.querySelectorAll('.art .own'))", "own=[].slice.call(root.querySelectorAll('.art .own'))")
+    .replace("bar=document.getElementById('bar')", "bar=root.querySelector('#bar')")
+    .replace("var pb=document.getElementById('pause')", "var pb=root.querySelector('#pause')")
+    .replace("var rb=document.getElementById('replay')", "var rb=root.querySelector('#replay')")
 }
 
 fn art_page_style() -> Text {
@@ -1202,7 +1309,9 @@ fn art_worked(a: Art) -> Text {
   return (for t in [orbits, swings, throws] where not t.is_empty() { t }).join(" ")
 }
 
-fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text {
+fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text { return art_page_with(ask, raw, fixed, art_svg(raw)) }
+
+fn art_page_with(ask: Text, raw: Art, fixed: Text[], svg: Text) -> Text {
   let a = art_tidy(raw)
   let beats = (for k in 0 until a.beats.length() { f"<li class=\"beat\" tabindex=\"0\" data-shows=\"{a.beats[k].shows.join(\" \")}\"><b>{k + 1}</b><span>{art_esc(a.beats[k].text)}</span></li>" }).join("")
   let asked = if ask.trim().is_empty() { "" } else { f"<p class=\"ask\">{art_esc(ask)}</p>" }
@@ -1211,18 +1320,48 @@ fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text {
   let repairs = if fixed.is_empty() { "" } else { "Kosika fixed: " + art_esc(fixed.join("; ")) + "." }
   let said = for t in [worked, gears, repairs] where not t.is_empty() { f"<p class=\"how\">{t}</p>" }
   let note = said.join("")
-  return f"<!doctype html><html lang=\"en\" data-palette=\"{a.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{art_esc(a.title)}</title><style>{palettes_css()}{art_page_style()}{art_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div>{asked}<h1>{art_esc(a.title)}</h1><p class=\"lede\">{art_esc(a.summary)}</p><div class=\"duo\"><div class=\"stage\">{art_svg(a)}</div><div><ol class=\"beats\" id=\"bar\">{beats}</ol><div class=\"bar\"><button type=\"button\" id=\"pause\">Pause</button><button type=\"button\" id=\"replay\">Replay</button></div>{note}</div></div><div class=\"bar\">{art_swatches(a.palette)}</div></main><script>{art_script()}</script></body></html>"
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{a.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{art_esc(a.title)}</title><style>{palettes_css()}{art_page_style()}{art_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div>{asked}<h1>{art_esc(a.title)}</h1><p class=\"lede\">{art_esc(a.summary)}</p><div class=\"duo\"><div class=\"stage\">{svg}</div><div><ol class=\"beats\" id=\"bar\">{beats}</ol><div class=\"bar\"><button type=\"button\" id=\"pause\">Pause</button><button type=\"button\" id=\"replay\">Replay</button></div>{note}</div></div><div class=\"bar\">{art_swatches(a.palette)}</div></main><script>{art_script()}</script></body></html>"
 }
 
 fn art_moved_names(a: Art) -> Text[] {
-  return for i in 0 until a.figures.length() where art_labelled(a, i) and art_label_spot(a, i) != art_label_at(a.figures[i]) { f"put the name of {a.figures[i].id} above it, where it has room" }
+  let spots = art_spots(a)
+  let named = art_named(a)
+  return for i in 0 until a.figures.length() where named[i] and spots[i] != art_label_at(a.figures[i]) { f"put the name of {a.figures[i].id} above it, where it has room" }
 }
 
-fn art_result(ask: Text, a: Art) -> ArtPage {
+// Two names that would print over each other: Kosika leaves the later
+// one off rather than turning the whole picture away; its figure is still
+// drawn, and the sentences still point at it.
+fn art_unclash(a: Art) -> Art { return art_unclash_by(a, art_crowded_pairs(a)) }
+
+fn art_unclash_by(a: Art, crowded: Number[]) -> Art {
+  if crowded.is_empty() { return a }
+  return {..a, figures: for i in 0 until a.figures.length() { if crowded.contains(i) { {..a.figures[i], label: ""} } else { a.figures[i] } }}
+}
+
+fn art_crowded_pairs(a: Art) -> Number[] {
+  var out: Number[] = []
+  let spots = art_spots(a)
+  let named = art_named(a)
+  for i in 0 until a.figures.length() {
+    for j in i + 1 until a.figures.length() {
+      if not out.contains(i) and not out.contains(j) and named[i] and named[j] and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(j) }
+    }
+  }
+  return out
+}
+
+fn art_result(ask: Text, given: Art) -> ArtPage {
+  let crowded = art_crowded_pairs(given)
+  let a = art_unclash_by(given, crowded)
   let wrong = art_problems(a)
   let tidy = art_tidy(a)
-  let fixed = art_fixes(a).concat(art_moved_names(tidy))
-  if wrong.is_empty() { return {page: art_page(ask, tidy, fixed), svg: art_svg(tidy), problems: [], fixed: fixed, art: tidy} }
+  let left = for i in crowded { f"left the name of {given.figures[i].id} off: it printed over another" }
+  let fixed = left.concat(art_fixes(a)).concat(art_moved_names(tidy)).concat(art_settled_names(a, tidy))
+  if wrong.is_empty() {
+    let svg = art_svg(tidy)
+    return {page: art_page_with(ask, tidy, fixed, svg), svg: svg, problems: [], fixed: fixed, art: tidy}
+  }
   return {page: "", svg: "", problems: wrong, fixed: fixed, art: tidy}
 }
 
@@ -1283,7 +1422,7 @@ fn art_motion_hint(t: Text) -> Text {
 
 fn art_none() -> Art { return {title: "", summary: "", palette: "dark_matter", backdrop: "plain", figures: [], motions: [], beats: []} }
 fn art_kept(a: Art) -> Art { return a }
-fn art_wrong(a: Art) -> Text { return art_problems(a).join("; ") }
+fn art_wrong(a: Art) -> Text { return art_problems(art_unclash(a)).join("; ") }
 
 // A model describes; Kosika tidies and checks; a description with problems
 // goes back once, with the problems named.
@@ -1321,6 +1460,19 @@ fn art_sample() -> Art {
 
 test "a good illustration has nothing wrong with it" {
   expect art_problems(art_sample()).length() == 0
+}
+
+test "a picture can share a page with another" {
+  plain = art_svg(art_sample())
+  expect plain.contains("id=\"f-sun\"")
+  expect plain.contains("url(#art-g0)")
+  named = art_svg_named(art_sample(), "p1-")
+  expect named.contains("id=\"p1-f-sun\"")
+  expect named.contains("url(#p1-art-g0)")
+  expect named.contains("id=\"f-sun\"") == false
+  expect art_prefixed(plain, "") == plain
+  expect art_script_in("") == art_script()
+  expect art_script_in("#one").contains("document.querySelector('#one')")
 }
 
 test "the problems name what is wrong" {
@@ -1498,4 +1650,13 @@ test "Kosika steers the model to the real part an ask is about" {
   expect art_hint("how does a car engine work").contains("kind engine")
   expect art_hint("what is a solar cell") == ""
   expect art_hint("why is the sky blue") == ""
+}
+
+test "a flow on a figure that is not a line is settled, not sent back" {
+  drop = {..art_sample(), figures: [art_fig("rain", "drop", 30, 20, 3), art_fig("cloud", "cloud", 60, 20, 5)], motions: [{what: "rain", kind: "flow", around: "", seconds: 2, delay: 0}, {what: "cloud", kind: "flow", around: "", seconds: 2, delay: 0}]}
+  t = art_tidy(drop)
+  expect t.motions[0].kind == "fall"
+  expect t.motions[1].kind == "float"
+  expect (for m in art_problems(drop) where m.contains("needs a line") { m }) == []
+  expect art_settled_names(drop, t)[0] == "made rain fall rather than flow, as only a line can flow"
 }

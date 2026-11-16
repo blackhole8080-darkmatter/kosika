@@ -1,0 +1,1589 @@
+{
+  "schema": "kosika.paraphrase-pairs/v1",
+  "families": [
+    {
+      "id": "billing_card",
+      "reference": "How do I change my card?",
+      "pairs": [
+        {
+          "id": "billing_card_reword_1",
+          "question": "Where do I update my payment method?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_card_reword_2",
+          "question": "I want a different card on file",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_card_reword_3",
+          "question": "how to switch payment card",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_card_reword_4",
+          "question": "my card expired, how do I put a new one in?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_card_reorder_1",
+          "question": "my card, how do I change?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "billing_card_near_1",
+          "question": "How do I change my billing address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "billing_card_near_2",
+          "question": "How do I cancel my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "billing_card_near_3",
+          "question": "Where can I download an invoice?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "billing_card_far_1",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "billing_card_far_2",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "reset_password",
+      "reference": "How can I reset my password?",
+      "pairs": [
+        {
+          "id": "reset_password_reword_1",
+          "question": "I forgot my login, how do I get back in?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "reset_password_reword_2",
+          "question": "password recovery steps",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "reset_password_reword_3",
+          "question": "I am locked out of my account",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "reset_password_reword_4",
+          "question": "how do I make a new password?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "reset_password_reorder_1",
+          "question": "my password, how can I reset?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "reset_password_near_1",
+          "question": "How do I turn on two-factor authentication?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "reset_password_near_2",
+          "question": "How do I change my email address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "reset_password_near_3",
+          "question": "How do I invite a teammate?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "reset_password_far_1",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "reset_password_far_2",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "invoice_download",
+      "reference": "Where can I download an invoice?",
+      "pairs": [
+        {
+          "id": "invoice_download_reword_1",
+          "question": "How do I get a copy of my bill?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "invoice_download_reword_2",
+          "question": "I need a receipt for last month",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "invoice_download_reword_3",
+          "question": "where are my past bills?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "invoice_download_reword_4",
+          "question": "can I print the invoice for my accountant?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "invoice_download_reorder_1",
+          "question": "an invoice, where can I download?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "invoice_download_near_1",
+          "question": "How do I change my billing address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "invoice_download_near_2",
+          "question": "How do I request a refund?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "invoice_download_near_3",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "invoice_download_far_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "invoice_download_far_2",
+          "question": "How do I pause my subscription?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "refund_request",
+      "reference": "How do I request a refund?",
+      "pairs": [
+        {
+          "id": "refund_request_reword_1",
+          "question": "I want my money back for this order",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "refund_request_reword_2",
+          "question": "can I return this and get reimbursed?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "refund_request_reword_3",
+          "question": "how do I ask for a refund for a charge?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "refund_request_reword_4",
+          "question": "is a refund possible on my last payment?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "refund_request_reorder_1",
+          "question": "a refund, how do I request?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "refund_request_near_1",
+          "question": "How do I cancel an order?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "refund_request_near_2",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "refund_request_near_3",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "refund_request_far_1",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "refund_request_far_2",
+          "question": "How do I invite a teammate?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "delivery_time",
+      "reference": "How long does delivery take?",
+      "pairs": [
+        {
+          "id": "delivery_time_reword_1",
+          "question": "when will my parcel arrive?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delivery_time_reword_2",
+          "question": "what is the shipping time?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delivery_time_reword_3",
+          "question": "how many days until it reaches me?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delivery_time_reword_4",
+          "question": "is next day delivery available?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delivery_time_reorder_1",
+          "question": "delivery, how long does it take?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "delivery_time_near_1",
+          "question": "How much does shipping cost?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "delivery_time_near_2",
+          "question": "Where is my order?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "delivery_time_near_3",
+          "question": "How do I return an item?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "delivery_time_far_1",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "delivery_time_far_2",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "cancellation",
+      "reference": "How do I cancel my subscription?",
+      "pairs": [
+        {
+          "id": "cancellation_reword_1",
+          "question": "I want to stop my plan",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "cancellation_reword_2",
+          "question": "how do I end my membership?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "cancellation_reword_3",
+          "question": "can I close my account and stop being billed?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "cancellation_reword_4",
+          "question": "stop charging me every month",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "cancellation_reorder_1",
+          "question": "my subscription, how do I cancel?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "cancellation_near_1",
+          "question": "How do I pause my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "cancellation_near_2",
+          "question": "How do I upgrade my plan?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "cancellation_near_3",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "cancellation_far_1",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "cancellation_far_2",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "data_export",
+      "reference": "How do I export my data?",
+      "pairs": [
+        {
+          "id": "data_export_reword_1",
+          "question": "can I download everything you store about me?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "data_export_reword_2",
+          "question": "how do I get a copy of all my records?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "data_export_reword_3",
+          "question": "I want to take my information with me",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "data_export_reword_4",
+          "question": "give me a dump of my account data",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "data_export_reorder_1",
+          "question": "my data, how do I export?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "data_export_near_1",
+          "question": "How do I delete my account?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "data_export_near_2",
+          "question": "Where can I download an invoice?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "data_export_near_3",
+          "question": "How do I import a CSV?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "data_export_far_1",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "data_export_far_2",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "team_invite",
+      "reference": "How do I invite a teammate?",
+      "pairs": [
+        {
+          "id": "team_invite_reword_1",
+          "question": "how can I add someone to my workspace?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "team_invite_reword_2",
+          "question": "where do I send an invitation for a colleague?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "team_invite_reword_3",
+          "question": "can I bring another person onto my team?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "team_invite_reword_4",
+          "question": "add a second user to my account",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "team_invite_reorder_1",
+          "question": "a teammate, how do I invite?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "team_invite_near_1",
+          "question": "How do I remove a teammate?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "team_invite_near_2",
+          "question": "How do I change my email address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "team_invite_near_3",
+          "question": "How do I pause my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "team_invite_far_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "team_invite_far_2",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "api_key",
+      "reference": "Where do I find my API key?",
+      "pairs": [
+        {
+          "id": "api_key_reword_1",
+          "question": "how do I get an access token for the API?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "api_key_reword_2",
+          "question": "where is my secret token for the developer API?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "api_key_reword_3",
+          "question": "I need credentials to call your API",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "api_key_reword_4",
+          "question": "show me the key I use in code",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "api_key_reorder_1",
+          "question": "my API key, where do I find?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "api_key_near_1",
+          "question": "How do I rotate my API key?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "api_key_near_2",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "api_key_near_3",
+          "question": "What is the rate limit on the API?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "api_key_far_1",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "api_key_far_2",
+          "question": "How do I invite a teammate?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "billing_address",
+      "reference": "How do I change my billing address?",
+      "pairs": [
+        {
+          "id": "billing_address_reword_1",
+          "question": "I moved, how do I update where invoices go?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_address_reword_2",
+          "question": "where do I put my new postal address for billing?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_address_reword_3",
+          "question": "can I correct the address on my account?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_address_reword_4",
+          "question": "update the address you send bills to",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "billing_address_reorder_1",
+          "question": "my billing address, how do I change?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "billing_address_near_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "billing_address_near_2",
+          "question": "How do I request a refund?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "billing_address_near_3",
+          "question": "How do I cancel my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "billing_address_far_1",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "billing_address_far_2",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "order_tracking",
+      "reference": "Where is my order?",
+      "pairs": [
+        {
+          "id": "order_tracking_reword_1",
+          "question": "where has my parcel got to?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "order_tracking_reword_2",
+          "question": "can you tell me where my package is?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "order_tracking_reword_3",
+          "question": "tracking for my last purchase",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "order_tracking_reword_4",
+          "question": "when will the thing I bought show up?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "order_tracking_reorder_1",
+          "question": "my order, where is?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "order_tracking_near_1",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "order_tracking_near_2",
+          "question": "How do I return an item?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "order_tracking_near_3",
+          "question": "How much does shipping cost?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "order_tracking_far_1",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "order_tracking_far_2",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "delete_account",
+      "reference": "How do I delete my account?",
+      "pairs": [
+        {
+          "id": "delete_account_reword_1",
+          "question": "I want to remove my profile completely",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delete_account_reword_2",
+          "question": "how do I close my account for good?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delete_account_reword_3",
+          "question": "erase me from your system",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delete_account_reword_4",
+          "question": "can I get my account removed?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "delete_account_reorder_1",
+          "question": "my account, how do I delete?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "delete_account_near_1",
+          "question": "How do I pause my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "delete_account_near_2",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "delete_account_near_3",
+          "question": "How do I change my email address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "delete_account_far_1",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "delete_account_far_2",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "pause_plan",
+      "reference": "How do I pause my subscription?",
+      "pairs": [
+        {
+          "id": "pause_plan_reword_1",
+          "question": "can I put my plan on hold for a month?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "pause_plan_reword_2",
+          "question": "I want to stop billing temporarily",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "pause_plan_reword_3",
+          "question": "how do I suspend my membership?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "pause_plan_reword_4",
+          "question": "hold my account while I travel",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "pause_plan_reorder_1",
+          "question": "my subscription, how do I pause?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "pause_plan_near_1",
+          "question": "How do I cancel my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "pause_plan_near_2",
+          "question": "How do I upgrade my plan?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "pause_plan_near_3",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "pause_plan_far_1",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "pause_plan_far_2",
+          "question": "Where is my order?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "upgrade_plan",
+      "reference": "How do I upgrade my plan?",
+      "pairs": [
+        {
+          "id": "upgrade_plan_reword_1",
+          "question": "can I move to a bigger plan?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upgrade_plan_reword_2",
+          "question": "how do I get more seats?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upgrade_plan_reword_3",
+          "question": "I need the higher tier",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upgrade_plan_reword_4",
+          "question": "switch me to the next package up",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upgrade_plan_reorder_1",
+          "question": "my plan, how do I upgrade?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "upgrade_plan_near_1",
+          "question": "How do I pause my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "upgrade_plan_near_2",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "upgrade_plan_near_3",
+          "question": "How do I invite a teammate?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "upgrade_plan_far_1",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "upgrade_plan_far_2",
+          "question": "Where is my order?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "two_factor",
+      "reference": "How do I turn on two-factor authentication?",
+      "pairs": [
+        {
+          "id": "two_factor_reword_1",
+          "question": "enable 2FA on my account",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "two_factor_reword_2",
+          "question": "add a second step when I sign in",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "two_factor_reword_3",
+          "question": "how do I set up an authenticator app?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "two_factor_reword_4",
+          "question": "make login ask for a code",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "two_factor_reorder_1",
+          "question": "two-factor authentication, how do I turn on?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "two_factor_near_1",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "two_factor_near_2",
+          "question": "How do I change my email address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "two_factor_near_3",
+          "question": "How do I invite a teammate?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "two_factor_far_1",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "two_factor_far_2",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "webhooks",
+      "reference": "How do I set up a webhook?",
+      "pairs": [
+        {
+          "id": "webhooks_reword_1",
+          "question": "can I get a callback when an event happens?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "webhooks_reword_2",
+          "question": "where do I put my endpoint URL?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "webhooks_reword_3",
+          "question": "how do I receive event notifications on my server?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "webhooks_reword_4",
+          "question": "configure outgoing HTTP callbacks",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "webhooks_reorder_1",
+          "question": "a webhook, how do I set up?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "webhooks_near_1",
+          "question": "What is the rate limit on the API?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "webhooks_near_2",
+          "question": "How do I rotate my API key?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "webhooks_near_3",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "webhooks_far_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "webhooks_far_2",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "rate_limit",
+      "reference": "What is the rate limit on the API?",
+      "pairs": [
+        {
+          "id": "rate_limit_reword_1",
+          "question": "how many requests can I make per minute?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "rate_limit_reword_2",
+          "question": "am I being throttled?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "rate_limit_reword_3",
+          "question": "request quota for the API",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "rate_limit_reword_4",
+          "question": "why do I get 429 errors?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "rate_limit_reorder_1",
+          "question": "rate limit on the API, what is it?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "rate_limit_near_1",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "rate_limit_near_2",
+          "question": "How do I set up a webhook?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "rate_limit_near_3",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "rate_limit_far_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "rate_limit_far_2",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "upload_limit",
+      "reference": "What is the maximum file size I can upload?",
+      "pairs": [
+        {
+          "id": "upload_limit_reword_1",
+          "question": "how big can my attachment be?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upload_limit_reword_2",
+          "question": "is there a limit on uploads?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upload_limit_reword_3",
+          "question": "my file is too large, what size do you accept?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upload_limit_reword_4",
+          "question": "upload cap per file",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "upload_limit_reorder_1",
+          "question": "file size, what is the maximum I can upload?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "upload_limit_near_1",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "upload_limit_near_2",
+          "question": "What is the rate limit on the API?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "upload_limit_near_3",
+          "question": "How do I delete my account?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "upload_limit_far_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "upload_limit_far_2",
+          "question": "Where is my order?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "tax_vat",
+      "reference": "How do I add my VAT number?",
+      "pairs": [
+        {
+          "id": "tax_vat_reword_1",
+          "question": "where do I enter my tax id?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "tax_vat_reword_2",
+          "question": "can I put my company tax number on invoices?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "tax_vat_reword_3",
+          "question": "add VAT to my billing details",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "tax_vat_reword_4",
+          "question": "I need a VAT invoice",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "tax_vat_reorder_1",
+          "question": "my VAT number, how do I add?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "tax_vat_near_1",
+          "question": "How do I change my billing address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "tax_vat_near_2",
+          "question": "Where can I download an invoice?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "tax_vat_near_3",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "tax_vat_far_1",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "tax_vat_far_2",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "currency",
+      "reference": "Can I pay in euros?",
+      "pairs": [
+        {
+          "id": "currency_reword_1",
+          "question": "do you accept other currencies?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "currency_reword_2",
+          "question": "I want to be billed in EUR",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "currency_reword_3",
+          "question": "is euro pricing available?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "currency_reword_4",
+          "question": "can I switch my billing currency?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "currency_reorder_1",
+          "question": "in euros, can I pay?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "currency_near_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "currency_near_2",
+          "question": "How do I change my billing address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "currency_near_3",
+          "question": "How do I request a refund?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "currency_far_1",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "currency_far_2",
+          "question": "Where is my order?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "status_downtime",
+      "reference": "Is the service down right now?",
+      "pairs": [
+        {
+          "id": "status_downtime_reword_1",
+          "question": "are you having an outage?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "status_downtime_reword_2",
+          "question": "why is the site not loading?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "status_downtime_reword_3",
+          "question": "is there an incident in progress?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "status_downtime_reword_4",
+          "question": "status page says degraded, is it you or me?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "status_downtime_reorder_1",
+          "question": "the service, is it down right now?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "status_downtime_near_1",
+          "question": "What is the rate limit on the API?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "status_downtime_near_2",
+          "question": "How do I set up a webhook?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "status_downtime_near_3",
+          "question": "How do I delete my account?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "status_downtime_far_1",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "status_downtime_far_2",
+          "question": "How do I invite a teammate?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "phone_change",
+      "reference": "How do I change my phone number?",
+      "pairs": [
+        {
+          "id": "phone_change_reword_1",
+          "question": "I got a new mobile, how do I update it?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "phone_change_reword_2",
+          "question": "where do I edit the number you call me on?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "phone_change_reword_3",
+          "question": "update my contact number",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "phone_change_reword_4",
+          "question": "my old phone is gone, how do I fix my number?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "phone_change_reorder_1",
+          "question": "my phone number, how do I change?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "phone_change_near_1",
+          "question": "How do I change my email address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "phone_change_near_2",
+          "question": "How do I turn on two-factor authentication?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "phone_change_near_3",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "phone_change_far_1",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "phone_change_far_2",
+          "question": "How do I export my data?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "notification_settings",
+      "reference": "How do I turn off email notifications?",
+      "pairs": [
+        {
+          "id": "notification_settings_reword_1",
+          "question": "stop sending me emails",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "notification_settings_reword_2",
+          "question": "I want fewer messages from you",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "notification_settings_reword_3",
+          "question": "unsubscribe from product updates",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "notification_settings_reword_4",
+          "question": "mute notifications",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "notification_settings_reorder_1",
+          "question": "email notifications, how do I turn off?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "notification_settings_near_1",
+          "question": "How do I change my email address?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "notification_settings_near_2",
+          "question": "How do I cancel my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "notification_settings_near_3",
+          "question": "How do I pause my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "notification_settings_far_1",
+          "question": "Where do I find my API key?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "notification_settings_far_2",
+          "question": "How long does delivery take?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    },
+    {
+      "id": "trial_extension",
+      "reference": "Can I extend my free trial?",
+      "pairs": [
+        {
+          "id": "trial_extension_reword_1",
+          "question": "my trial ended, can I get more days?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "trial_extension_reword_2",
+          "question": "is there a way to keep testing before I pay?",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "trial_extension_reword_3",
+          "question": "give me another week to decide",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "trial_extension_reword_4",
+          "question": "trial extension request",
+          "same": true,
+          "kind": "reword"
+        },
+        {
+          "id": "trial_extension_reorder_1",
+          "question": "my free trial, can I extend?",
+          "same": true,
+          "kind": "reorder"
+        },
+        {
+          "id": "trial_extension_near_1",
+          "question": "How do I upgrade my plan?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "trial_extension_near_2",
+          "question": "How do I cancel my subscription?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "trial_extension_near_3",
+          "question": "How do I change my card?",
+          "same": false,
+          "kind": "near_miss"
+        },
+        {
+          "id": "trial_extension_far_1",
+          "question": "Where is my order?",
+          "same": false,
+          "kind": "far_miss"
+        },
+        {
+          "id": "trial_extension_far_2",
+          "question": "How do I reset my password?",
+          "same": false,
+          "kind": "far_miss"
+        }
+      ]
+    }
+  ]
+}
