@@ -631,6 +631,14 @@ body.on-mission .track { opacity: .5; }
 .ask-box textarea { min-height: 70px; font: 13px var(--mono); }
 .ask-box .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+.coder { cursor: pointer; }
+.coder-run .row { margin: 10px 0 4px; }
+pre.diff, pre.report { max-height: 60vh; overflow: auto; padding: 12px 14px; border-radius: 10px; background: var(--code-soft); font: 12px/1.5 var(--mono); white-space: pre; }
+pre.report { white-space: pre-wrap; }
+pre.diff .add { color: var(--ok, #2f9e6f); }
+pre.diff .del { color: var(--bad, #d2453b); }
+pre.diff .hunk { color: var(--faint); }
+
 /* Services */
 .service .said { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--code-soft); font-size: 12.5px; white-space: pre-wrap; }
 .service .said .asked { color: var(--faint); font: 11.5px var(--mono); margin-bottom: 4px; }
@@ -1301,7 +1309,7 @@ async function route() {
     else if (active === "study") showStudy();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
-    else if (active === "coders") await showCoders();
+    else if (active === "coders") await (id ? showCoderRun(id) : showCoders());
     else if (overview.assistant) await showAgent(overview.assistant, true);
     else showAgents();
   } catch (error) {
@@ -1683,7 +1691,7 @@ async function showCoders(note) {
     const state = run.result === "passed" ? "done" : run.result ? "failed" : "typing";
     const holder = {face: h("div", {class: "face"}), title: h("h3", null, run.agent)};
     face(run.agent, state, holder);
-    return h("div", {class: "card coder", "data-state": state},
+    return h("div", {class: "card coder", "data-state": state, title: "See the change and its report", onclick: () => go("coders", run.run)},
       h("div", {class: "who"}, holder.face, h("div", null, holder.title, h("small", null, run.agent + " · " + run.run))),
       h("p", {class: "ask"}, run.request || "(no request written)"),
       h("div", {class: "chips"}, chip(said, kind), chip(Math.floor(run.seconds / 60) + " min " + (run.seconds % 60) + " s"), run.patch ? chip("change ready", "think") : null),
@@ -1716,6 +1724,37 @@ async function showCoders(note) {
     h("ul", {class: "todo-list"}, view.todo.items.slice().reverse().map(item =>
       h("li", null, chip({open: "waiting", taken: "working", passed: "passed", failed: "did not pass"}[item.state], {open: "", taken: "warn", passed: "ok", failed: "bad"}[item.state]), h("span", null, item.text))))].filter(Boolean));
   if (view.working) codersTimer = setTimeout(() => { if (location.hash.startsWith("#coders")) showCoders(); }, 5000);
+}
+
+// One coder run: what it was asked, its report, and its change line by line.
+// A run that passed can be kept: its change goes on a branch of its own and
+// a pull request into studio is opened for review. Nothing is merged here.
+async function showCoderRun(name) {
+  clearTimeout(codersTimer);
+  const run = await api("/api/coders/run?run=" + encodeURIComponent(name));
+  const lines = run.patch ? run.patch.split("\n").map(line => h("span", {class: line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : line.startsWith("@@") ? "hunk" : ""}, line + "\n")) : ["(no change)"];
+  let action = null;
+  if (run.kept) action = h("a", {href: run.kept, target: "_blank", rel: "noopener"}, "Kept as a pull request ↗");
+  else if (run.result === "passed") {
+    action = h("button", {onclick: async event => {
+      const button = event.currentTarget;
+      button.disabled = true; button.textContent = "Making the pull request…";
+      try { await api("/api/coders/keep", {method: "POST", body: JSON.stringify({run: name})}); await showCoderRun(name); }
+      catch (error) { button.disabled = false; button.textContent = "Keep it as a pull request"; alert(error.message); }
+    }}, "Keep it as a pull request");
+  }
+  const said = run.result === "passed" ? chip("passed its checks", "ok") : run.result ? chip("did not pass", "bad") : chip("working", "warn");
+  main.replaceChildren(...[titled("Coders"),
+    h("p", {class: "lead"}, h("a", {href: "#coders"}, "← All coders"), " · ", run.run),
+    h("div", {class: "card coder-run"},
+      h("p", {class: "ask"}, run.request),
+      h("div", {class: "chips"}, said, run.why ? chip(run.why) : null),
+      action ? h("div", {class: "row"}, action) : null,
+      h("p", {class: "why"}, run.result === "passed" && !run.kept ? "Keeping it makes a branch coder/" + run.run + " from studio, pushes it and opens a pull request. You review and merge it on GitHub." : "")),
+    h("h2", null, "The change"),
+    h("pre", {class: "diff"}, lines),
+    h("h2", null, "Report"),
+    h("pre", {class: "report"}, run.report || "(no report yet)")].filter(Boolean));
 }
 
 // MayaOS is an app of its own; the rail opens it, or brings its window up.

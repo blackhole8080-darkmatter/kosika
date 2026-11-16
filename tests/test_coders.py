@@ -131,6 +131,53 @@ class CodersTests(unittest.TestCase):
             [str(script), "--todo", str(self.work / "queue.md"), "--swarm", "4"],
         )
 
+    def test_a_run_is_read_whole_and_only_one_that_passed_can_be_kept(self) -> None:
+        _run(self.work, "2026-11-16-1", "add a", "passed its checks")
+        _run(self.work, "2026-11-16-2", "add b", "did not pass")
+        detail = coders.run_detail("2026-11-16-1")
+        self.assertEqual(
+            (detail["request"], detail["result"], detail["patch"], detail["kept"]),
+            ("add a", "passed", "diff\n", ""),
+        )
+        with self.assertRaises(ValueError):
+            coders.run_detail("../etc")
+        with self.assertRaisesRegex(ValueError, "Only a run that passed"):
+            coders.keep("2026-11-16-2")
+
+    def test_keeping_makes_a_branch_from_studio_pushes_it_and_opens_a_pull_request(
+        self,
+    ) -> None:
+        _run(
+            self.work, "2026-11-16-1", "add a Text method shout()", "passed its checks"
+        )
+        said = []
+
+        def git(args, cwd):
+            said.append(args[:2])
+            return (
+                "https://github.com/x/kosika.git\n"
+                if args[:2] == ["remote", "get-url"]
+                else ""
+            )
+
+        made = mock.Mock(
+            returncode=0, stdout="https://github.com/x/kosika/pull/7\n", stderr=""
+        )
+        with (
+            mock.patch.object(coders, "_git", side_effect=git),
+            mock.patch.object(coders.subprocess, "run", return_value=made) as gh,
+        ):
+            kept = coders.keep("2026-11-16-1")
+            again = coders.keep("2026-11-16-1")
+        self.assertEqual(kept["url"], "https://github.com/x/kosika/pull/7")
+        self.assertEqual(again["url"], kept["url"])
+        self.assertIn(["clone", "--quiet"], said)
+        self.assertIn(["checkout", "--quiet"], said)
+        self.assertIn(["push", "--quiet"], said)
+        self.assertEqual(gh.call_count, 1)
+        self.assertIn("--base", gh.call_args.args[0])
+        self.assertEqual(coders.run_detail("2026-11-16-1")["kept"], kept["url"])
+
     def test_a_coder_that_is_not_one_has_no_mascot(self) -> None:
         with self.assertRaises(ValueError):
             coders.mascot("stranger", "idle")

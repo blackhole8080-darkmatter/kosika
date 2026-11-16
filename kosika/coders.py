@@ -236,3 +236,126 @@ def mascot(agent: str, state: str) -> dict[str, str]:
             "title": str(drawn.get("title", agent)),
         }
     return _pictures[key]
+
+
+def run_detail(name: str, work: Path | None = None) -> dict[str, Any]:
+    """One run in full: what it was asked, its report and its change."""
+    work = work or work_folder()
+    if not RUN_NAME.match(name):
+        raise ValueError("No such run")
+    folder = work / name
+    if not folder.is_dir():
+        raise FileNotFoundError(f"No run {name} in {work}")
+
+    def text(file: str) -> str:
+        path = folder / file
+        return (
+            path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        )
+
+    report = text("report.md")
+    result, why = _ended(report) if report else ("", "")
+    kept = text("kept.txt").strip()
+    return {
+        "run": name,
+        "request": text("request.txt").strip(),
+        "report": report,
+        "patch": text("change.patch"),
+        "result": result,
+        "why": why,
+        "kept": kept,
+    }
+
+
+def _git(args: list[str], cwd: Path) -> str:
+    done = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if done.returncode != 0:
+        raise RuntimeError(
+            f"git {' '.join(args[:2])} failed: {(done.stderr or done.stdout).strip()[-600:]}"
+        )
+    return done.stdout
+
+
+def keep(
+    name: str, work: Path | None = None, repo: Path | None = None
+) -> dict[str, Any]:
+    """Keep a run that passed: its change goes on a branch of its own,
+    coder/NAME, made from studio in a fresh copy (the checkout you work in is
+    never touched), is pushed, and a pull request into studio is opened for
+    you to review. Nothing is merged."""
+    from .agents_home import KOSIKA_HOME
+
+    work = work or work_folder()
+    detail = run_detail(name, work)
+    if detail["result"] != "passed":
+        raise ValueError("Only a run that passed its checks can be kept")
+    if detail["kept"]:
+        return {"run": name, "url": detail["kept"]}
+    if not detail["patch"].strip():
+        raise ValueError("This run left no change to keep")
+    origin = _git(["remote", "get-url", "origin"], repo or KOSIKA_HOME).strip()
+    place = work / "branches" / name
+    if place.exists():
+        import shutil
+
+        shutil.rmtree(place, ignore_errors=True)
+    place.parent.mkdir(parents=True, exist_ok=True)
+    _git(
+        ["clone", "--quiet", "--depth", "1", "--branch", "studio", origin, str(place)],
+        work,
+    )
+    branch = "coder/" + name
+    _git(["checkout", "--quiet", "-b", branch], place)
+    _git(["apply", "--whitespace=nowarn", str(work / name / "change.patch")], place)
+    _git(["add", "-A"], place)
+    request = detail["request"]
+    title = (request[:1].upper() + request[1:])[:90]
+    _git(
+        [
+            "commit",
+            "--quiet",
+            "-m",
+            f"{title}\n\nWritten by the Kosika coder swarm ({name}) and kept from Studio: it passed its\nexample tests, go vet, the comparison of both engines, and develop.kos.",
+        ],
+        place,
+    )
+    _git(["push", "--quiet", "-u", "origin", branch], place)
+    body = (
+        f"Written by the Kosika coder swarm, run `{name}`, and kept from Studio's Coders page.\n\n"
+        f"**Request:** {request}\n\nIt passed its example tests, go vet, the comparison of both engines and develop.kos."
+    )
+    made = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--base",
+            "studio",
+            "--head",
+            branch,
+            "--title",
+            title,
+            "--body",
+            body,
+        ],
+        cwd=str(place),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if made.returncode != 0:
+        raise RuntimeError(
+            "The branch was pushed, but the pull request was not made: "
+            + (made.stderr or made.stdout).strip()[-400:]
+        )
+    url = made.stdout.strip().splitlines()[-1]
+    (work / name / "kept.txt").write_text(url + "\n", encoding="utf-8")
+    return {"run": name, "url": url}
