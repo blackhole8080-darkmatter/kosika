@@ -5,4 +5,5 @@ PASS  a ranking keeps the earlier of two equal texts first
 PASS  a quote is proved only by a line that holds it
 PASS  a grid is read by column name
 PASS  a long text, such as a paper, splits whole
-7 passed, 0 failed
+PASS  title_case capitalizes each word
+8 passed, 0 failed

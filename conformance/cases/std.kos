@@ -94,3 +94,7 @@ test "a long text, such as a paper, splits whole" {
   expect words_of(long).length() == 3000
   expect pieces[3].words().length() == 300
 }
+
+test "title_case capitalizes each word" {
+  expect title_case("hello world! this is kosika.") == "Hello World! This Is Kosika."
+}
