@@ -237,6 +237,43 @@ func runeIndex(text, part string) int {
 }
 
 var textMethods = map[string]method{
+	"is_upper_letter": {nil, func(r Value, a []Value) Value {
+		text := textOf(r)
+		_ = text
+		if len(text) == 1 && text[0] >= 'A' && text[0] <= 'Z' {
+			return bool(true)
+		}
+		return bool(false)
+	}},
+	"first_word": {nil, func(r Value, a []Value) Value {
+		text := textOf(r)
+		_ = text
+		s := strings.TrimSpace(text)
+		if s == "" {
+			return ""
+		}
+		words := strings.Fields(s)
+		if len(words) == 0 {
+			return ""
+		}
+		return words[0]
+	}},
+	"is_hex_colour": {nil, func(r Value, a []Value) Value {
+		text := textOf(r)
+		_ = text
+		if len(text) != 4 && len(text) != 7 {
+			return false
+		}
+		if !strings.HasPrefix(text, "#") {
+			return false
+		}
+		for _, r := range text[1:] {
+			if !unicode.Is(unicode.Hex_Digit, r) {
+				return false
+			}
+		}
+		return true
+	}},
 	"length":     {nil, func(r Value, a []Value) Value { return bigInt(len([]rune(textOf(r)))) }},
 	"upper":      {nil, func(r Value, a []Value) Value { return strings.ToUpper(textOf(r)) }},
 	"lower":      {nil, func(r Value, a []Value) Value { return strings.ToLower(textOf(r)) }},

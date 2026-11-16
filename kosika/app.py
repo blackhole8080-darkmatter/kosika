@@ -2159,6 +2159,78 @@ class App:
             raise AppError(str(exc), 404) from exc
         return self.services()
 
+    def coders(self) -> dict[str, Any]:
+        """The coder swarm: the latest day's runs, who is on what and how
+        each ended, and the to-do list the coders take requests from."""
+
+        from . import coders
+
+        return coders.status()
+
+    def add_coder_request(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Put one request at the end of the coders' to-do list."""
+
+        from . import coders
+
+        text = body.get("text")
+        if not isinstance(text, str):
+            raise AppError("Send the request as text")
+        try:
+            coders.add_request(text)
+        except ValueError as exc:
+            raise AppError(str(exc)) from exc
+        return coders.status()
+
+    def start_coders(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Start a swarm of 1 to 4 coders on the open requests."""
+
+        from . import coders
+
+        size = body.get("size", 4)
+        if not isinstance(size, int) or isinstance(size, bool):
+            raise AppError("Send the number of coders, 1 to 4")
+        try:
+            started = coders.start(size)
+        except (ValueError, FileNotFoundError, OSError) as exc:
+            raise AppError(str(exc), 422) from exc
+        return {**coders.status(), **started}
+
+    def coder_run(self, name: str) -> dict[str, Any]:
+        """One coder run in full: request, report and change."""
+
+        from . import coders
+
+        try:
+            return coders.run_detail(name)
+        except (ValueError, FileNotFoundError) as exc:
+            raise AppError(str(exc), 404) from exc
+
+    def keep_coder_run(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Keep a run that passed: its own branch, pushed, and a pull request
+        into studio for review. Nothing is merged."""
+
+        from . import coders
+
+        name = body.get("run")
+        if not isinstance(name, str):
+            raise AppError("Send the run's name")
+        try:
+            return coders.keep(name)
+        except (ValueError, FileNotFoundError) as exc:
+            raise AppError(str(exc), 422) from exc
+        except (RuntimeError, OSError) as exc:
+            raise AppError(str(exc), 502) from exc
+
+    def coder_mascot(self, agent: str, state: str) -> dict[str, Any]:
+        """A coder's mascot and name, drawn by kosika-agents."""
+
+        from . import coders
+
+        try:
+            return coders.mascot(agent, state)
+        except ValueError as exc:
+            raise AppError(str(exc), 404) from exc
+
     def open_mayaos(self) -> dict[str, Any]:
         """Open MayaOS, the app the agents live in: its window when it is
         running, otherwise the app itself, as its shortcut starts it."""
@@ -2435,6 +2507,18 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.services())
                 elif method == "POST" and url.path == "/api/services/pause":
                     self._json(200, app.pause_service(self._body()))
+                elif method == "GET" and url.path == "/api/coders":
+                    self._json(200, app.coders())
+                elif method == "POST" and url.path == "/api/coders/request":
+                    self._json(200, app.add_coder_request(self._body()))
+                elif method == "POST" and url.path == "/api/coders/start":
+                    self._json(200, app.start_coders(self._body()))
+                elif method == "GET" and url.path == "/api/coders/run":
+                    self._json(200, app.coder_run((query.get("run") or [""])[0]))
+                elif method == "POST" and url.path == "/api/coders/keep":
+                    self._json(200, app.keep_coder_run(self._body()))
+                elif method == "GET" and url.path == "/api/coders/mascot":
+                    self._json(200, app.coder_mascot((query.get("agent") or [""])[0], (query.get("state") or ["idle"])[0]))
                 elif method == "POST" and url.path == "/api/open/mayaos":
                     self._json(200, app.open_mayaos())
                 else:

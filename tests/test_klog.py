@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -89,6 +90,24 @@ class EngineRun:
         return (self.folder / "steps.kl").read_text(encoding="utf-8")
 
 
+def _waits_for_the_lock(test: unittest.TestCase, folder: Path, engine: list[str]) -> None:
+    """An append started while another writer holds the log's lock waits for
+    it, then adds its entry once the lock is gone."""
+    (folder / "steps.kos").write_text(PROGRAM, encoding="utf-8")
+    (folder / "in.json").write_text(json.dumps({"s": ENTRIES[1]}), encoding="utf-8")
+    (folder / "steps.kl.lock").mkdir()
+    env = {**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"}
+    waiting = subprocess.Popen(engine + ["run", "steps.kos", "--input", "in.json", "--allow-folder", "."],
+                               cwd=folder, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    time.sleep(5)
+    test.assertIsNone(waiting.poll(), "the append did not wait for the lock")
+    test.assertFalse((folder / "steps.kl").exists())
+    (folder / "steps.kl.lock").rmdir()
+    out, err = waiting.communicate(timeout=120)
+    test.assertEqual(waiting.returncode, 0, out.decode("utf-8", "replace") + err.decode("utf-8", "replace"))
+    test.assertEqual(len((folder / "steps.kl").read_text(encoding="utf-8").splitlines()), 2)
+
+
 PYTHON = [sys.executable, "-m", "kosika.cli"]
 
 
@@ -111,6 +130,9 @@ class PythonLogTests(unittest.TestCase):
         self.assertEqual(first[3], klog.hash_of(lines[0]))
         self.assertEqual(first[4:], list(ENTRIES[0].values()))
         self.assertEqual(json.loads(lines[2])[3], klog.hash_of(lines[1]))
+
+    def test_an_append_waits_while_another_writer_holds_the_lock(self) -> None:
+        _waits_for_the_lock(self, self.run_.folder, PYTHON)
 
     def test_a_changed_line_is_found_where_it_was_changed(self) -> None:
         for entry in ENTRIES:
@@ -184,6 +206,10 @@ class BothEnginesTests(unittest.TestCase):
             ca, cb = json.loads(a), json.loads(b)
             self.assertEqual(klog.line_of(ca[4:]), klog.line_of(cb[4:]))
             self.assertEqual(a.split(",", 4)[4], b.split(",", 4)[4])
+
+    def test_the_go_engine_waits_for_the_same_lock(self) -> None:
+        _py, go = self.folders()
+        _waits_for_the_lock(self, go.folder, [str(self.engine)])
 
     def test_each_engine_reads_what_the_other_wrote(self) -> None:
         py, go = self.folders()

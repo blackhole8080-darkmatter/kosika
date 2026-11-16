@@ -615,6 +615,31 @@ body.on-mission .track { opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .stab, .runner { display: none !important; } .spy-marquee span { animation: none; } .tile, .stamp { animation: none; } }
 [data-skin="spy"] .untiled { display: none; }
 
+/* Coders */
+.grid.coders { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.coders .coder { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.coder .coder-who { display: flex; align-items: center; gap: 12px; }
+.coder-face { width: 72px; height: 72px; flex: none; }
+.coder-face svg { width: 72px; height: 72px; overflow: visible; }
+.coder .coder-who h3 { margin: 0; }
+.coder .coder-who small { display: block; color: var(--faint); font: 11.5px var(--mono); }
+.coder .coder-ask { margin: 2px 0; font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.coder .why { color: var(--faint); font-size: 12px; }
+.todo-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.todo-list li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.45; }
+.todo-list li .chip { flex: none; }
+.ask-box { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.ask-box textarea { min-height: 70px; font: 13px var(--mono); }
+.ask-box .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.coder { cursor: pointer; }
+.coder-run .row { margin: 10px 0 4px; }
+pre.diff, pre.report { max-height: 60vh; overflow: auto; padding: 12px 14px; border-radius: 10px; background: var(--code-soft); font: 12px/1.5 var(--mono); white-space: pre; }
+pre.report { white-space: pre-wrap; }
+pre.diff .add { color: var(--ok, #2f9e6f); }
+pre.diff .del { color: var(--bad, #d2453b); }
+pre.diff .hunk { color: var(--faint); }
+
 /* Services */
 .service .said { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--code-soft); font-size: 12.5px; white-space: pre-wrap; }
 .service .said .asked { color: var(--faint); font: 11.5px var(--mono); margin-bottom: 4px; }
@@ -1050,6 +1075,62 @@ body.on-mission .track { opacity: .5; }
 
 @media (prefers-reduced-motion: reduce) { [data-skin="dark-matter"] body::after { display: none; } }
 
+
+/* ------------------------------------------------- Graphite, the modern look
+   "Kosika Studio, Modern": quieter, flatter, one accent. A graphite ground,
+   hairline borders, amber as the only colour that asks for attention, a
+   grotesk for words and a mono for facts. No nebula, no glass, no opening. */
+[data-skin="graphite"] {
+  --bg: #0E0F12; --panel: #121419; --rail: #0B0C0F; --ink: #ECEDEE; --soft: #A9ADB6; --faint: #8E929C; --line: #22252C;
+  --accent: #F5B45C; --accent-soft: #1C1810; --ok: #6FCF97; --ok-soft: #13241A;
+  --bad: #F2A3A3; --bad-soft: #2A1717; --warn: #F5B45C; --warn-soft: #17140E;
+  --think: #B9B2F0; --think-soft: #1A1928; --mem: #5EC4B6; --mem-soft: #0F1A19;
+  --code: #D8DAE0; --code-soft: #121419;
+  --display: Inter, "Segoe UI", system-ui, sans-serif;
+  --shadow: none; --lift: none; --glow: transparent;
+  color-scheme: dark;
+}
+[data-skin="graphite"] body { font-family: Inter, "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--ink); grid-template-columns: 232px minmax(0, 1fr); }
+[data-skin="graphite"] body::before, [data-skin="graphite"] body::after { display: none !important; }
+[data-skin="graphite"] .nebula, [data-skin="graphite"] .grain, [data-skin="graphite"] .spot, [data-skin="graphite"] .runner, [data-skin="graphite"] .track { display: none !important; }
+[data-skin="graphite"] ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--ink); }
+[data-skin="graphite"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-skin="graphite"] ::-webkit-scrollbar-thumb { background: #2A2D35; border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+[data-skin="graphite"] aside.rail { background: var(--rail); border-right: 1px solid var(--line); backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-skin="graphite"] .brand { font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+[data-skin="graphite"] .brand small { font: 500 11px/1 var(--mono); letter-spacing: 0; text-transform: none; color: var(--faint); margin-left: auto; }
+[data-skin="graphite"] .brand .mark { border-radius: 50%; box-shadow: none; }
+[data-skin="graphite"] .nav { border-radius: 8px; color: var(--soft); font-size: 14px; transition: background .15s, color .15s; }
+[data-skin="graphite"] .nav:hover { background: #15171C; color: var(--ink); }
+[data-skin="graphite"] .nav.on { background: #1A1C22 !important; color: var(--ink); box-shadow: none !important; border-color: transparent !important; outline: 0; font-weight: 500; }
+[data-skin="graphite"] .nav.on::before, [data-skin="graphite"] .nav.on::after { display: none !important; }
+[data-skin="graphite"] .nav.on svg { color: var(--ink); }
+[data-skin="graphite"] .rail .foot { font-size: 12px; color: var(--soft); border-top: 1px solid var(--line); }
+[data-skin="graphite"] main h1 { font-family: var(--display); font-weight: 600; letter-spacing: -.02em; line-height: 1.15; font-size: 26px; }
+[data-skin="graphite"] main h2 { font: 600 13px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--soft); margin: 28px 0 12px; display: block; }
+[data-skin="graphite"] main h2::after { display: none; }
+[data-skin="graphite"] .titled .hero { display: none; }
+[data-skin="graphite"] p.lead { color: var(--soft); }
+[data-skin="graphite"] .panel, [data-skin="graphite"] .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-skin="graphite"] .card:hover { border-color: #3A3E47; transform: none; box-shadow: none; }
+[data-skin="graphite"] .card h3, [data-skin="graphite"] .panel h3 { font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+[data-skin="graphite"] .chip { font: 500 11px/1.7 var(--mono); letter-spacing: 0; text-transform: none; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--soft); }
+[data-skin="graphite"] .chip.ok { color: var(--ok); border-color: #23402F; }
+[data-skin="graphite"] .chip.bad { color: var(--bad); border-color: #4A2A2A; }
+[data-skin="graphite"] .chip.warn, [data-skin="graphite"] .chip.accent { color: var(--accent); border-color: #3A2F1C; }
+[data-skin="graphite"] .chip.think { color: var(--think); border-color: #2C2A44; }
+[data-skin="graphite"] .chip.mem { color: var(--mem); border-color: #1D3532; }
+[data-skin="graphite"] button { font: 500 13px var(--display); border-radius: 8px; min-height: 36px; background: var(--ink); color: var(--bg); border: 0; box-shadow: none; }
+[data-skin="graphite"] button:hover { background: #FFFFFF; box-shadow: none; }
+[data-skin="graphite"] button.ghost, [data-skin="graphite"] button.quiet { background: transparent !important; color: var(--ink) !important; box-shadow: inset 0 0 0 1px #2A2D35 !important; }
+[data-skin="graphite"] button:disabled { opacity: .45; }
+[data-skin="graphite"] input, [data-skin="graphite"] textarea, [data-skin="graphite"] select { background: var(--panel); color: var(--ink); border: 1px solid #2A2D35; border-radius: 10px; }
+[data-skin="graphite"] input:focus, [data-skin="graphite"] textarea:focus, [data-skin="graphite"] select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 1px; }
+[data-skin="graphite"] .banner { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); }
+[data-skin="graphite"] .banner.bad { border-color: #4A2A2A; color: var(--bad); }
+[data-skin="graphite"] pre, [data-skin="graphite"] code { font-family: "JetBrains Mono", var(--mono); }
+[data-skin="graphite"] .path { font-family: var(--mono); color: var(--faint); }
+[data-skin="graphite"] main { animation: none !important; }
 </style>
 </head>
 <body>
@@ -1069,6 +1150,7 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
+<template id="icon-coders"><svg viewBox="0 0 24 24"><circle cx="6" cy="9" r="2.5"/><circle cx="12" cy="7" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M2.5 18c.6-2.6 2-4 3.5-4s2.9 1.4 3.5 4"/><path d="M8.5 16c.6-2.6 2-4 3.5-4s2.9 1.4 3.5 4"/><path d="M14.5 18c.6-2.6 2-4 3.5-4s2.9 1.4 3.5 4"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
 <script>
 "use strict";
@@ -1201,7 +1283,7 @@ setTheme(theme());
 let jumpItems = null;
 async function openJump() {
   if (document.querySelector(".veil")) return;
-  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
   const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
   const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
   let hits = [], at = 0;
@@ -1254,7 +1336,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
@@ -1284,6 +1366,7 @@ async function route() {
     else if (active === "study") showStudy();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
+    else if (active === "coders") await (id ? showCoderRun(id) : showCoders());
     else if (overview.assistant) await showAgent(overview.assistant, true);
     else showAgents();
   } catch (error) {
@@ -1640,6 +1723,95 @@ async function showServices() {
         h("div", {class: "path"}, item.program),
         h("div", null, button));
     })));
+}
+
+// Coders: the coder swarm at work. Each coder of the latest day's run, with
+// its mascot and name, what it was asked, for how long, and how it ended; the
+// to-do list it takes requests from; a box to add one, and a button that
+// starts the swarm. The page looks again every few seconds while any coder
+// is still working.
+let codersTimer = 0;
+async function showCoders(note) {
+  clearTimeout(codersTimer);
+  const view = await api("/api/coders");
+  const faces = {};
+  async function face(agent, state, holder) {
+    try {
+      const drawn = await api("/api/coders/mascot?agent=" + encodeURIComponent(agent) + "&state=" + state);
+      if (drawn.svg) { const svg = new DOMParser().parseFromString(drawn.svg, "image/svg+xml").documentElement; if (svg.nodeName === "svg") { const box = h("div", {class: "coder-face"}, document.importNode(svg, true)); holder.face.replaceWith(box); holder.face = box; } }
+      holder.title.textContent = drawn.title || agent;
+    } catch (error) { /* the coder is shown by its name alone */ }
+  }
+  const words = run => run.result === "passed" ? ["passed its checks", "ok"] : run.result ? ["did not pass", "bad"] : ["working", "warn"];
+  const cards = view.runs.slice().reverse().map(run => {
+    const [said, kind] = words(run);
+    const state = run.result === "passed" ? "done" : run.result ? "failed" : "typing";
+    const holder = {face: h("div", {class: "coder-face"}), title: h("h3", null, run.agent)};
+    face(run.agent, state, holder);
+    return h("div", {class: "card coder", "data-state": state, title: "See the change and its report", onclick: () => go("coders", run.run)},
+      h("div", {class: "coder-who"}, holder.face, h("div", null, holder.title, h("small", null, run.agent + " · " + run.run))),
+      h("p", {class: "coder-ask"}, run.request || "(no request written)"),
+      h("div", {class: "chips"}, chip(said, kind), chip(Math.floor(run.seconds / 60) + " min " + (run.seconds % 60) + " s"), run.patch ? chip("change ready", "think") : null),
+      run.why ? h("div", {class: "why"}, run.why) : null);
+  });
+  const open = view.todo.items.filter(item => item.state === "open").length;
+  const box = h("textarea", {id: "coder-request", placeholder: "add a Text method shout() that gives the text in capitals, giving a Text; examples: `\"hi\".shout()` is `\"HI\"`"});
+  const size = h("select", {id: "coder-size"}, [1, 2, 3, 4].map(n => h("option", {value: n, selected: n === 4 ? "" : null}, n + (n === 1 ? " coder" : " coders"))));
+  async function add() {
+    if (!box.value.trim()) return;
+    try { await api("/api/coders/request", {method: "POST", body: JSON.stringify({text: box.value})}); await showCoders("Added to the to-do list."); }
+    catch (error) { alert(error.message); }
+  }
+  async function begin(button) {
+    button.disabled = true;
+    try { const said = await api("/api/coders/start", {method: "POST", body: JSON.stringify({size: Number(size.value)})}); await showCoders(said.started + " coder" + (said.started === 1 ? "" : "s") + " started."); }
+    catch (error) { button.disabled = false; alert(error.message); }
+  }
+  const startButton = h("button", {onclick: event => begin(event.currentTarget), disabled: open && view.can_start ? null : ""}, "Start the swarm");
+  main.replaceChildren(...[titled("Coders"),
+    h("p", {class: "lead"}, view.day
+      ? "The coder swarm on " + view.day + ", its latest " + view.runs.length + " request" + (view.runs.length === 1 ? "" : "s") + ": " + view.passed + " passed, " + view.working + " working. "
+      : "The coder swarm has not run yet. ", h("span", {class: "path"}, view.work)),
+    note ? h("div", {class: "banner"}, note) : null,
+    cards.length ? h("div", {class: "grid coders"}, cards) : null,
+    h("h2", null, "To-do list"),
+    h("p", {class: "lead"}, open + " waiting. A request with examples, a call and what it gives in backticks, gets its tests written from them. ", h("span", {class: "path"}, view.todo.file)),
+    h("div", {class: "ask-box"}, box, h("div", {class: "row"}, h("button", {class: "ghost", onclick: add}, "Add request"), size, startButton,
+      view.can_start ? null : h("span", {class: "why"}, "The swarm lives in kosika-agents: put it beside kosika to start it from here."))),
+    h("ul", {class: "todo-list"}, view.todo.items.slice().reverse().map(item =>
+      h("li", null, chip({open: "waiting", taken: "working", passed: "passed", failed: "did not pass"}[item.state], {open: "", taken: "warn", passed: "ok", failed: "bad"}[item.state]), h("span", null, item.text))))].filter(Boolean));
+  if (view.working) codersTimer = setTimeout(() => { if (location.hash.startsWith("#coders")) showCoders(); }, 5000);
+}
+
+// One coder run: what it was asked, its report, and its change line by line.
+// A run that passed can be kept: its change goes on a branch of its own and
+// a pull request into studio is opened for review. Nothing is merged here.
+async function showCoderRun(name) {
+  clearTimeout(codersTimer);
+  const run = await api("/api/coders/run?run=" + encodeURIComponent(name));
+  const lines = run.patch ? run.patch.split("\n").map(line => h("span", {class: line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : line.startsWith("@@") ? "hunk" : ""}, line + "\n")) : ["(no change)"];
+  let action = null;
+  if (run.kept) action = h("a", {href: run.kept, target: "_blank", rel: "noopener"}, "Kept as a pull request ↗");
+  else if (run.result === "passed") {
+    action = h("button", {onclick: async event => {
+      const button = event.currentTarget;
+      button.disabled = true; button.textContent = "Making the pull request…";
+      try { await api("/api/coders/keep", {method: "POST", body: JSON.stringify({run: name})}); await showCoderRun(name); }
+      catch (error) { button.disabled = false; button.textContent = "Keep it as a pull request"; alert(error.message); }
+    }}, "Keep it as a pull request");
+  }
+  const said = run.result === "passed" ? chip("passed its checks", "ok") : run.result ? chip("did not pass", "bad") : chip("working", "warn");
+  main.replaceChildren(...[titled("Coders"),
+    h("p", {class: "lead"}, h("a", {href: "#coders"}, "← All coders"), " · ", run.run),
+    h("div", {class: "card coder-run"},
+      h("p", {class: "coder-ask"}, run.request),
+      h("div", {class: "chips"}, said, run.why ? chip(run.why) : null),
+      action ? h("div", {class: "row"}, action) : null,
+      h("p", {class: "why"}, run.result === "passed" && !run.kept ? "Keeping it makes a branch coder/" + run.run + " from studio, pushes it and opens a pull request. You review and merge it on GitHub." : "")),
+    h("h2", null, "The change"),
+    h("pre", {class: "diff"}, lines),
+    h("h2", null, "Report"),
+    h("pre", {class: "report"}, run.report || "(no report yet)")].filter(Boolean));
 }
 
 // MayaOS is an app of its own; the rail opens it, or brings its window up.
@@ -2483,7 +2655,7 @@ function swarmTab(agent) {
     members = {}; active = null; round.textContent = chosen.agents.length + " agents, up to " + chosen.max_rounds + " rounds of workflow " + chosen.workflow;
     fill(stage, chosen.agents.map((name, index) => {
       const doing = h("div", {class: "doing"});
-      const el = h("div", {class: "member c" + (index % 5)}, h("div", {class: "face"}, name.slice(0, 2).toUpperCase()), h("div", {class: "who"}, name), doing);
+      const el = h("div", {class: "member c" + (index % 5)}, h("div", {class: "coder-face"}, name.slice(0, 2).toUpperCase()), h("div", {class: "who"}, name), doing);
       members[name] = {el, doing, index}; return el;
     }));
     live = liveView(agent, chosen.workflow); fill(flow, live.el); quiet();
@@ -2931,7 +3103,7 @@ loadBrand().finally(route);
   function intro() {
     let shown = false;
     try { shown = sessionStorage.getItem("kosika-intro") === "1"; sessionStorage.setItem("kosika-intro", "1"); } catch (error) { shown = false; }
-    if (shown || calm()) return;
+    if (shown || calm() || document.documentElement.dataset.skin === "graphite") return;
     const ns = SVGNS;
     const ink = s("linearGradient", {id: "introInk", x1: "0", y1: "0", x2: "1", y2: "1"},
       s("stop", {offset: "0", "stop-color": "#ff8a4c"}), s("stop", {offset: ".55", "stop-color": "#a993ff"}), s("stop", {offset: "1", "stop-color": "#55d6ff"}));
@@ -3135,7 +3307,7 @@ loadBrand().finally(route);
     if (document.hidden || now - last < 33) return;
     const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
     const look = document.documentElement.dataset.skin;
-    if (look === "swiss" || look === "spy") return;
+    if (look === "swiss" || look === "spy" || look === "graphite") { canvas.style.opacity = "0"; return; }
     TINTS.idle = look === "cutting-room" ? [0.6, 0.38, 0.22] : look === "dark-matter" ? [0.54, 0.44, 1.0] : [0.66, 0.58, 1.0];
     if (now > calmUntil) { wantEnergy = look === "cutting-room" ? 0.07 : look === "dark-matter" ? 0.06 : 0.15; wantTint = TINTS.idle; }
     energy += (wantEnergy - energy) * Math.min(1, dt * 1.6);
@@ -3154,14 +3326,17 @@ loadBrand().finally(route);
 // ------------------------------------------------- skins
 // Four looks: Cinema (the nebula), and three from LemoLab's film styles.
 // The choice is this person's and stays on this computer.
-const SKINS = [["dark-matter", "Dark Matter"], ["cutting-room", "The Cutting Room"], ["cinema", "Cinema"], ["swiss", "Swiss Motion"], ["spy", "Spy Titles"]];
-function skin() { try { return localStorage.getItem("kosika-skin") || "dark-matter"; } catch (error) { return "dark-matter"; } }
+// Studio has one look now, Graphite ("Kosika Studio, Modern"): quieter,
+// flatter, one accent. The older looks' rules stay below, unused.
+const SKINS = [["graphite", "Graphite"]];
+function skin() { return "graphite"; }
 function setSkin(name) {
   try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
   if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;
 }
 setSkin(skin());
 (function skinSwitch() {
+  if (SKINS.length < 2) return;
   const foot = document.getElementById("foot");
   function add() {
     if (foot.querySelector(".skin-switch")) return;

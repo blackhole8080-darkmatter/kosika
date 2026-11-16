@@ -38,6 +38,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -197,8 +199,52 @@ def read_log(program: Program, name: str, path: Path) -> tuple[list[dict[str, An
     return rows, ""
 
 
+#: How long an append waits for another writer, and when a lock is old enough
+#: that its writer must have died holding it.
+LOCK_WAIT_SECONDS = 10.0
+LOCK_STALE_SECONDS = 30.0
+
+
+@contextmanager
+def _locked(path: Path):
+    """Holds PATH.lock, a folder, while one entry is added. Making a folder
+    is atomic on every system, so two programs appending at once (agents of a
+    swarm sharing one log) take turns instead of both reading the same last
+    line and writing the same entry number. The Go engine takes the same
+    lock."""
+    lock = path.with_name(path.name + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + LOCK_WAIT_SECONDS
+    while True:
+        try:
+            lock.mkdir()
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > LOCK_STALE_SECONDS:
+                    lock.rmdir()
+                    continue
+            except OSError:
+                pass
+            if time.monotonic() > deadline:
+                raise LogError(f"{path.name} is being written by another program; nothing was added") from None
+            time.sleep(0.02)
+    try:
+        yield
+    finally:
+        try:
+            lock.rmdir()
+        except OSError:
+            pass
+
+
 def append_log(program: Program, name: str, path: Path, by: str, entry: dict[str, Any]) -> dict[str, Any]:
     validate(entry, schema_for_type(program, name))
+    with _locked(path):
+        return _append_unlocked(program, name, path, by, entry)
+
+
+def _append_unlocked(program: Program, name: str, path: Path, by: str, entry: dict[str, Any]) -> dict[str, Any]:
     lines = _lines(path)
     added: list[str] = []
     if not lines:

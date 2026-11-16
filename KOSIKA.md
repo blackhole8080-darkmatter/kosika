@@ -373,6 +373,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Number` | `to_text()` | `Text`, formatted as in `Text + Number` |
 | `Number` | `min(other: Number)`, `max(other: Number)` | the smaller or larger of the two |
 | `Text` | `to_number()` | `Number?`: the decimal number the trimmed text spells, else `null` |
+| `Text` | `is_hex_colour()` | `Bool`, true when the text is a colour written as `#` and then exactly 3 or 6 of the digits 0 to 9 and letters a to f, either case, with nothing before or after |
 | any array | `first()`, `last()` | `T?`, `null` for an empty array |
 | `Number[]`, `Text[]` | `sort()` | a new array in ascending order; Text sorts by character code |
 | array of `Text`, `Number`, or `Bool` | `unique()` | a new array keeping the first of each equal value |
@@ -395,8 +396,10 @@ the receiver's type, and every method is pure and deterministic.
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
+| `Text` | `first_word()` | `Text`: the first word of the text, as `words()` finds the words, or `""` when it has none |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
+| `Text` | `is_upper_letter()` | `Bool` indicating whether the text is exactly one uppercase letter A‑Z |
 | `Text` | `trim_start()`, `trim_end()` | `Text` without white space at its start, or at its end; the other end is untouched |
 | `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
 | `Number[]` | `dot(other)`, `norm()`, `mean()` | `Number` |
