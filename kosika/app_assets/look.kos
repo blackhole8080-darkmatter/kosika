@@ -65,7 +65,7 @@ fn rules() -> Text {
   let s = "[data-skin=\"clear\"]"
   let sp = spacing()
   return [
-    s + " body{font-family:Figtree,\"Segoe UI\",system-ui,sans-serif;font-size:14.5px;background:var(--bg);color:var(--ink);grid-template-columns:240px minmax(0,1fr);-webkit-font-smoothing:antialiased;font-feature-settings:\"tnum\" 1}",
+    s + " body{font-family:Figtree,\"Segoe UI\",system-ui,sans-serif;font-size:14.5px;background:var(--bg);color:var(--ink);grid-template-columns:76px minmax(0,1fr);-webkit-font-smoothing:antialiased;font-feature-settings:\"tnum\" 1}",
     s + " body::before," + s + " body::after," + s + " .nebula," + s + " .grain," + s + " .spot," + s + " .runner," + s + " .track," + s + " .titled .hero," + s + " .nav-pill{display:none!important}",
     s + " ::selection{background:var(--accent-soft)}",
     s + " :focus-visible{outline:2px solid var(--accent);outline-offset:2px}",
@@ -73,10 +73,16 @@ fn rules() -> Text {
     s + " .brand{font-weight:700;font-size:15px;letter-spacing:-.01em;padding:4px 8px " + sp[3].to_text() + "px}",
     s + " .brand," + s + " .brand span{font-family:Figtree,\"Segoe UI\",sans-serif!important;font-style:normal}",
     s + " .brand small{font:500 12px Figtree,sans-serif;color:var(--faint)}",
+    s + " aside.rail{align-items:stretch;padding:14px 8px}",
+    s + " .brand{justify-content:center;padding:2px 0 14px!important}",
+    s + " .brand > span:not(.mark){display:none}",
+    s + " .nav{flex-direction:column;align-items:center;justify-content:center;gap:3px!important;padding:8px 2px 6px!important;font-size:10.5px!important;font-weight:600!important;text-align:center}",
+    s + " .nav svg{width:20px!important;height:20px!important}",
+    s + " .rail .foot{align-items:center;padding:8px 0 0!important}",
     s + " .nav-group{font:600 11px/1 Figtree,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:" + sp[3].to_text() + "px 10px 6px}",
     s + " .nav{border-radius:8px;padding:7px 10px;color:var(--soft);font-size:14px;font-weight:500;transition:background .12s,color .12s}",
     s + " .nav:hover{background:var(--hover);color:var(--ink)}",
-    s + " .nav.on{background:var(--hover)!important;color:var(--ink);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)!important}",
+    s + " .nav.on{background:var(--hover)!important;color:var(--ink);box-shadow:inset 2px 0 0 var(--accent)!important}",
     s + " .nav.on::before," + s + " .nav.on::after{display:none!important}",
     s + " .rail .foot{border-top:1px solid var(--line);padding:" + sp[2].to_text() + "px 8px 0;gap:4px;font-size:12.5px}",
     s + " .rail .foot .path{font:12px Figtree,sans-serif;color:var(--faint)}",
