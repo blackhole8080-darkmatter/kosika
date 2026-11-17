@@ -95,6 +95,25 @@ use `t`, and complex functions use `z`.
   zero, the log of a negative number) is left out of the line, and the
   reason goes into `problems` when the drawing cannot be made.
 
+## Motion
+
+The drawings move, using plain SVG animation, so they move in Studio, in a
+browser and in a saved `.svg` file, and no script runs:
+
+- The pen draws each curve, then an amber point travels along it. On
+  graphs, Taylor series, integrals and parametric curves, a short tangent
+  line turns with the point.
+- Taylor polynomials appear one after another, from the lowest order up.
+  Integral strips fill in from left to right.
+- On polar curves the radius r runs round as the angle grows.
+- Flow lines in slope and vector fields stream in the direction of flow.
+- In the twin paradox both twins move up their world lines in step with
+  home time, and a counter shows each twin's own birthdays.
+
+When a viewer asks for reduced motion, the page shows the still drawing.
+`pl_tracer(path, seconds, tangent)` and `pl_spoke(...)` add the same
+motion to a new drawing.
+
 ## Pictures
 
 The pictures of every drawing are in the project's

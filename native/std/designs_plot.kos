@@ -379,6 +379,29 @@ fn pl_frame_svg(w: Number, h: Number, body: Text, label: Text) -> Text {
   return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"pl-svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{pl_esc(label)}\"><rect width=\"{w}\" height=\"{h}\" fill=\"#07080d\"/>{body}</svg>"
 }
 
+// ---------------------------------------------------------------- motion
+
+// A point that travels along a drawn path, again and again, once the pen
+// has drawn it. With a tangent, a short amber line turns with the point
+// and always lies along the curve: the derivative made visible. Plain SVG
+// animation, so it moves in a saved picture too, and nothing runs code.
+fn pl_tracer(d: Text, dur: Number, tangent: Bool) -> Text {
+  if d.is_empty() { return "" }
+  let line = if tangent { "<line x1=\"-48\" y1=\"0\" x2=\"48\" y2=\"0\" stroke=\"#f5b942\" stroke-width=\"1.4\" stroke-opacity=\".85\"/>" } else { "" }
+  return f"<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"2.4s\" fill=\"freeze\"/>{line}<circle r=\"9\" fill=\"#f5b942\" fill-opacity=\".18\"/><circle r=\"4.2\" fill=\"#f5b942\"/><animateMotion dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\" rotate=\"auto\" path=\"{d}\"/></g>"
+}
+
+// A radius from a centre to a point that runs round a polar curve.
+fn pl_spoke(cx: Number, cy: Number, xs: Number[], ys: Number[], ok: Bool[], dur: Number) -> Text {
+  let every = (xs.length() / 240).ceil().max(1)
+  let picks = for k in 0 until xs.length() where ok[k] and k % every == 0 { k }
+  if picks.length() < 2 { return "" }
+  let vx = (for k in picks { xs[k].to_fixed(1) }).join(";")
+  let vy = (for k in picks { ys[k].to_fixed(1) }).join(";")
+  let c = f"cx=\"{cx.to_fixed(1)}\" cy=\"{cy.to_fixed(1)}\""
+  return f"<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"2.4s\" fill=\"freeze\"/><line x1=\"{cx.to_fixed(1)}\" y1=\"{cy.to_fixed(1)}\" stroke=\"#f5b942\" stroke-width=\"1.4\"><animate attributeName=\"x2\" values=\"{vx}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/><animate attributeName=\"y2\" values=\"{vy}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/></line><circle r=\"9\" fill=\"#f5b942\" fill-opacity=\".18\" {c}><animate attributeName=\"cx\" values=\"{vx}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/><animate attributeName=\"cy\" values=\"{vy}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/></circle><circle r=\"4.2\" fill=\"#f5b942\" {c}><animate attributeName=\"cx\" values=\"{vx}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/><animate attributeName=\"cy\" values=\"{vy}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/></circle></g>"
+}
+
 fn pl_curve(text: Text, x0: Number, x1: Number) -> PlFigure {
   let parsed = parse(pl_formula(text))
   if not pl_unread(parsed).is_empty() { return pl_failed("curve", pl_formula(text), pl_unread(parsed)) }
@@ -487,7 +510,7 @@ fn pl_curve(text: Text, x0: Number, x1: Number) -> PlFigure {
   let dcurve = pl_path_data(px, dpy, dinside, (bottom - top) * 0.9)
   let defs = f"<defs><marker id=\"pl-arrow\" viewBox=\"0 0 10 10\" refX=\"8\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto\"><path d=\"M0 1L9 5L0 9\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".7\"/></marker><clipPath id=\"pl-clip\"><rect x=\"{left}\" y=\"{top}\" width=\"{right - left}\" height=\"{bottom - top}\"/></clipPath></defs>"
   let key = f"<g font-size=\"12\" fill=\"#f4f1ea\" fill-opacity=\".75\"><line x1=\"{right - 210}\" y1=\"{top + 14}\" x2=\"{right - 180}\" y2=\"{top + 14}\" stroke=\"#f4f1ea\" stroke-width=\"2\"/><text x=\"{right - 172}\" y=\"{top + 18}\">f({v})</text><line x1=\"{right - 110}\" y1=\"{top + 14}\" x2=\"{right - 80}\" y2=\"{top + 14}\" stroke=\"#f4f1ea\" stroke-width=\"1\" stroke-dasharray=\"5 5\" stroke-opacity=\".55\"/><text x=\"{right - 72}\" y=\"{top + 18}\">f&#8242;({v})</text></g>"
-  let body = defs + grid.join("") + axes.join("") + f"<g clip-path=\"url(#pl-clip)\"><path d=\"{dcurve}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".5\" stroke-width=\"1\" stroke-dasharray=\"5 5\"/><path class=\"pl-draw\" d=\"{curve}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/></g>" + marks.join("") + key
+  let body = defs + grid.join("") + axes.join("") + f"<g clip-path=\"url(#pl-clip)\"><path d=\"{dcurve}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".5\" stroke-width=\"1\" stroke-dasharray=\"5 5\"/><path class=\"pl-draw\" d=\"{curve}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/></g>" + marks.join("") + key + pl_tracer(curve, 8, true)
   let title = "f(" + v + ") = " + pl_words(parsed.expr)
   let svg = pl_frame_svg(w, h, body, "graph of " + title)
   let left_side = "<mi>f</mi><mo stretchy=\"false\">(</mo><mi>" + v + "</mi><mo stretchy=\"false\">)</mo>"
@@ -1191,18 +1214,20 @@ fn pl_taylor(text: Text, centre: Number, top: Number) -> PlFigure {
     let op = if last { "1" } else { (0.25 + 0.5 * oi / orders.length().max(1)).to_fixed(2) }
     let width = if last { "1.8" } else { "1" }
     let dash = if last { "none" } else { "6 4" }
-    lines = lines.append(f"<path d=\"{pl_path_data(px, pl_sy(b, ys), inside, (b.bottom - b.top) * 2)}\" fill=\"none\" stroke=\"{colour}\" stroke-opacity=\"{op}\" stroke-width=\"{width}\" stroke-dasharray=\"{dash}\"/>")
+    let delay = (2.2 + 0.7 * oi).to_fixed(1)
+    lines = lines.append(f"<path class=\"pl-fade\" style=\"animation-delay:{delay}s\" d=\"{pl_path_data(px, pl_sy(b, ys), inside, (b.bottom - b.top) * 2)}\" fill=\"none\" stroke=\"{colour}\" stroke-opacity=\"{op}\" stroke-width=\"{width}\" stroke-dasharray=\"{dash}\"/>")
     if last or oi == 0 {
       labels = labels.append(f"P{m}({v})")
       colours = colours.append(colour)
       dashes = dashes.append(not last)
     }
   }
-  let curve = f"<path class=\"pl-draw\" d=\"{pl_path_data(px, pl_sy(b, f.ys), f.ok, (b.bottom - b.top) * 0.9)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2.2\"/>"
+  let fd = pl_path_data(px, pl_sy(b, f.ys), f.ok, (b.bottom - b.top) * 0.9)
+  let curve = f"<path class=\"pl-draw\" d=\"{fd}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2.2\"/>"
   let cx = pl_sx(b, [centre])[0]
   let cyv = pl_sy(b, [coefs[0]])[0]
   let mark = f"<line x1=\"{cx.to_fixed(1)}\" y1=\"{b.top}\" x2=\"{cx.to_fixed(1)}\" y2=\"{b.bottom}\" stroke=\"#f5b942\" stroke-opacity=\".35\" stroke-dasharray=\"2 4\"/><circle cx=\"{cx.to_fixed(1)}\" cy=\"{cyv.to_fixed(1)}\" r=\"4.5\" fill=\"#07080d\" stroke=\"#f5b942\" stroke-width=\"1.8\"/>"
-  let body = pl_grid(b, v, "y") + "<g clip-path=\"url(#pl-clip)\">" + lines.join("") + curve + "</g>" + mark + pl_key(b, labels, colours, dashes)
+  let body = pl_grid(b, v, "y") + "<g clip-path=\"url(#pl-clip)\">" + lines.join("") + curve + "</g>" + mark + pl_key(b, labels, colours, dashes) + pl_tracer(fd, 9, true)
   let svg = pl_frame_svg(960, 600, body, "Taylor series of " + pl_words(parsed.expr))
   // The notation: the series in general, then the polynomial worked out.
   let shift = if centre == 0 { f"<mi>{v}</mi>" } else { f"<mo stretchy=\"false\">(</mo><mi>{v}</mi><mo>&#8722;</mo><mn>{pl_num(centre)}</mn><mo stretchy=\"false\">)</mo>" }
@@ -1288,12 +1313,14 @@ fn pl_integral(text: Text, a: Number, bnd: Number) -> PlFigure {
       let top = pl_sy(b, [c.re])[0]
       let y = top.min(pl_sy(b, [0])[0])
       let hgt = (top - pl_sy(b, [0])[0]).abs()
-      rects = rects.append(f"<rect x=\"{xs[0].to_fixed(1)}\" y=\"{y.to_fixed(1)}\" width=\"{(xs[1] - xs[0]).to_fixed(1)}\" height=\"{hgt.to_fixed(1)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".35\" stroke-width=\".8\"/>")
+      let delay = (0.6 + 0.15 * k).to_fixed(2)
+      rects = rects.append(f"<rect class=\"pl-fade\" style=\"animation-delay:{delay}s\" x=\"{xs[0].to_fixed(1)}\" y=\"{y.to_fixed(1)}\" width=\"{(xs[1] - xs[0]).to_fixed(1)}\" height=\"{hgt.to_fixed(1)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".35\" stroke-width=\".8\"/>")
     }
   }
-  let curve = f"<path class=\"pl-draw\" d=\"{pl_path_data(pl_sx(b, f.xs), pl_sy(b, f.ys), f.ok, (b.bottom - b.top) * 0.9)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2\"/>"
+  let fd = pl_path_data(pl_sx(b, f.xs), pl_sy(b, f.ys), f.ok, (b.bottom - b.top) * 0.9)
+  let curve = f"<path class=\"pl-draw\" d=\"{fd}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2\"/>"
   let edges = f"<line x1=\"{left}\" y1=\"{b.top}\" x2=\"{left}\" y2=\"{b.bottom}\" stroke=\"#f5b942\" stroke-opacity=\".55\" stroke-dasharray=\"3 4\"/><line x1=\"{right}\" y1=\"{b.top}\" x2=\"{right}\" y2=\"{b.bottom}\" stroke=\"#f5b942\" stroke-opacity=\".55\" stroke-dasharray=\"3 4\"/><text x=\"{left}\" y=\"{b.bottom - 6}\" dx=\"4\" fill=\"#f5b942\" font-size=\"13\" font-style=\"italic\" font-family=\"Georgia,serif\">a</text><text x=\"{right}\" y=\"{b.bottom - 6}\" dx=\"4\" fill=\"#f5b942\" font-size=\"13\" font-style=\"italic\" font-family=\"Georgia,serif\">b</text>"
-  let body = pl_grid(b, v, "y") + "<g clip-path=\"url(#pl-clip)\">" + area + rects.join("") + curve + "</g>" + edges
+  let body = pl_grid(b, v, "y") + "<g clip-path=\"url(#pl-clip)\">" + area + rects.join("") + curve + "</g>" + edges + pl_tracer(fd, 8, true)
   let svg = pl_frame_svg(960, 600, body, "area under " + pl_words(parsed.expr))
   let integral = f"<math display=\"block\"><msubsup><mo>&#8747;</mo><mn>{pl_num(lo0)}</mn><mn>{pl_num(hi0)}</mn></msubsup>" + to_mathml(parsed.expr) + f"<mspace width=\".2em\"/><mi>d</mi><mi>{v}</mi><mo>&#8776;</mo><mn>{pl_num(simpson)}</mn></math>"
   let sum = f"<math display=\"block\"><munderover><mo>&#8721;</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mn>{strips}</mn></munderover><mi>f</mi><mo stretchy=\"false\">(</mo><msub><mi>m</mi><mi>k</mi></msub><mo stretchy=\"false\">)</mo><mi>&#916;</mi><mi>{v}</mi><mo>=</mo><mn>{pl_num(riemann)}</mn><mo>,</mo><mspace width=\"1em\"/><mi>&#916;</mi><mi>{v}</mi><mo>=</mo><mn>{pl_num(sw)}</mn></math>"
@@ -1340,9 +1367,9 @@ fn pl_polar(text: Text, turns: Number) -> PlFigure {
   // One point on the curve, with its radius and angle, in amber.
   let pick = (s.xs.length() / 9).floor()
   let marker = if s.ok[pick] { f"<line x1=\"{cx.to_fixed(1)}\" y1=\"{cy.to_fixed(1)}\" x2=\"{pl_sx(b, [xs[pick]])[0].to_fixed(1)}\" y2=\"{pl_sy(b, [ys[pick]])[0].to_fixed(1)}\" stroke=\"#f5b942\" stroke-width=\"1.4\"/><circle cx=\"{pl_sx(b, [xs[pick]])[0].to_fixed(1)}\" cy=\"{pl_sy(b, [ys[pick]])[0].to_fixed(1)}\" r=\"4\" fill=\"#f5b942\"/><text x=\"{pl_sx(b, [xs[pick] / 2])[0].to_fixed(1)}\" y=\"{pl_sy(b, [ys[pick] / 2])[0].to_fixed(1)}\" dx=\"6\" dy=\"-6\" fill=\"#f5b942\" font-size=\"14\" font-style=\"italic\" font-family=\"Georgia,serif\">r</text>" } else { "" }
-  let svg = pl_frame_svg(760, 700, grid.join("") + curve + marker, "polar curve r = " + pl_words(parsed.expr))
+  let svg = pl_frame_svg(760, 700, grid.join("") + curve + "<g class=\"pl-still\">" + marker + "</g>" + pl_spoke(cx, cy, pl_sx(b, xs), pl_sy(b, ys), s.ok, 10 * laps), "polar curve r = " + pl_words(parsed.expr))
   let notation = pl_notation("<mi>r</mi>", parsed.expr) + f"<math display=\"block\"><mi>x</mi><mo>=</mo><mi>r</mi><mi>cos</mi><mi>{v}</mi><mo>,</mo><mspace width=\"1em\"/><mi>y</mi><mo>=</mo><mi>r</mi><mi>sin</mi><mi>{v}</mi><mo>,</mo><mspace width=\"1em\"/><mn>0</mn><mo>&#8804;</mo><mi>{v}</mi><mo>&#8804;</mo><mn>{pl_num(2 * laps)}</mn><mi>&#960;</mi></math>"
-  let notes: Text[] = [f"Kosika computed r at 1201 angles and turned each (r, {v}) into a point; a negative r points the opposite way, which is how roses get their petals.", f"Rings every {pl_num(ring)}; the amber spoke is one radius, drawn to its point on the curve."]
+  let notes: Text[] = [f"Kosika computed r at 1201 angles and turned each (r, {v}) into a point; a negative r points the opposite way, which is how roses get their petals.", f"Rings every {pl_num(ring)}; the amber spoke is the radius r, running round the curve as the angle grows."]
   let fig: PlFigure = {kind: "polar", title: "r = " + pl_words(parsed.expr).replace("theta", "θ"), formula: pl_words(parsed.expr), notation: notation.replace("<mi>theta</mi>", "<mi>&#952;</mi>"), svg: svg.replace(">theta<", ">&#952;<"), live: "", page: "", notes: notes, problems: []}
   return pl_paged(fig, "Kosika math &#183; a polar curve")
 }
@@ -1378,10 +1405,11 @@ fn pl_param(xt: Text, yt: Text, t0: Number, t1: Number) -> PlFigure {
   let b = pl_square_frame(xlo - px, xhi + px, ylo - py, yhi + py, 860, 640)
   let sx = pl_sx(b, a.ys)
   let sy = pl_sy(b, c.ys)
-  let curve = f"<path class=\"pl-draw\" d=\"{pl_path_data(sx, sy, ok, (b.bottom - b.top) * 0.5)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/>"
+  let pd = pl_path_data(sx, sy, ok, (b.bottom - b.top) * 0.5)
+  let curve = f"<path class=\"pl-draw\" d=\"{pd}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/>"
   // Where the curve starts, and which way it goes.
   let start = if ok[0] and ok[8] { f"<circle cx=\"{sx[0].to_fixed(1)}\" cy=\"{sy[0].to_fixed(1)}\" r=\"4.5\" fill=\"#07080d\" stroke=\"#f5b942\" stroke-width=\"1.8\"/><line x1=\"{sx[0].to_fixed(1)}\" y1=\"{sy[0].to_fixed(1)}\" x2=\"{sx[8].to_fixed(1)}\" y2=\"{sy[8].to_fixed(1)}\" stroke=\"#f5b942\" stroke-width=\"2\" marker-end=\"url(#pl-arrow)\"/>" } else { "" }
-  let svg = pl_frame_svg(860, 640, pl_grid(b, "x", "y") + curve + start, "parametric curve")
+  let svg = pl_frame_svg(860, 640, pl_grid(b, "x", "y") + curve + start + pl_tracer(pd, 10, true), "parametric curve")
   let notation = f"<math display=\"block\"><mi>x</mi><mo stretchy=\"false\">(</mo><mi>{v}</mi><mo stretchy=\"false\">)</mo><mo>=</mo>" + to_mathml(ex.expr) + f"<mo>,</mo><mspace width=\"1em\"/><mi>y</mi><mo stretchy=\"false\">(</mo><mi>{v}</mi><mo stretchy=\"false\">)</mo><mo>=</mo>" + to_mathml(ey.expr) + "</math>" + f"<math display=\"block\"><mn>{pl_num(t0)}</mn><mo>&#8804;</mo><mi>{v}</mi><mo>&#8804;</mo><mn>{pl_num(t1)}</mn></math>"
   let notes: Text[] = [f"Kosika computed both coordinates at 1201 values of {v}; the amber ring is where {v} = {pl_num(t0)} and the arrow shows which way the curve is traced."]
   let fig: PlFigure = {kind: "parametric", title: f"x = {pl_words(ex.expr)}, y = {pl_words(ey.expr)}", formula: pl_words(ex.expr) + ", " + pl_words(ey.expr), notation: notation, svg: svg, live: "", page: "", notes: notes, problems: problems}
@@ -1463,7 +1491,7 @@ fn pl_flow(ptext: Text, qtext: Text, span: Number, slope: Bool) -> PlFigure {
     if pts.length() > 1 {
       let d = "M" + pts.join("L")
       let first = pts[0].split(" ")
-      flows = flows.append(f"<path d=\"{d}\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"{first[0]}\" cy=\"{first[1]}\" r=\"3\" fill=\"{colour}\"/>")
+      flows = flows.append(f"<path d=\"{d}\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path class=\"pl-stream\" d=\"{d}\" fill=\"none\" stroke=\"#07080d\" stroke-width=\"2.4\" stroke-dasharray=\"3 21\"/><circle cx=\"{first[0]}\" cy=\"{first[1]}\" r=\"3\" fill=\"{colour}\"/>")
     }
   }
   let svg = pl_frame_svg(760, 700, pl_grid(b, "x", "y") + "<g clip-path=\"url(#pl-clip)\">" + arrows.join("") + flows.join("") + "</g>", if slope { "slope field" } else { "vector field" })
@@ -1520,6 +1548,25 @@ fn pl_twins(v: Number, distance: Number) -> PlFigure {
   }
   let lab = "font-size=\"13\""
   body = body.append(f"<text x=\"{end[0].to_fixed(1)}\" y=\"{end[1].to_fixed(1)}\" dx=\"-10\" dy=\"-8\" text-anchor=\"end\" fill=\"#f4f1ea\" {lab}>home twin: {pl_num(home)} years</text><text x=\"{turn[0].to_fixed(1)}\" y=\"{turn[1].to_fixed(1)}\" dx=\"10\" fill=\"#f5b942\" {lab}>turns back</text><text x=\"{((turn[0] + end[0]) / 2).to_fixed(1)}\" y=\"{((turn[1] + end[1]) / 2).to_fixed(1)}\" dx=\"14\" fill=\"#f5b942\" {lab}>travelling twin: {pl_num(away)} years</text><text x=\"{pl_sx(b, [0])[0].to_fixed(1)}\" y=\"{pl_sy(b, [half])[0].to_fixed(1)}\" dx=\"-10\" text-anchor=\"end\" fill=\"#8b8cff\" font-size=\"11\">the traveller&#8217;s &#8220;now&#8221; jumps</text>")
+  // Both twins move up their world lines together, in step with home
+  // time, and each counts their own birthdays as they pass them.
+  let dur = 10
+  let at = (b.right - 170).to_fixed(1)
+  let row = (b.top + 22).to_fixed(1)
+  var clock: Text[] = []
+  for k in 0 until (home + 0.0001).floor() + 1 {
+    let a = (k / home).to_fixed(4)
+    let z = if k + 1 > home { "1" } else { ((k + 1) / home).to_fixed(4) }
+    clock = clock.append(f"<text x=\"{at}\" y=\"{row}\" fill=\"#f4f1ea\" font-size=\"14\" opacity=\"0\">home: {k}<animate attributeName=\"opacity\" values=\"0;1;0\" keyTimes=\"0;{a};{z}\" calcMode=\"discrete\" dur=\"{dur}s\" begin=\"1s\" repeatCount=\"indefinite\"/></text>")
+  }
+  for k in 0 until (away + 0.0001).floor() + 1 {
+    let a = (k * gamma / home).to_fixed(4)
+    let z = if k + 1 > away { "1" } else { ((k + 1) * gamma / home).to_fixed(4) }
+    clock = clock.append(f"<text x=\"{at}\" y=\"{row}\" dy=\"20\" fill=\"#f5b942\" font-size=\"14\" opacity=\"0\">traveller: {k}<animate attributeName=\"opacity\" values=\"0;1;0\" keyTimes=\"0;{a};{z}\" calcMode=\"discrete\" dur=\"{dur}s\" begin=\"1s\" repeatCount=\"indefinite\"/></text>")
+  }
+  let homepath = f"M{o[0].to_fixed(1)} {o[1].to_fixed(1)}L{end[0].to_fixed(1)} {end[1].to_fixed(1)}"
+  let trip = f"M{o[0].to_fixed(1)} {o[1].to_fixed(1)}L{turn[0].to_fixed(1)} {turn[1].to_fixed(1)}L{end[0].to_fixed(1)} {end[1].to_fixed(1)}"
+  body = body.append(f"<g class=\"pl-move\"><text x=\"{at}\" y=\"{row}\" dy=\"-20\" fill=\"#9aa0b4\" font-size=\"11\" letter-spacing=\".12em\">BIRTHDAYS SO FAR</text>" + clock.join("") + f"<circle r=\"6\" fill=\"#f4f1ea\"><animateMotion dur=\"{dur}s\" begin=\"1s\" repeatCount=\"indefinite\" path=\"{homepath}\"/></circle><circle r=\"6\" fill=\"#f5b942\"><animateMotion dur=\"{dur}s\" begin=\"1s\" repeatCount=\"indefinite\" path=\"{trip}\"/></circle></g>")
   let svg = pl_frame_svg(w, h, body.join(""), "twin paradox space-time diagram")
   let notation = f"<math display=\"block\"><mi>&#964;</mi><mo>=</mo><mfrac><mi>t</mi><mi>&#947;</mi></mfrac><mo>=</mo><mi>t</mi><msqrt><mn>1</mn><mo>&#8722;</mo><msup><mi>v</mi><mn>2</mn></msup><mo>/</mo><msup><mi>c</mi><mn>2</mn></msup></msqrt><mo>,</mo><mspace width=\"1em\"/><mi>t</mi><mo>=</mo><mfrac><mrow><mn>2</mn><mi>L</mi></mrow><mi>v</mi></mfrac><mo>=</mo><mn>{pl_num(home)}</mn><mo>,</mo><mspace width=\"1em\"/><mi>&#964;</mi><mo>=</mo><mn>{pl_num(away)}</mn></math>"
   let notes: Text[] = [f"The travelling twin flies {pl_num(L)} light-years out at {pl_num(speed)}c and back. At home {pl_num(home)} years pass; on the ship, &#947; = {pl_num(gamma)} times fewer: {pl_num(away)} years.", "White dots are the home twin's birthdays, amber dots the traveller's. The two are not symmetric: only the traveller turns around, and at the turn their lines of &#8220;now&#8221; (indigo) swing across the home twin's years."]
@@ -1555,7 +1602,7 @@ fn pl_catalogue() -> PlEntry[] {
 // ---------------------------------------------------------------- the page
 
 fn pl_style() -> Text {
-  return ":root{--bg:" + "#07080d" + ";--ink:" + "#f4f1ea" + ";--amber:" + "#f5b942" + ";--soft:#9aa0b4}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}main{max-width:1180px;margin:0 auto;padding:28px 18px 40px}.kick{color:var(--amber);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase}h1{margin:6px 0 10px;font:400 clamp(26px,4vw,40px)/1.15 Georgia,'Times New Roman',serif;letter-spacing:-.01em}.nota{margin:4px 0 18px;padding:10px 0;border-top:1px solid rgba(244,241,234,.12);border-bottom:1px solid rgba(244,241,234,.12);font-size:22px}.nota math{margin:6px 0;font-family:'STIX Two Math','Cambria Math','Latin Modern Math',serif}.fig svg,.fig canvas{display:block;width:100%;height:auto;border-radius:14px}.pl-pair{display:grid;grid-template-columns:1.7fr 1fr;gap:14px;align-items:center}@media(max-width:760px){.pl-pair{grid-template-columns:1fr}}.pl-live canvas{aspect-ratio:3/2;touch-action:none;cursor:grab;background:var(--bg)}.pl-ctl{display:flex;gap:8px;align-items:center;padding:8px 2px;color:var(--soft);font:11px ui-monospace,Consolas,monospace}.pl-ctl span{margin-right:auto}.pl-ctl button{border:1px solid rgba(244,241,234,.25);border-radius:999px;padding:5px 12px;background:none;color:var(--ink);font:inherit;cursor:pointer}.pl-ctl button:hover{border-color:var(--amber);color:var(--amber)}ul{margin:16px 0 0;padding-left:18px;color:var(--soft)}li{margin:4px 0}.bad{color:#ff8b7a}.pl-draw{stroke-dasharray:6000;stroke-dashoffset:6000;animation:pl-pen 2.4s ease-out forwards}@keyframes pl-pen{to{stroke-dashoffset:0}}@media(prefers-reduced-motion:reduce){.pl-draw{animation:none;stroke-dashoffset:0}}"
+  return ":root{--bg:" + "#07080d" + ";--ink:" + "#f4f1ea" + ";--amber:" + "#f5b942" + ";--soft:#9aa0b4}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}main{max-width:1180px;margin:0 auto;padding:28px 18px 40px}.kick{color:var(--amber);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase}h1{margin:6px 0 10px;font:400 clamp(26px,4vw,40px)/1.15 Georgia,'Times New Roman',serif;letter-spacing:-.01em}.nota{margin:4px 0 18px;padding:10px 0;border-top:1px solid rgba(244,241,234,.12);border-bottom:1px solid rgba(244,241,234,.12);font-size:22px}.nota math{margin:6px 0;font-family:'STIX Two Math','Cambria Math','Latin Modern Math',serif}.fig svg,.fig canvas{display:block;width:100%;height:auto;border-radius:14px}.pl-pair{display:grid;grid-template-columns:1.7fr 1fr;gap:14px;align-items:center}@media(max-width:760px){.pl-pair{grid-template-columns:1fr}}.pl-live canvas{aspect-ratio:3/2;touch-action:none;cursor:grab;background:var(--bg)}.pl-ctl{display:flex;gap:8px;align-items:center;padding:8px 2px;color:var(--soft);font:11px ui-monospace,Consolas,monospace}.pl-ctl span{margin-right:auto}.pl-ctl button{border:1px solid rgba(244,241,234,.25);border-radius:999px;padding:5px 12px;background:none;color:var(--ink);font:inherit;cursor:pointer}.pl-ctl button:hover{border-color:var(--amber);color:var(--amber)}ul{margin:16px 0 0;padding-left:18px;color:var(--soft)}li{margin:4px 0}.bad{color:#ff8b7a}.pl-draw{stroke-dasharray:6000;stroke-dashoffset:6000;animation:pl-pen 2.4s ease-out forwards}@keyframes pl-pen{to{stroke-dashoffset:0}}.pl-still{display:none}.pl-fade{opacity:0;animation:pl-in .8s ease-out forwards}@keyframes pl-in{to{opacity:1}}.pl-stream{animation:pl-flow 1.6s linear infinite}@keyframes pl-flow{to{stroke-dashoffset:-24}}@media(prefers-reduced-motion:reduce){.pl-draw{animation:none;stroke-dashoffset:0}.pl-fade{animation:none;opacity:1}.pl-stream,.pl-move{display:none}.pl-still{display:inline}}"
 }
 
 // The figure's page: the notation first, the drawing, then what Kosika
@@ -1878,4 +1925,18 @@ test "the twin paradox counts each twin's years" {
 
 test "every drawing in the catalogue can be reached by its example ask" {
   expect (for e in pl_catalogue() where not e.ask.is_empty() and pl_kind(e.ask) != e.kind { e.kind }).is_empty()
+}
+
+test "a graph's point travels along it with its tangent" {
+  expect pl_curve("x^2", -2, 2).svg.contains("<animateMotion")
+  expect pl_curve("x^2", -2, 2).svg.contains("rotate=\"auto\"")
+}
+
+test "the twins count their own birthdays as they move" {
+  expect pl_twins(0.6, 3).svg.contains("traveller: 8")
+  expect pl_twins(0.6, 3).svg.contains("home: 10")
+}
+
+test "motion stops for people who ask for less of it" {
+  expect pl_style().contains("prefers-reduced-motion")
 }
