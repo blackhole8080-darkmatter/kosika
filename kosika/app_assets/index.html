@@ -2124,9 +2124,16 @@ function showStudy() {
     return h("div", {class: "card", style: "display:block"}, parts);
   }
   function draw() { out.replaceChildren(...studyLog.map(card)); }
+  // Learn explains and draws; Practise sets a problem with hints and never
+  // the answer (the study agent's practice mode).
+  let mode = "learn";
+  const modes = h("div", {class: "home-tabs", style: "margin:0"}, [["learn", "Learn"], ["practise", "Practise"]].map(([key, label]) =>
+    h("div", {class: "home-tab" + (key === mode ? " on" : ""), onclick: event => { mode = key; [...modes.children].forEach(tab => tab.classList.toggle("on", tab === event.currentTarget)); ask.placeholder = key === "practise" ? "a topic to practise, like proofs by induction" : "explain how a transistor works \u00b7 quiz me on optics \u00b7 remember: \u2026"; }}, label)));
+  function study(topic, as) { mode = as || mode; [...modes.children].forEach((tab, i) => tab.classList.toggle("on", (i === 1) === (mode === "practise"))); ask.value = topic; run(); }
   async function run() {
-    const text = ask.value.trim();
+    let text = ask.value.trim();
     if (!text) { ask.focus(); return; }
+    if (mode === "practise" && !/^(practi[sc]e|hints?)\b/i.test(text) && !/^remember\b/i.test(text)) text = "practise: " + text;
     go.disabled = true; ask.value = "";
     const waiting = h("p", {class: "lead"}, "Thinking about \u201c" + text + "\u201d, and drawing it\u2026 (about half a minute)");
     out.prepend(waiting);
@@ -2136,9 +2143,23 @@ function showStudy() {
   }
   ask.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
   const tries = ["remember: Physics 2 exam on 12 December covers waves and optics", "how does interference of light work", "quiz me on interference", "differentiate x^2 sin(x)"];
+  // Your subjects, one tap away, and today's topic from Kosi's plan.
+  const subjects = [["Kosika (.kos)", "writing Kosika programs: records, workflows and tests"], ["Discrete maths", "discrete maths: proofs, graphs and counting"],
+    ["Quantum computing", "quantum computing: qubits, gates and measurement"], ["AI safety", "AI safety: specification gaming, interpretability and oversight"]];
+  const today = h("div");
+  api("/api/morning").then(plan => {
+    const step = (plan.steps || []).find(s => s.kind === "study");
+    if (!step) return;
+    const topic = step.title.replace(/^Study:\s*/, "");
+    today.replaceChildren(h("div", {class: "card", style: "display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 14px"},
+      h("div", null, h("small", {style: "color:var(--soft)"}, "Today\u2019s topic, from Kosi\u2019s plan"), h("h3", {style: "margin:2px 0 0"}, topic)),
+      h("div", {style: "display:flex;gap:8px"}, h("button", {class: "ghost", onclick: () => study(topic, "learn")}, "Learn it"), h("button", {onclick: () => study(topic, "practise")}, "Practise it"))));
+  }).catch(() => {});
   main.replaceChildren(titled("Study"),
     h("p", {class: "lead"}, "Your study companion. Ask anything: it answers in plain words, uses your notes where they help, and draws it with Kosika Designs, ending in a short quiz. Say \u201cremember: \u2026\u201d to keep a note; notes stay on this computer."),
-    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, go),
+    today,
+    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, modes, ask, go),
+    h("div", {class: "chips", style: "margin-bottom:6px"}, subjects.map(([label, topic]) => h("span", {class: "chip think", style: "cursor:pointer", title: "In the mode chosen above", onclick: () => study(topic)}, label))),
     h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; run(); }}, text))),
     out);
   draw();
