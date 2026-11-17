@@ -408,6 +408,15 @@ swarm Panel {
 `require approval` is mandatory, and every listed agent must be used by the
 workflow.
 
+## Drawing mathematics
+
+To show how a function, a series, an integral, a field or space-time
+behaves, import `std/designs_plot.kos` and call `pl_for(ask_text)`, or one
+drawing directly, such as `pl_taylor("sin(x)", 0, 9)`. Each returns a
+`PlFigure` with `svg`, `page` and `notation`. Make one drawing per run.
+`pl_catalogue()` lists every drawing, and docs/KOSIKA_MATH_DRAWINGS.md
+explains them.
+
 ## Checklist before answering
 
 1. In one call, name every argument or none (then use parameter order).

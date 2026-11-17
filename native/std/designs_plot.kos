@@ -31,7 +31,7 @@
 
 import "std/math.kos"
 
-export [PlFigure, PlAsk, PlC, pl_eval, pl_atan2, pl_curve, pl_complex, pl_surface, pl_modulus, pl_path, pl_spacetime, pl_well, pl_for, pl_kind, pl_wants, pl_formula, pl_examples]
+export [PlFigure, PlAsk, PlC, pl_eval, pl_atan2, pl_curve, pl_complex, pl_surface, pl_modulus, pl_path, pl_spacetime, pl_well, pl_for, pl_kind, pl_wants, pl_formula, pl_examples, pl_taylor, pl_integral, pl_polar, pl_param, pl_flow, pl_twins, pl_catalogue, PlEntry]
 
 record PlFigure { kind: Text title: Text formula: Text notation: Text svg: Text live: Text page: Text notes: Text[] problems: Text[] }
 record PlAsk { text: Text }
@@ -255,16 +255,16 @@ fn pl_real(e: Text[], names: Text[], values: Number[]) -> PlC {
 // The formula an ask names: what follows its last "=", or the ask with
 // the words around a formula taken away.
 fn pl_formula(text: Text) -> Text {
-  var t = text.trim()
+  var t = text.trim().replace("θ", "theta").replace("∫", "integral ")
   let eq = t.split("=")
   if eq.length() > 1 { t = eq[eq.length() - 1] }
   let low = t.lower()
-  for cut in [" in 3d", " in 2d", " in 3-d", " as a surface", " as white lines", " in white lines", " white-line", " white line", " from ", " for ", " over ", " between ", " with "] {
+  for cut in [" in 3d", " in 2d", " in 3-d", " to order", " up to ", " of order", " of degree", " to degree", " as a surface", " as white lines", " in white lines", " white-line", " white line", " from ", " for ", " over ", " between ", " with "] {
     let k = low.index_of(cut).or(-1)
     if k > 0 { t = t.slice(0, k) }
   }
   var words = t.trim().words()
-  let lead = ["plot", "graph", "draw", "show", "sketch", "me", "a", "the", "of", "function", "complex", "real", "3d", "2d", "surface", "curve", "map", "mapping", "conformal", "landscape", "modulus", "how", "behaves", "visualise", "visualize", "please", "f(x)", "f(z)", "f(x,y)"]
+  let lead = ["plot", "graph", "draw", "show", "sketch", "me", "a", "the", "of", "function", "complex", "real", "3d", "2d", "surface", "curve", "map", "mapping", "conformal", "landscape", "modulus", "how", "behaves", "visualise", "visualize", "please", "f(x)", "f(z)", "f(x,y)", "taylor", "maclaurin", "series", "power", "polynomial", "polynomials", "approximation", "expansion", "expand", "integral", "integrate", "definite", "area", "under", "polar", "rose", "spiral", "cardioid", "r"]
   while words.length() > 1 and lead.contains(words[0].lower()) { words = words.slice(1, words.length()) }
   var out = words.join(" ").trim()
   while out.ends_with(".") or out.ends_with("?") or out.ends_with("!") or out.ends_with(",") { out = out.slice(0, out.length() - 1) }
@@ -979,6 +979,579 @@ fn pl_well(mass: Number) -> PlFigure {
   return pl_paged(fig, "Kosika math &#183; curved space-time")
 }
 
+// ---------------------------------------------------------------- more drawings: a shared 2D frame
+
+// A 2D drawing's frame: the region of the plane shown, and where it sits
+// on the canvas.
+record PlBox { x0: Number x1: Number y0: Number y1: Number left: Number right: Number top: Number bottom: Number }
+
+fn pl_frame(x0: Number, x1: Number, y0: Number, y1: Number, w: Number, h: Number) -> PlBox {
+  return {x0: x0, x1: x1, y0: y0, y1: y1, left: 64, right: w - 40, top: 40, bottom: h - 56}
+}
+
+// A frame with the same scale across and up, so circles stay round.
+fn pl_square_frame(x0: Number, x1: Number, y0: Number, y1: Number, w: Number, h: Number) -> PlBox {
+  let pw = w - 104
+  let ph = h - 96
+  let sx = pw / (x1 - x0).max(0.000001)
+  let sy = ph / (y1 - y0).max(0.000001)
+  let s = sx.min(sy)
+  let cx = (x0 + x1) / 2
+  let cy = (y0 + y1) / 2
+  let hx = pw / s / 2
+  let hy = ph / s / 2
+  return {x0: cx - hx, x1: cx + hx, y0: cy - hy, y1: cy + hy, left: 64, right: w - 40, top: 40, bottom: h - 56}
+}
+
+// Many points onto the canvas at once: x values to screen x, y to screen y.
+fn pl_sx(b: PlBox, xs: Number[]) -> Number[] {
+  let k = (b.right - b.left) / (b.x1 - b.x0)
+  return for v in xs { b.left + (v - b.x0) * k }
+}
+
+fn pl_sy(b: PlBox, ys: Number[]) -> Number[] {
+  let k = (b.bottom - b.top) / (b.y1 - b.y0)
+  return for v in ys { b.bottom - (v - b.y0) * k }
+}
+
+// The grid, its numbers and the two axes, with an arrow at each end and
+// a clip path named pl-clip for whatever is drawn inside.
+fn pl_grid(b: PlBox, xname: Text, yname: Text) -> Text {
+  var out: Text[] = []
+  out = out.append(f"<defs><marker id=\"pl-arrow\" viewBox=\"0 0 10 10\" refX=\"8\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto\"><path d=\"M0 1L9 5L0 9\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".7\"/></marker><marker id=\"pl-tip\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto\"><path d=\"M0 0L10 5L0 10z\" fill=\"#f4f1ea\" fill-opacity=\".6\"/></marker><clipPath id=\"pl-clip\"><rect x=\"{b.left}\" y=\"{b.top}\" width=\"{b.right - b.left}\" height=\"{b.bottom - b.top}\"/></clipPath></defs>")
+  let kx = (b.right - b.left) / (b.x1 - b.x0)
+  let ky = (b.bottom - b.top) / (b.y1 - b.y0)
+  let xstep = pl_step(b.x1 - b.x0)
+  let ystep = pl_step(b.y1 - b.y0)
+  var gx = (b.x0 / xstep).ceil() * xstep
+  while gx <= b.x1 + 0.0000001 {
+    let X = (b.left + (gx - b.x0) * kx).to_fixed(1)
+    let label = ((gx * 1000 + 0.5).floor() / 1000).to_text()
+    out = out.append(f"<line x1=\"{X}\" y1=\"{b.top}\" x2=\"{X}\" y2=\"{b.bottom}\" stroke=\"#f4f1ea\" stroke-opacity=\".07\"/><text x=\"{X}\" y=\"{b.bottom + 20}\" fill=\"#f4f1ea\" fill-opacity=\".55\" font-size=\"11\" text-anchor=\"middle\">{label}</text>")
+    gx = gx + xstep
+  }
+  var gy = (b.y0 / ystep).ceil() * ystep
+  while gy <= b.y1 + 0.0000001 {
+    let Y = (b.bottom - (gy - b.y0) * ky).to_fixed(1)
+    let label = ((gy * 1000 + 0.5).floor() / 1000).to_text()
+    out = out.append(f"<line x1=\"{b.left}\" y1=\"{Y}\" x2=\"{b.right}\" y2=\"{Y}\" stroke=\"#f4f1ea\" stroke-opacity=\".07\"/><text x=\"{b.left - 8}\" y=\"{Y}\" dy=\"4\" fill=\"#f4f1ea\" fill-opacity=\".55\" font-size=\"11\" text-anchor=\"end\">{label}</text>")
+    gy = gy + ystep
+  }
+  if b.y0 <= 0 and b.y1 >= 0 {
+    let Y0 = (b.bottom + b.y0 * ky).to_fixed(1)
+    out = out.append(f"<line x1=\"{b.left}\" y1=\"{Y0}\" x2=\"{b.right + 14}\" y2=\"{Y0}\" stroke=\"#f4f1ea\" stroke-opacity=\".55\" marker-end=\"url(#pl-arrow)\"/><text x=\"{b.right + 16}\" y=\"{Y0}\" dy=\"-8\" fill=\"#f4f1ea\" font-size=\"14\" font-style=\"italic\" font-family=\"Georgia,serif\">{xname}</text>")
+  }
+  if b.x0 <= 0 and b.x1 >= 0 {
+    let X0 = (b.left - b.x0 * kx).to_fixed(1)
+    out = out.append(f"<line x1=\"{X0}\" y1=\"{b.bottom}\" x2=\"{X0}\" y2=\"{b.top - 14}\" stroke=\"#f4f1ea\" stroke-opacity=\".55\" marker-end=\"url(#pl-arrow)\"/><text x=\"{X0}\" dx=\"8\" y=\"{b.top - 12}\" fill=\"#f4f1ea\" font-size=\"14\" font-style=\"italic\" font-family=\"Georgia,serif\">{yname}</text>")
+  }
+  return out.join("")
+}
+
+// A small key: one entry per line drawn, as [label, colour, dashed?].
+fn pl_key(b: PlBox, labels: Text[], colours: Text[], dashes: Bool[]) -> Text {
+  var out: Text[] = []
+  for k in 0 until labels.length() {
+    let y = b.top + 14 + 18 * k
+    let dash = if dashes[k] { " stroke-dasharray=\"5 5\"" } else { "" }
+    out = out.append(f"<line x1=\"{b.right - 200}\" y1=\"{y}\" x2=\"{b.right - 172}\" y2=\"{y}\" stroke=\"{colours[k]}\" stroke-width=\"2\"{dash}/><text x=\"{b.right - 164}\" y=\"{y + 4}\" fill=\"#f4f1ea\" fill-opacity=\".8\" font-size=\"12\">{labels[k]}</text>")
+  }
+  return f"<rect x=\"{b.right - 210}\" y=\"{b.top}\" width=\"206\" height=\"{labels.length() * 18 + 10}\" rx=\"8\" fill=\"#07080d\" fill-opacity=\".8\"/>" + out.join("")
+}
+
+// Samples of one formula in one variable, ok where Kosika could compute it.
+record PlSamples { xs: Number[] ys: Number[] ok: Bool[] }
+
+fn pl_sample(e: Text[], v: Text, lo: Number, hi: Number, n: Number) -> PlSamples {
+  var xs: Number[] = []
+  var ys: Number[] = []
+  var ok: Bool[] = []
+  for k in 0 until n + 1 {
+    let t = lo + (hi - lo) * k / n
+    let c = pl_eval(e, [v], [t], [0])
+    xs = xs.append(t)
+    let good = c.ok and c.im.abs() < 0.000001
+    ys = ys.append(if good { c.re } else { 0 })
+    ok = ok.append(good)
+  }
+  return {xs: xs, ys: ys, ok: ok}
+}
+
+// The one free name of a formula, or the given default when it has none.
+fn pl_var(e: Text[], fallback: Text) -> Text {
+  let names = pl_names(e)
+  return if names.is_empty() { fallback } else { names[0] }
+}
+
+// A number in from an ask, read as a formula, so "pi/2" and "-3" both work.
+fn pl_number(text: Text, fallback: Number) -> Number {
+  let p = parse(text.trim())
+  if not p.error.is_empty() or p.expr.is_empty() { return fallback }
+  let c = pl_eval(p.expr, [], [], [])
+  return if c.ok and c.im == 0 { c.re } else { fallback }
+}
+
+// "from A to B" in an ask, as two numbers; the fallbacks when it is not there.
+fn pl_bounds(text: Text, lo: Number, hi: Number) -> Number[] {
+  let low = text.lower()
+  let at = low.index_of(" from ").or(-1)
+  if at < 0 { return [lo, hi] }
+  let rest = text.slice(at + 6, text.length())
+  let to = rest.lower().index_of(" to ").or(-1)
+  if to < 0 { return [lo, hi] }
+  let a = pl_number(rest.slice(0, to), lo)
+  var tail = rest.slice(to + 4, rest.length()).trim()
+  let words = tail.words()
+  if not words.is_empty() { tail = words[0] }
+  while tail.ends_with(".") or tail.ends_with(",") or tail.ends_with("?") { tail = tail.slice(0, tail.length() - 1) }
+  let b = pl_number(tail, hi)
+  return if a == b { [lo, hi] } else { [a.min(b), a.max(b)] }
+}
+
+fn pl_factorial(k: Number) -> Number {
+  var f = 1
+  for i in 1 until k + 1 { f = f * i }
+  return f
+}
+
+// A coefficient in notation: whole, one over a whole (1/120), a fraction
+// std/math recognises, or a decimal.
+fn pl_coef_mathml(c: Number) -> Text {
+  let a = c.abs()
+  if a == a.round() { return f"<mn>{a}</mn>" }
+  let inv = 1 / a
+  if (inv - inv.round()).abs() < 0.000001 { return f"<mfrac><mn>1</mn><mn>{inv.round()}</mn></mfrac>" }
+  // Otherwise four significant figures, so small terms stay readable.
+  var d = 3
+  var scaled = a * 1000
+  while scaled < 1000 and d < 12 {
+    scaled = scaled * 10
+    d += 1
+  }
+  return f"<mn>{a.to_fixed(d)}</mn>"
+}
+
+// ---------------------------------------------------------------- Taylor series
+
+// A function and the polynomials that copy it near a point: each
+// derivative is worked by rule from the formula, and each polynomial
+// hugs the curve a little further out than the one before.
+fn pl_taylor(text: Text, centre: Number, top: Number) -> PlFigure {
+  let parsed = parse(pl_formula(text))
+  if not pl_unread(parsed).is_empty() { return pl_failed("taylor", pl_formula(text), pl_unread(parsed)) }
+  let v = pl_var(parsed.expr, "x")
+  var problems: Text[] = []
+  if pl_names(parsed.expr).length() > 1 { problems = problems.append("a Taylor series needs one variable; this formula has " + pl_names(parsed.expr).join(", ")) }
+  let n = top.max(1).min(11)
+  // The derivatives at the centre, one by one, while the formulas stay small.
+  var coefs: Number[] = []
+  var d = parsed.expr
+  var k = 0
+  var going = true
+  while k <= n and going {
+    let c = pl_eval(d, [v], [centre], [0])
+    if not c.ok or c.im.abs() > 0.000001 {
+      going = false
+      problems = problems.append(f"the {k}th derivative has no value at {v} = {pl_num(centre)}")
+    } else {
+      coefs = coefs.append(c.re / pl_factorial(k))
+      if k < n {
+        d = simplify(deriv(d, v))
+        if d.length() > 400 { going = false }
+      }
+      k += 1
+    }
+  }
+  let order = coefs.length() - 1
+  let span = if pl_has(pl_formula(text), ["sin", "cos", "tan"]) { 2 * 3.141592653589793 } else { 3 }
+  let lo = centre - span
+  let hi = centre + span
+  let f = pl_sample(parsed.expr, v, lo, hi, 480)
+  let good = (for k2 in 0 until f.xs.length() where f.ok[k2] { f.ys[k2] }).sort()
+  var ylo = pl_quantile(good, 0.02)
+  var yhi = pl_quantile(good, 0.98)
+  let pad = (yhi - ylo).max(1) * 0.6
+  ylo = ylo - pad
+  yhi = yhi + pad
+  let b = pl_frame(lo, hi, ylo, yhi, 960, 600)
+  let px = pl_sx(b, f.xs)
+  // The polynomials of each odd or each order, computed from the
+  // coefficients straight away: no formula to read, no call per point.
+  let orders = for j in 1 until order + 1 where (order <= 5 or j % 2 == order % 2) { j }
+  var lines: Text[] = []
+  var labels: Text[] = [f"f({v})"]
+  var colours: Text[] = ["#f4f1ea"]
+  var dashes: Bool[] = [false]
+  for oi in 0 until orders.length() {
+    let m = orders[oi]
+    let ys = for xv in f.xs { (for j in 0 until m + 1 { coefs[j] * (xv - centre).power(j) }).sum() }
+    let inside = for y in ys { y > ylo - (yhi - ylo) and y < yhi + (yhi - ylo) }
+    let last = oi == orders.length() - 1
+    let colour = if last { "#f5b942" } else { "#f4f1ea" }
+    let op = if last { "1" } else { (0.25 + 0.5 * oi / orders.length().max(1)).to_fixed(2) }
+    let width = if last { "1.8" } else { "1" }
+    let dash = if last { "none" } else { "6 4" }
+    lines = lines.append(f"<path d=\"{pl_path_data(px, pl_sy(b, ys), inside, (b.bottom - b.top) * 2)}\" fill=\"none\" stroke=\"{colour}\" stroke-opacity=\"{op}\" stroke-width=\"{width}\" stroke-dasharray=\"{dash}\"/>")
+    if last or oi == 0 {
+      labels = labels.append(f"P{m}({v})")
+      colours = colours.append(colour)
+      dashes = dashes.append(not last)
+    }
+  }
+  let curve = f"<path class=\"pl-draw\" d=\"{pl_path_data(px, pl_sy(b, f.ys), f.ok, (b.bottom - b.top) * 0.9)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2.2\"/>"
+  let cx = pl_sx(b, [centre])[0]
+  let cyv = pl_sy(b, [coefs[0]])[0]
+  let mark = f"<line x1=\"{cx.to_fixed(1)}\" y1=\"{b.top}\" x2=\"{cx.to_fixed(1)}\" y2=\"{b.bottom}\" stroke=\"#f5b942\" stroke-opacity=\".35\" stroke-dasharray=\"2 4\"/><circle cx=\"{cx.to_fixed(1)}\" cy=\"{cyv.to_fixed(1)}\" r=\"4.5\" fill=\"#07080d\" stroke=\"#f5b942\" stroke-width=\"1.8\"/>"
+  let body = pl_grid(b, v, "y") + "<g clip-path=\"url(#pl-clip)\">" + lines.join("") + curve + "</g>" + mark + pl_key(b, labels, colours, dashes)
+  let svg = pl_frame_svg(960, 600, body, "Taylor series of " + pl_words(parsed.expr))
+  // The notation: the series in general, then the polynomial worked out.
+  let shift = if centre == 0 { f"<mi>{v}</mi>" } else { f"<mo stretchy=\"false\">(</mo><mi>{v}</mi><mo>&#8722;</mo><mn>{pl_num(centre)}</mn><mo stretchy=\"false\">)</mo>" }
+  var terms: Text[] = []
+  for j in 0 until coefs.length() {
+    let c = coefs[j]
+    if c.abs() > 0.0000000001 and terms.length() == 6 {
+      terms = terms.append("<mo>+</mo><mo>&#8943;</mo>")
+    } else if c.abs() > 0.0000000001 and terms.length() < 6 {
+      let sign = if c < 0 { "<mo>&#8722;</mo>" } else if terms.is_empty() { "" } else { "<mo>+</mo>" }
+      let coef = if c.abs() == 1 and j > 0 { "" } else { pl_coef_mathml(c) }
+      let power = if j == 0 { "" } else if j == 1 { shift } else { f"<msup><mrow>{shift}</mrow><mn>{j}</mn></msup>" }
+      terms = terms.append(sign + coef + power)
+    }
+  }
+  let general = f"<math display=\"block\"><mi>f</mi><mo stretchy=\"false\">(</mo><mi>{v}</mi><mo stretchy=\"false\">)</mo><mo>=</mo><munderover><mo>&#8721;</mo><mrow><mi>k</mi><mo>=</mo><mn>0</mn></mrow><mi>&#8734;</mi></munderover><mfrac><mrow><msup><mi>f</mi><mrow><mo stretchy=\"false\">(</mo><mi>k</mi><mo stretchy=\"false\">)</mo></mrow></msup><mo stretchy=\"false\">(</mo><mn>{pl_num(centre)}</mn><mo stretchy=\"false\">)</mo></mrow><mrow><mi>k</mi><mo>!</mo></mrow></mfrac><msup><mrow>{shift}</mrow><mi>k</mi></msup></math>"
+  let worked = f"<math display=\"block\"><msub><mi>P</mi><mn>{order}</mn></msub><mo stretchy=\"false\">(</mo><mi>{v}</mi><mo stretchy=\"false\">)</mo><mo>=</mo>" + (if terms.is_empty() { "<mn>0</mn>" } else { terms.join("") }) + "</math>"
+  let notation = pl_notation(f"<mi>f</mi><mo stretchy=\"false\">(</mo><mi>{v}</mi><mo stretchy=\"false\">)</mo>", parsed.expr) + general + worked
+  let edge = centre + span * 0.5
+  let truth = pl_eval(parsed.expr, [v], [edge], [0])
+  let approx = (for j in 0 until coefs.length() { coefs[j] * (edge - centre).power(j) }).sum()
+  var notes: Text[] = [f"Kosika worked {order} derivatives of f by rule and evaluated each at {v} = {pl_num(centre)} (the amber ring); the k-th term is f&#8317;&#7503;&#8318;({pl_num(centre)}) / k!.", f"Dashed lines are the lower polynomials; the amber line is P{order}, which stays with f furthest from the centre."]
+  if truth.ok { notes = notes.append(f"At {v} = {pl_num(edge)}: f = {pl_num(truth.re)} and P{order} = {pl_num(approx)}, a difference of {pl_num((truth.re - approx).abs())}.") }
+  let fig: PlFigure = {kind: "taylor", title: "Taylor series of " + pl_words(parsed.expr), formula: pl_words(parsed.expr), notation: notation, svg: svg, live: "", page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; a Taylor series")
+}
+
+// ---------------------------------------------------------------- integrals
+
+// The area under a curve from a to b: shaded, cut into strips whose
+// heights are taken at their middles, and measured twice, by the strips
+// and by Simpson's rule, so the page says how close the two agree.
+fn pl_integral(text: Text, a: Number, bnd: Number) -> PlFigure {
+  let parsed = parse(pl_formula(text))
+  if not pl_unread(parsed).is_empty() { return pl_failed("integral", pl_formula(text), pl_unread(parsed)) }
+  let v = pl_var(parsed.expr, "x")
+  var problems: Text[] = []
+  let lo0 = a.min(bnd)
+  let hi0 = a.max(bnd)
+  let pad = (hi0 - lo0) * 0.35
+  let f = pl_sample(parsed.expr, v, lo0 - pad, hi0 + pad, 480)
+  let good = (for k in 0 until f.xs.length() where f.ok[k] { f.ys[k] }).sort()
+  var ylo = pl_quantile(good, 0.02).min(0)
+  var yhi = pl_quantile(good, 0.98).max(0)
+  let room = (yhi - ylo).max(0.5) * 0.15
+  ylo = ylo - room
+  yhi = yhi + room
+  let b = pl_frame(lo0 - pad, hi0 + pad, ylo, yhi, 960, 600)
+  // Simpson's rule on 200 steps, Kosika's own evaluator at every point.
+  let n = 200
+  let h = (hi0 - lo0) / n
+  var simpson = 0
+  var missing = 0
+  var fill: Text[] = []
+  for k in 0 until n + 1 {
+    let t = lo0 + h * k
+    let c = pl_eval(parsed.expr, [v], [t], [0])
+    if not c.ok or c.im.abs() > 0.000001 { missing += 1 }
+    else {
+      let w = if k == 0 or k == n { 1 } else if k % 2 == 1 { 4 } else { 2 }
+      simpson = simpson + w * c.re
+      let X = pl_sx(b, [t])[0]
+      fill = fill.append(X.to_fixed(1) + " " + pl_sy(b, [c.re])[0].to_fixed(1))
+    }
+  }
+  simpson = simpson * h / 3
+  if missing > 0 { problems = problems.append(f"f has no value at {missing} of the {n + 1} points between {pl_num(lo0)} and {pl_num(hi0)}, so the area there is not measured") }
+  let zero = pl_sy(b, [0])[0].to_fixed(1)
+  let left = pl_sx(b, [lo0])[0].to_fixed(1)
+  let right = pl_sx(b, [hi0])[0].to_fixed(1)
+  let area = if fill.is_empty() { "" } else { f"<path d=\"M{left} {zero}L" + fill.join("L") + f"L{right} {zero}Z\" fill=\"#f5b942\" fill-opacity=\".16\" stroke=\"none\"/>" }
+  // Twelve strips, each as tall as f at its middle.
+  let strips = 12
+  let sw = (hi0 - lo0) / strips
+  var riemann = 0
+  var rects: Text[] = []
+  for k in 0 until strips {
+    let mid = lo0 + sw * (k + 0.5)
+    let c = pl_eval(parsed.expr, [v], [mid], [0])
+    if c.ok and c.im.abs() < 0.000001 {
+      riemann = riemann + c.re * sw
+      let xs = pl_sx(b, [lo0 + sw * k, lo0 + sw * (k + 1)])
+      let top = pl_sy(b, [c.re])[0]
+      let y = top.min(pl_sy(b, [0])[0])
+      let hgt = (top - pl_sy(b, [0])[0]).abs()
+      rects = rects.append(f"<rect x=\"{xs[0].to_fixed(1)}\" y=\"{y.to_fixed(1)}\" width=\"{(xs[1] - xs[0]).to_fixed(1)}\" height=\"{hgt.to_fixed(1)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".35\" stroke-width=\".8\"/>")
+    }
+  }
+  let curve = f"<path class=\"pl-draw\" d=\"{pl_path_data(pl_sx(b, f.xs), pl_sy(b, f.ys), f.ok, (b.bottom - b.top) * 0.9)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"2\"/>"
+  let edges = f"<line x1=\"{left}\" y1=\"{b.top}\" x2=\"{left}\" y2=\"{b.bottom}\" stroke=\"#f5b942\" stroke-opacity=\".55\" stroke-dasharray=\"3 4\"/><line x1=\"{right}\" y1=\"{b.top}\" x2=\"{right}\" y2=\"{b.bottom}\" stroke=\"#f5b942\" stroke-opacity=\".55\" stroke-dasharray=\"3 4\"/><text x=\"{left}\" y=\"{b.bottom - 6}\" dx=\"4\" fill=\"#f5b942\" font-size=\"13\" font-style=\"italic\" font-family=\"Georgia,serif\">a</text><text x=\"{right}\" y=\"{b.bottom - 6}\" dx=\"4\" fill=\"#f5b942\" font-size=\"13\" font-style=\"italic\" font-family=\"Georgia,serif\">b</text>"
+  let body = pl_grid(b, v, "y") + "<g clip-path=\"url(#pl-clip)\">" + area + rects.join("") + curve + "</g>" + edges
+  let svg = pl_frame_svg(960, 600, body, "area under " + pl_words(parsed.expr))
+  let integral = f"<math display=\"block\"><msubsup><mo>&#8747;</mo><mn>{pl_num(lo0)}</mn><mn>{pl_num(hi0)}</mn></msubsup>" + to_mathml(parsed.expr) + f"<mspace width=\".2em\"/><mi>d</mi><mi>{v}</mi><mo>&#8776;</mo><mn>{pl_num(simpson)}</mn></math>"
+  let sum = f"<math display=\"block\"><munderover><mo>&#8721;</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mn>{strips}</mn></munderover><mi>f</mi><mo stretchy=\"false\">(</mo><msub><mi>m</mi><mi>k</mi></msub><mo stretchy=\"false\">)</mo><mi>&#916;</mi><mi>{v}</mi><mo>=</mo><mn>{pl_num(riemann)}</mn><mo>,</mo><mspace width=\"1em\"/><mi>&#916;</mi><mi>{v}</mi><mo>=</mo><mn>{pl_num(sw)}</mn></math>"
+  let notes: Text[] = [f"The shaded area is the integral: Simpson's rule on {n} steps gives {pl_num(simpson)}; area below the axis counts as negative.", f"The {strips} white strips, each as tall as f at its middle, add up to {pl_num(riemann)}; they differ from Simpson by {pl_num((riemann - simpson).abs())}, and more strips would close the gap."]
+  let fig: PlFigure = {kind: "integral", title: "Area under " + pl_words(parsed.expr), formula: pl_words(parsed.expr), notation: integral + sum, svg: svg, live: "", page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; an integral")
+}
+
+// ---------------------------------------------------------------- polar and parametric curves
+
+// r = f(theta) for theta from 0 to turns full turns, on a polar grid.
+fn pl_polar(text: Text, turns: Number) -> PlFigure {
+  let parsed = parse(pl_formula(text))
+  if not pl_unread(parsed).is_empty() { return pl_failed("polar", pl_formula(text), pl_unread(parsed)) }
+  let v = pl_var(parsed.expr, "theta")
+  let laps = if turns > 0 { turns } else { 1 }
+  let s = pl_sample(parsed.expr, v, 0, 2 * 3.141592653589793 * laps, 1200)
+  let xs = for k in 0 until s.xs.length() { s.ys[k] * (s.xs[k] * 180 / 3.141592653589793).cos() }
+  let ys = for k in 0 until s.xs.length() { s.ys[k] * (s.xs[k] * 180 / 3.141592653589793).sin() }
+  var m = 0.000001
+  for k in 0 until xs.length() { if s.ok[k] { m = m.max(xs[k].abs()).max(ys[k].abs()) } }
+  let R = m * 1.12
+  let b = pl_square_frame(0 - R, R, 0 - R, R, 760, 700)
+  let cx = pl_sx(b, [0])[0]
+  let cy = pl_sy(b, [0])[0]
+  let unit = (b.right - b.left) / (b.x1 - b.x0)
+  var grid: Text[] = []
+  let ring = pl_step(R)
+  var r = ring
+  var nth = 1
+  let every = if R / ring > 6 { 2 } else { 1 }
+  while r <= R + 0.0000001 {
+    grid = grid.append(f"<circle cx=\"{cx.to_fixed(1)}\" cy=\"{cy.to_fixed(1)}\" r=\"{(r * unit).to_fixed(1)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\".1\"/>")
+    if nth % every == 0 { grid = grid.append(f"<text x=\"{(cx + r * unit).to_fixed(1)}\" y=\"{cy.to_fixed(1)}\" dx=\"3\" dy=\"13\" fill=\"#f4f1ea\" fill-opacity=\".45\" font-size=\"10\">{pl_num(r)}</text>") }
+    r = r + ring
+    nth += 1
+  }
+  for k in 0 until 12 {
+    let a = 30 * k
+    let spoke = if k % 3 == 0 { ".25" } else { ".08" }
+    grid = grid.append(f"<line x1=\"{cx.to_fixed(1)}\" y1=\"{cy.to_fixed(1)}\" x2=\"{(cx + R * unit * a.cos()).to_fixed(1)}\" y2=\"{(cy - R * unit * a.sin()).to_fixed(1)}\" stroke=\"#f4f1ea\" stroke-opacity=\"{spoke}\"/>")
+  }
+  let curve = f"<path class=\"pl-draw\" d=\"{pl_path_data(pl_sx(b, xs), pl_sy(b, ys), s.ok, (b.bottom - b.top) * 0.5)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"1.8\" stroke-linejoin=\"round\"/>"
+  // One point on the curve, with its radius and angle, in amber.
+  let pick = (s.xs.length() / 9).floor()
+  let marker = if s.ok[pick] { f"<line x1=\"{cx.to_fixed(1)}\" y1=\"{cy.to_fixed(1)}\" x2=\"{pl_sx(b, [xs[pick]])[0].to_fixed(1)}\" y2=\"{pl_sy(b, [ys[pick]])[0].to_fixed(1)}\" stroke=\"#f5b942\" stroke-width=\"1.4\"/><circle cx=\"{pl_sx(b, [xs[pick]])[0].to_fixed(1)}\" cy=\"{pl_sy(b, [ys[pick]])[0].to_fixed(1)}\" r=\"4\" fill=\"#f5b942\"/><text x=\"{pl_sx(b, [xs[pick] / 2])[0].to_fixed(1)}\" y=\"{pl_sy(b, [ys[pick] / 2])[0].to_fixed(1)}\" dx=\"6\" dy=\"-6\" fill=\"#f5b942\" font-size=\"14\" font-style=\"italic\" font-family=\"Georgia,serif\">r</text>" } else { "" }
+  let svg = pl_frame_svg(760, 700, grid.join("") + curve + marker, "polar curve r = " + pl_words(parsed.expr))
+  let notation = pl_notation("<mi>r</mi>", parsed.expr) + f"<math display=\"block\"><mi>x</mi><mo>=</mo><mi>r</mi><mi>cos</mi><mi>{v}</mi><mo>,</mo><mspace width=\"1em\"/><mi>y</mi><mo>=</mo><mi>r</mi><mi>sin</mi><mi>{v}</mi><mo>,</mo><mspace width=\"1em\"/><mn>0</mn><mo>&#8804;</mo><mi>{v}</mi><mo>&#8804;</mo><mn>{pl_num(2 * laps)}</mn><mi>&#960;</mi></math>"
+  let notes: Text[] = [f"Kosika computed r at 1201 angles and turned each (r, {v}) into a point; a negative r points the opposite way, which is how roses get their petals.", f"Rings every {pl_num(ring)}; the amber spoke is one radius, drawn to its point on the curve."]
+  let fig: PlFigure = {kind: "polar", title: "r = " + pl_words(parsed.expr).replace("theta", "θ"), formula: pl_words(parsed.expr), notation: notation.replace("<mi>theta</mi>", "<mi>&#952;</mi>"), svg: svg.replace(">theta<", ">&#952;<"), live: "", page: "", notes: notes, problems: []}
+  return pl_paged(fig, "Kosika math &#183; a polar curve")
+}
+
+// x = f(t), y = g(t) for t from t0 to t1: a Lissajous figure, a cycloid.
+fn pl_param(xt: Text, yt: Text, t0: Number, t1: Number) -> PlFigure {
+  let ex = parse(xt)
+  let ey = parse(yt)
+  if not pl_unread(ex).is_empty() { return pl_failed("parametric", xt, pl_unread(ex)) }
+  if not pl_unread(ey).is_empty() { return pl_failed("parametric", yt, pl_unread(ey)) }
+  let v = pl_var(ex.expr.concat(ey.expr), "t")
+  let a = pl_sample(ex.expr, v, t0, t1, 1200)
+  let c = pl_sample(ey.expr, v, t0, t1, 1200)
+  let ok = for k in 0 until a.xs.length() { a.ok[k] and c.ok[k] }
+  var xlo = 1000000000
+  var xhi = -1000000000
+  var ylo = 1000000000
+  var yhi = -1000000000
+  for k in 0 until ok.length() { if ok[k] {
+    xlo = xlo.min(a.ys[k])
+    xhi = xhi.max(a.ys[k])
+    ylo = ylo.min(c.ys[k])
+    yhi = yhi.max(c.ys[k])
+  } }
+  var problems: Text[] = []
+  if xlo > xhi { problems = problems.append("Kosika could not compute the curve anywhere")
+    xlo = -1
+    xhi = 1
+    ylo = -1
+    yhi = 1 }
+  let px = (xhi - xlo).max(0.5) * 0.1
+  let py = (yhi - ylo).max(0.5) * 0.1
+  let b = pl_square_frame(xlo - px, xhi + px, ylo - py, yhi + py, 860, 640)
+  let sx = pl_sx(b, a.ys)
+  let sy = pl_sy(b, c.ys)
+  let curve = f"<path class=\"pl-draw\" d=\"{pl_path_data(sx, sy, ok, (b.bottom - b.top) * 0.5)}\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/>"
+  // Where the curve starts, and which way it goes.
+  let start = if ok[0] and ok[8] { f"<circle cx=\"{sx[0].to_fixed(1)}\" cy=\"{sy[0].to_fixed(1)}\" r=\"4.5\" fill=\"#07080d\" stroke=\"#f5b942\" stroke-width=\"1.8\"/><line x1=\"{sx[0].to_fixed(1)}\" y1=\"{sy[0].to_fixed(1)}\" x2=\"{sx[8].to_fixed(1)}\" y2=\"{sy[8].to_fixed(1)}\" stroke=\"#f5b942\" stroke-width=\"2\" marker-end=\"url(#pl-arrow)\"/>" } else { "" }
+  let svg = pl_frame_svg(860, 640, pl_grid(b, "x", "y") + curve + start, "parametric curve")
+  let notation = f"<math display=\"block\"><mi>x</mi><mo stretchy=\"false\">(</mo><mi>{v}</mi><mo stretchy=\"false\">)</mo><mo>=</mo>" + to_mathml(ex.expr) + f"<mo>,</mo><mspace width=\"1em\"/><mi>y</mi><mo stretchy=\"false\">(</mo><mi>{v}</mi><mo stretchy=\"false\">)</mo><mo>=</mo>" + to_mathml(ey.expr) + "</math>" + f"<math display=\"block\"><mn>{pl_num(t0)}</mn><mo>&#8804;</mo><mi>{v}</mi><mo>&#8804;</mo><mn>{pl_num(t1)}</mn></math>"
+  let notes: Text[] = [f"Kosika computed both coordinates at 1201 values of {v}; the amber ring is where {v} = {pl_num(t0)} and the arrow shows which way the curve is traced."]
+  let fig: PlFigure = {kind: "parametric", title: f"x = {pl_words(ex.expr)}, y = {pl_words(ey.expr)}", formula: pl_words(ex.expr) + ", " + pl_words(ey.expr), notation: notation, svg: svg, live: "", page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; a parametric curve")
+}
+
+// ---------------------------------------------------------------- fields and flows
+
+// A vector field (P, Q) in x and y: short arrows show it everywhere, and
+// flow lines follow it from a ring of starting points. A slope field for
+// dy/dx = f(x, y) is the field (1, f).
+fn pl_flow(ptext: Text, qtext: Text, span: Number, slope: Bool) -> PlFigure {
+  let ep = parse(ptext)
+  let eq = parse(qtext)
+  if not pl_unread(ep).is_empty() { return pl_failed("field", ptext, pl_unread(ep)) }
+  if not pl_unread(eq).is_empty() { return pl_failed("field", qtext, pl_unread(eq)) }
+  var problems: Text[] = []
+  let unknown = pl_unknown(ep.expr.concat(eq.expr), ["x", "y"])
+  if not unknown.is_empty() { problems = problems.append("a field is written in x and y; this one also has " + unknown.join(", ")) }
+  let s = if span > 0 { span } else { 3 }
+  let b = pl_square_frame(0 - s, s, 0 - s, s, 760, 700)
+  var arrows: Text[] = []
+  let cells = 17
+  let cell = 2 * s / cells
+  let unit = (b.right - b.left) / (b.x1 - b.x0)
+  for i in 0 until cells {
+    for j in 0 until cells {
+      let x = 0 - s + cell * (i + 0.5)
+      let y = 0 - s + cell * (j + 0.5)
+      let p = pl_eval(ep.expr, ["x", "y"], [x, y], [0, 0])
+      let q = pl_eval(eq.expr, ["x", "y"], [x, y], [0, 0])
+      if p.ok and q.ok {
+        let len = (p.re * p.re + q.re * q.re).sqrt()
+        if len > 0.0000001 {
+          let half = cell * 0.36
+          let ux = p.re / len * half
+          let uy = q.re / len * half
+          let X = b.left + (x - b.x0) * unit
+          let Y = b.bottom - (y - b.y0) * unit
+          let tip = if slope { "" } else { " marker-end=\"url(#pl-tip)\"" }
+          arrows = arrows.append(f"<line x1=\"{(X - ux * unit).to_fixed(1)}\" y1=\"{(Y + uy * unit).to_fixed(1)}\" x2=\"{(X + ux * unit).to_fixed(1)}\" y2=\"{(Y - uy * unit).to_fixed(1)}\" stroke=\"#f4f1ea\" stroke-opacity=\".42\" stroke-width=\"1\"{tip}/>")
+        }
+      }
+    }
+  }
+  // Flow lines: the midpoint rule, forward from each start, stopping at
+  // the edge, at a rest point, or when the field cannot be computed.
+  let starts = if slope { for k in 0 until 9 { [0 - s, 0 - s + 2 * s * (k + 0.5) / 9] } } else { for k in 0 until 10 { [0.55 * s * (36 * k).cos(), 0.55 * s * (36 * k).sin()] } }
+  var flows: Text[] = []
+  let step = s / 60
+  for si in 0 until starts.length() {
+    var x = starts[si][0]
+    var y = starts[si][1]
+    var pts: Text[] = [(b.left + (x - b.x0) * unit).to_fixed(1) + " " + (b.bottom - (y - b.y0) * unit).to_fixed(1)]
+    var going = true
+    var n = 0
+    while going and n < 220 {
+      let p1 = pl_eval(ep.expr, ["x", "y"], [x, y], [0, 0])
+      let q1 = pl_eval(eq.expr, ["x", "y"], [x, y], [0, 0])
+      if not p1.ok or not q1.ok { going = false } else {
+        let l1 = (p1.re * p1.re + q1.re * q1.re).sqrt()
+        if l1 < 0.000001 { going = false } else {
+          let mx = x + p1.re / l1 * step / 2
+          let my = y + q1.re / l1 * step / 2
+          let p2 = pl_eval(ep.expr, ["x", "y"], [mx, my], [0, 0])
+          let q2 = pl_eval(eq.expr, ["x", "y"], [mx, my], [0, 0])
+          if not p2.ok or not q2.ok { going = false } else {
+            let l2 = (p2.re * p2.re + q2.re * q2.re).sqrt().max(0.000001)
+            x = x + p2.re / l2 * step
+            y = y + q2.re / l2 * step
+            if x.abs() > s or y.abs() > s { going = false }
+            pts = pts.append((b.left + (x - b.x0) * unit).to_fixed(1) + " " + (b.bottom - (y - b.y0) * unit).to_fixed(1))
+          }
+        }
+      }
+      n += 1
+    }
+    let colour = if si == 0 { "#f5b942" } else { "#f4f1ea" }
+    if pts.length() > 1 {
+      let d = "M" + pts.join("L")
+      let first = pts[0].split(" ")
+      flows = flows.append(f"<path d=\"{d}\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"{first[0]}\" cy=\"{first[1]}\" r=\"3\" fill=\"{colour}\"/>")
+    }
+  }
+  let svg = pl_frame_svg(760, 700, pl_grid(b, "x", "y") + "<g clip-path=\"url(#pl-clip)\">" + arrows.join("") + flows.join("") + "</g>", if slope { "slope field" } else { "vector field" })
+  let notation = if slope { pl_notation("<mfrac><mrow><mi>d</mi><mi>y</mi></mrow><mrow><mi>d</mi><mi>x</mi></mrow></mfrac>", eq.expr) } else { "<math display=\"block\"><mi mathvariant=\"bold\">F</mi><mo stretchy=\"false\">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mo>(</mo>" + to_mathml(ep.expr) + "<mo>,</mo>" + to_mathml(eq.expr) + "<mo>)</mo></math>" }
+  let notes: Text[] = if slope { ["Each short line has the slope dy/dx that the equation gives at its middle: every solution is a curve that follows them.", "The solid lines are solutions Kosika traced step by step with the midpoint rule, each from a dot on the left edge; the amber one is the lowest."] } else { ["Each arrow points the way the field points there; their length is kept the same so direction is easy to read.", "The solid lines are flow lines Kosika traced step by step with the midpoint rule, each from a dot; the amber one starts on the right."] }
+  let title = if slope { "dy/dx = " + pl_words(eq.expr) } else { "F = (" + pl_words(ep.expr) + ", " + pl_words(eq.expr) + ")" }
+  let fig: PlFigure = {kind: if slope { "slope" } else { "field" }, title: title, formula: title, notation: notation, svg: svg, live: "", page: "", notes: notes, problems: problems}
+  return pl_paged(fig, if slope { "Kosika math &#183; a differential equation" } else { "Kosika math &#183; a vector field" })
+}
+
+// ---------------------------------------------------------------- the twin paradox
+
+// One twin stays home; the other flies out at v for a distance L and comes
+// back. On the Minkowski diagram both world lines start and end at the
+// same events, and the ticks are each twin's own years.
+fn pl_twins(v: Number, distance: Number) -> PlFigure {
+  var problems: Text[] = []
+  let speed = if v <= 0 or v >= 1 { 0.6 } else { v }
+  if v <= 0 or v >= 1 { problems = problems.append("a speed between 0 and the speed of light is needed; drawn at v = 0.6c") }
+  let L = if distance > 0 { distance } else { 3 }
+  let gamma = 1 / (1 - speed * speed).sqrt()
+  let half = L / speed
+  let home = 2 * half
+  let away = home / gamma
+  let w = 760
+  let h = 760
+  let b = pl_square_frame(0 - 0.6 * L, L * 1.6, -0.4, home + 0.6, w, h)
+  let o = [pl_sx(b, [0])[0], pl_sy(b, [0])[0]]
+  let turn = [pl_sx(b, [L])[0], pl_sy(b, [half])[0]]
+  let end = [pl_sx(b, [0])[0], pl_sy(b, [home])[0]]
+  var body: Text[] = [pl_grid(b, "x", "ct")]
+  // Light from the start, to show the speed limit.
+  let reach = (home + 0.6).min(L * 1.6)
+  body = body.append(f"<line x1=\"{o[0].to_fixed(1)}\" y1=\"{o[1].to_fixed(1)}\" x2=\"{pl_sx(b, [reach])[0].to_fixed(1)}\" y2=\"{pl_sy(b, [reach])[0].to_fixed(1)}\" stroke=\"#f5b942\" stroke-opacity=\".55\" stroke-dasharray=\"6 5\"/>")
+  // The world lines.
+  body = body.append(f"<line x1=\"{o[0].to_fixed(1)}\" y1=\"{o[1].to_fixed(1)}\" x2=\"{end[0].to_fixed(1)}\" y2=\"{end[1].to_fixed(1)}\" stroke=\"#f4f1ea\" stroke-width=\"2\"/><path d=\"M{o[0].to_fixed(1)} {o[1].to_fixed(1)}L{turn[0].to_fixed(1)} {turn[1].to_fixed(1)}L{end[0].to_fixed(1)} {end[1].to_fixed(1)}\" fill=\"none\" stroke=\"#f5b942\" stroke-width=\"2\" stroke-linejoin=\"round\"/>")
+  // Each twin's years, as ticks along their own line.
+  for k in 1 until (home + 0.0001).floor() + 1 {
+    let p = [pl_sx(b, [0])[0], pl_sy(b, [k])[0]]
+    body = body.append(f"<circle cx=\"{p[0].to_fixed(1)}\" cy=\"{p[1].to_fixed(1)}\" r=\"3\" fill=\"#f4f1ea\"/>")
+  }
+  for k in 1 until (away + 0.0001).floor() + 1 {
+    let t = k * gamma
+    let x = if t <= half { speed * t } else { L - speed * (t - half) }
+    body = body.append(f"<circle cx=\"{pl_sx(b, [x])[0].to_fixed(1)}\" cy=\"{pl_sy(b, [t])[0].to_fixed(1)}\" r=\"3\" fill=\"#f5b942\"/>")
+  }
+  // What the traveller calls "now" just before and just after turning:
+  // the jump between them is where the home twin's missing years go.
+  for side in [-1, 1] {
+    let slope = side * speed
+    let x0 = 0
+    let t0 = half - slope * L
+    body = body.append(f"<line x1=\"{pl_sx(b, [x0])[0].to_fixed(1)}\" y1=\"{pl_sy(b, [t0])[0].to_fixed(1)}\" x2=\"{turn[0].to_fixed(1)}\" y2=\"{turn[1].to_fixed(1)}\" stroke=\"#8b8cff\" stroke-width=\"1\" stroke-dasharray=\"4 4\"/>")
+  }
+  let lab = "font-size=\"13\""
+  body = body.append(f"<text x=\"{end[0].to_fixed(1)}\" y=\"{end[1].to_fixed(1)}\" dx=\"-10\" dy=\"-8\" text-anchor=\"end\" fill=\"#f4f1ea\" {lab}>home twin: {pl_num(home)} years</text><text x=\"{turn[0].to_fixed(1)}\" y=\"{turn[1].to_fixed(1)}\" dx=\"10\" fill=\"#f5b942\" {lab}>turns back</text><text x=\"{((turn[0] + end[0]) / 2).to_fixed(1)}\" y=\"{((turn[1] + end[1]) / 2).to_fixed(1)}\" dx=\"14\" fill=\"#f5b942\" {lab}>travelling twin: {pl_num(away)} years</text><text x=\"{pl_sx(b, [0])[0].to_fixed(1)}\" y=\"{pl_sy(b, [half])[0].to_fixed(1)}\" dx=\"-10\" text-anchor=\"end\" fill=\"#8b8cff\" font-size=\"11\">the traveller&#8217;s &#8220;now&#8221; jumps</text>")
+  let svg = pl_frame_svg(w, h, body.join(""), "twin paradox space-time diagram")
+  let notation = f"<math display=\"block\"><mi>&#964;</mi><mo>=</mo><mfrac><mi>t</mi><mi>&#947;</mi></mfrac><mo>=</mo><mi>t</mi><msqrt><mn>1</mn><mo>&#8722;</mo><msup><mi>v</mi><mn>2</mn></msup><mo>/</mo><msup><mi>c</mi><mn>2</mn></msup></msqrt><mo>,</mo><mspace width=\"1em\"/><mi>t</mi><mo>=</mo><mfrac><mrow><mn>2</mn><mi>L</mi></mrow><mi>v</mi></mfrac><mo>=</mo><mn>{pl_num(home)}</mn><mo>,</mo><mspace width=\"1em\"/><mi>&#964;</mi><mo>=</mo><mn>{pl_num(away)}</mn></math>"
+  let notes: Text[] = [f"The travelling twin flies {pl_num(L)} light-years out at {pl_num(speed)}c and back. At home {pl_num(home)} years pass; on the ship, &#947; = {pl_num(gamma)} times fewer: {pl_num(away)} years.", "White dots are the home twin's birthdays, amber dots the traveller's. The two are not symmetric: only the traveller turns around, and at the turn their lines of &#8220;now&#8221; (indigo) swing across the home twin's years."]
+  let fig: PlFigure = {kind: "twins", title: "The twin paradox", formula: "tau = t / gamma", notation: notation, svg: svg, live: "", page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; space-time")
+}
+
+// ---------------------------------------------------------------- a catalogue for agents
+
+// Every drawing this library makes, with an ask that gets it, so an agent
+// can choose without reading the code.
+record PlEntry { kind: Text ask: Text draws: Text call: Text }
+
+fn pl_catalogue() -> PlEntry[] {
+  return [
+    {kind: "curve", ask: "plot y = x^3 - 3x", draws: "a 2D graph with its derivative, roots and turning points", call: "pl_curve(formula, x0, x1)"},
+    {kind: "taylor", ask: "taylor series of sin(x)", draws: "a function and its Taylor polynomials, derivatives worked by rule", call: "pl_taylor(formula, centre, order)"},
+    {kind: "integral", ask: "integral of x^2 from 0 to 2", draws: "the area under a curve, Riemann strips and Simpson's value", call: "pl_integral(formula, a, b)"},
+    {kind: "polar", ask: "polar curve r = cos(4*theta)", draws: "a polar curve on a polar grid", call: "pl_polar(formula, turns)"},
+    {kind: "parametric", ask: "parametric x = sin(3t), y = sin(2t)", draws: "a curve traced by t, with its start and direction", call: "pl_param(x_formula, y_formula, t0, t1)"},
+    {kind: "complex", ask: "complex function f(z) = z^2", draws: "a z-plane grid and its image under f", call: "pl_complex(formula, radius)"},
+    {kind: "modulus", ask: "complex function 1/(z^2+1) in 3d", draws: "the 3D landscape of |f(z)|, with zeros and poles", call: "pl_modulus(formula, radius)"},
+    {kind: "surface", ask: "plot z = sin(x)*cos(y)", draws: "a 3D surface with hidden lines removed, live to turn", call: "pl_surface(formula, span)"},
+    {kind: "path", ask: "", draws: "a curve in 3D space", call: "pl_path(x_formula, y_formula, z_formula, t0, t1)"},
+    {kind: "slope", ask: "slope field dy/dx = x - y", draws: "a differential equation's slope field and solution curves", call: "pl_flow(\"1\", formula, span, true)"},
+    {kind: "field", ask: "vector field F = (-y, x)", draws: "a 2D vector field with flow lines", call: "pl_flow(p_formula, q_formula, span, false)"},
+    {kind: "spacetime", ask: "space-time with the light cone", draws: "a 3D light cone with world lines, beside a Minkowski diagram", call: "pl_spacetime(v)"},
+    {kind: "twins", ask: "twin paradox", draws: "the twin paradox on a Minkowski diagram, with each twin's years", call: "pl_twins(v, distance)"},
+    {kind: "well", ask: "space-time curved by a mass", draws: "a rubber-sheet picture of curved space-time with an orbit", call: "pl_well(mass)"}
+  ]
+}
+
 // ---------------------------------------------------------------- the page
 
 fn pl_style() -> Text {
@@ -1012,16 +1585,24 @@ fn pl_has(t: Text, words: Text[]) -> Bool {
 // a complex function, a surface, or space-time.
 fn pl_wants(text: Text) -> Bool {
   let t = " " + text.lower() + " "
-  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "curved space", "gravity well"])
+  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "curved space", "gravity well", "taylor series", "taylor polynomial", "maclaurin", "power series", "integral of", "integrate ", "area under", "polar curve", "polar graph", "polar rose", " r = ", "parametric", "lissajous", "slope field", "direction field", "dy/dx", "differential equation", "vector field", "flow field", "phase portrait", "twin paradox"])
 }
 
-// Which drawing an ask wants, by its words and its formula: curve,
-// complex, modulus, surface, spacetime or well. No drawing is made.
+// Which drawing an ask wants, by its words and its formula: curve, taylor,
+// integral, polar, parametric, slope, field, complex, modulus, surface,
+// spacetime, twins or well. No drawing is made.
 fn pl_kind(text: Text) -> Text {
   let t = " " + text.lower() + " "
+  if pl_has(t, ["twin paradox", " twins "]) { return "twins" }
   if pl_has(t, ["space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "gravity well", "curved space"]) {
     return if pl_has(t, ["gravity", "curved", "mass", " well", "black hole", "warp", "bend"]) { "well" } else { "spacetime" }
   }
+  if pl_has(t, ["slope field", "direction field", "dy/dx", "differential equation", "y' =", "y'="]) { return "slope" }
+  if pl_has(t, ["vector field", "flow field", "phase portrait"]) { return "field" }
+  if pl_has(t, ["parametric", "lissajous"]) { return "parametric" }
+  if pl_has(t, ["polar", " r = ", " r=", "cardioid"]) { return "polar" }
+  if pl_has(t, ["taylor", "maclaurin", "power series"]) { return "taylor" }
+  if pl_has(t, ["integral", "integrate", "area under", "∫"]) { return "integral" }
   let names = pl_names(parse(pl_formula(text)).expr)
   let complex = pl_has(t, ["complex", "conformal", "f(z)", " w = "]) or (names == ["z"] and not pl_has(t, [" z = ", " z="]))
   if complex { return if pl_has(t, [" 3d", "3-d", "modulus", "landscape", "surface", "|f"]) { "modulus" } else { "complex" } }
@@ -1030,22 +1611,115 @@ fn pl_kind(text: Text) -> Text {
   return "curve"
 }
 
+// The text after a word in an ask, up to the next comma or the end; empty
+// when the word is not there.
+fn pl_after(text: Text, word: Text) -> Text {
+  let at = text.lower().index_of(word).or(-1)
+  if at < 0 { return "" }
+  var rest = text.slice(at + word.length(), text.length())
+  for stop in [",", ";", " and ", " from ", " for ", " with ", " to order", " up to", " of order", " of degree"] {
+    let k = rest.lower().index_of(stop).or(-1)
+    if k >= 0 { rest = rest.slice(0, k) }
+  }
+  return rest.trim()
+}
+
+// The two parts of a pair "(P, Q)" written after the last "=", split at
+// the comma that is not inside brackets.
+fn pl_pair(text: Text) -> Text[] {
+  let eq = text.split("=")
+  var t = eq[eq.length() - 1].trim()
+  let low = t.lower()
+  for cut in [" from ", " for ", " with ", " in "] {
+    let k = low.index_of(cut).or(-1)
+    if k > 0 { t = t.slice(0, k).trim() }
+  }
+  if eq.length() == 1 {
+    let open = t.index_of("(").or(-1)
+    let back = t.reverse().index_of(")").or(-1)
+    let close = if back < 0 { -1 } else { t.length() - 1 - back }
+    if open >= 0 and close > open + 1 { t = t.slice(open + 1, close) }
+  } else if t.starts_with("(") or t.starts_with("[") or t.starts_with("<") {
+    while t.ends_with(".") { t = t.slice(0, t.length() - 1) }
+    t = t.slice(1, t.length())
+    if t.ends_with(")") or t.ends_with("]") or t.ends_with(">") { t = t.slice(0, t.length() - 1) }
+  }
+  var depth = 0
+  var k = 0
+  for ch in t.chars() {
+    if ch == "(" { depth += 1 }
+    if ch == ")" { depth -= 1 }
+    if ch == "," and depth == 0 { return [t.slice(0, k).trim(), t.slice(k + 1, t.length()).trim()] }
+    k += 1
+  }
+  return [t, ""]
+}
+
+// A whole number written after one of the words, or the fallback.
+fn pl_count(text: Text, words: Text[], fallback: Number) -> Number {
+  for w in words {
+    let rest = pl_after(text, w)
+    if not rest.is_empty() {
+      let n = pl_number(rest.words()[0], -1)
+      if n >= 1 { return n.round() }
+    }
+  }
+  return fallback
+}
+
 fn pl_for(text: Text) -> PlFigure {
   let kind = pl_kind(text)
+  let pi = 3.141592653589793
   if kind == "well" { return pl_well(1) }
   if kind == "spacetime" { return pl_spacetime(0.5) }
+  if kind == "twins" {
+    let v = pl_number(pl_after(text, " at ").replace("c", "").replace("of light", ""), 0.6)
+    return pl_twins(if v > 0 and v < 1 { v } else { 0.6 }, 3)
+  }
+  if kind == "slope" { return pl_flow("1", pl_formula(text), 3, true) }
+  if kind == "field" {
+    let pq = pl_pair(text)
+    if pq[1].is_empty() { return pl_flow("-y", "x", 3, false) }
+    return pl_flow(pq[0], pq[1], 3, false)
+  }
+  if kind == "parametric" {
+    let xt = pl_after(text, "x =")
+    let yt = pl_after(text, "y =")
+    let span = pl_bounds(text, 0, 2 * pi)
+    if xt.is_empty() or yt.is_empty() { return pl_param("sin(3*t)", "sin(2*t)", 0, 2 * pi) }
+    return pl_param(xt, yt, span[0], span[1])
+  }
+  if kind == "polar" { return pl_polar(pl_formula(text), pl_count(text, [" turns", " laps"], if text.lower().contains("spiral") { 3 } else { 0 })) }
+  if kind == "taylor" {
+    var centre = 0
+    for w in [" about ", " around ", " centred at ", " centered at ", " near "] {
+      let c = pl_after(text, w)
+      if not c.is_empty() { centre = pl_number(c.replace("x =", "").replace("x=", "").words()[0], 0) }
+    }
+    let order = pl_count(text, ["order ", "degree ", "terms "], 9)
+    var src = text
+    for w in [" about ", " around ", " centred at ", " centered at ", " near "] {
+      let k = src.lower().index_of(w).or(-1)
+      if k > 0 { src = src.slice(0, k) }
+    }
+    return pl_taylor(src, centre, order)
+  }
+  if kind == "integral" {
+    let ab = pl_bounds(text, 0, 1)
+    return pl_integral(text, ab[0], ab[1])
+  }
   let formula = pl_formula(text)
   if kind == "modulus" { return pl_modulus(formula, 2) }
   if kind == "complex" { return pl_complex(formula, if formula.contains("exp") or formula.contains("e^") { 2 } else { 1.5 }) }
   if kind == "surface" { return pl_surface(formula, 3) }
-  let span = if pl_has(formula, ["sin", "cos", "tan"]) { 2 * 3.141592653589793 } else { 3 }
+  let span = if pl_has(formula, ["sin", "cos", "tan"]) { 2 * pi } else { 3 }
   return pl_curve(formula, 0 - span, span)
 }
 
 // One ask of each kind, for pictures and for Studio's examples. Each is
 // drawn in a run of its own.
 fn pl_examples() -> Text[] {
-  return ["plot y = sin(x)/x", "plot y = x^3 - 3x", "draw the complex function f(z) = z^2", "draw the complex function f(z) = exp(z)", "complex function 1/(z^2+1) in 3d", "plot z = sin(x)*cos(y)", "plot z = exp(-(x^2+y^2))*cos(2*(x^2+y^2))", "show me space-time with the light cone", "space-time curved by a mass"]
+  return ["plot y = sin(x)/x", "plot y = x^3 - 3x", "draw the complex function f(z) = z^2", "draw the complex function f(z) = exp(z)", "complex function 1/(z^2+1) in 3d", "plot z = sin(x)*cos(y)", "plot z = exp(-(x^2+y^2))*cos(2*(x^2+y^2))", "show me space-time with the light cone", "space-time curved by a mass", "taylor series of sin(x)", "integral of x^2 from 0 to 2", "polar curve r = cos(4*theta)", "parametric curve x = sin(3t), y = sin(2t)", "slope field dy/dx = x - y", "vector field F = (-y, x - y/3)", "the twin paradox at 0.8c"]
 }
 
 // ---------------------------------------------------------------- workflows
@@ -1153,4 +1827,55 @@ test "an ask picks its drawing" {
   expect pl_wants("plot y = x^2")
   expect pl_wants("draw a space-time graph in 3D")
   expect not pl_wants("how does the heart pump blood")
+}
+
+test "the new asks pick their drawings" {
+  expect pl_kind("taylor series of sin(x)") == "taylor"
+  expect pl_kind("maclaurin series of exp(x) to order 5") == "taylor"
+  expect pl_kind("integral of x^2 from 0 to 2") == "integral"
+  expect pl_kind("area under y = sin(x) from 0 to pi") == "integral"
+  expect pl_kind("polar curve r = 1 + cos(theta)") == "polar"
+  expect pl_kind("parametric curve x = cos(t), y = sin(2t)") == "parametric"
+  expect pl_kind("slope field dy/dx = x - y") == "slope"
+  expect pl_kind("vector field F = (-y, x)") == "field"
+  expect pl_kind("the twin paradox at 0.8c") == "twins"
+  expect pl_wants("draw the slope field of dy/dx = y")
+  expect pl_wants("area under the curve x^2 from 0 to 1")
+  expect pl_formula("taylor series of sin(x)") == "sin(x)"
+  expect pl_formula("integral of x^2 from 0 to 2") == "x^2"
+  expect pl_bounds("integral of x^2 from 0 to 2", 0, 1) == [0, 2]
+  expect pl_bounds("area under sin(x) from 0 to pi.", 0, 1)[1] > 3.14
+  expect pl_pair("vector field F = (-y, x - y/3)") == ["-y", "x - y/3"]
+  expect pl_pair("phase portrait of the field (y, -sin(x))") == ["y", "-sin(x)"]
+  expect pl_pair("F = (y, -sin(x)).") == ["y", "-sin(x)"]
+}
+
+test "a Taylor series works its coefficients by rule" {
+  expect pl_taylor("sin(x)", 0, 7).notation.contains("5040")
+  expect pl_taylor("exp(x)", 0, 4).problems.is_empty()
+}
+
+test "an integral agrees with the exact area" {
+  expect pl_integral("x^2", 0, 3).notation.contains("9")
+  expect pl_integral("x^2", 0, 3).svg.contains("<rect")
+}
+
+test "a polar curve is drawn on a polar grid" {
+  expect pl_polar("cos(4*theta)", 0).svg.contains("<circle")
+}
+
+test "a parametric curve is traced by t" {
+  expect pl_param("cos(t)", "sin(2*t)", 0, 6.283185307179586).problems.is_empty()
+}
+
+test "a slope field is drawn with its solution curves" {
+  expect pl_flow("1", "x - y", 3, true).svg.contains("<path")
+}
+
+test "the twin paradox counts each twin's years" {
+  expect pl_twins(0.6, 3).notes[0].contains("10 years")
+}
+
+test "every drawing in the catalogue can be reached by its example ask" {
+  expect (for e in pl_catalogue() where not e.ask.is_empty() and pl_kind(e.ask) != e.kind { e.kind }).is_empty()
 }
