@@ -125,8 +125,10 @@ func (s *server) environment(dir string, set settings) []string {
 	if engine := filepath.Join(dir, "engine", "kosika-native.exe"); fileExists(engine) {
 		add("KOSIKA_NATIVE", engine)
 	}
-	if set.AgentsHome != "" && os.Getenv("KOSIKA_AGENTS_HOME") == "" {
-		add("KOSIKA_AGENTS_HOME", set.AgentsHome)
+	if os.Getenv("KOSIKA_AGENTS_HOME") == "" {
+		if home := agentsHome(set); home != "" {
+			add("KOSIKA_AGENTS_HOME", home)
+		}
 	}
 	add("PYTHONUTF8", "1")
 	add("PYTHONUNBUFFERED", "1") // the address is read from its output as it is printed
@@ -204,6 +206,32 @@ func (s *server) stop() {
 		_, _ = s.cmd.Process.Wait()
 	}
 	s.cmd = nil
+}
+
+// agentsHome is the kosika-agents folder: the one in settings, or else the
+// first found in the usual places in the home folder (a projects folder at
+// most one level down, such as ~\Aryan_Private\projects\kosika-agents).
+func agentsHome(set settings) string {
+	if set.AgentsHome != "" {
+		return set.AgentsHome
+	}
+	profile, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	candidates := []string{
+		filepath.Join(profile, "kosika-agents"),
+		filepath.Join(profile, "projects", "kosika-agents"),
+	}
+	if matches, err := filepath.Glob(filepath.Join(profile, "*", "projects", "kosika-agents")); err == nil {
+		candidates = append(candidates, matches...)
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(filepath.Join(candidate, "agents")); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func fileExists(path string) bool {
