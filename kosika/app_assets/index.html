@@ -1809,7 +1809,9 @@ async function showServices() {
 // Models: what the agents can ask, and how each model is doing today.
 // The facts come from /api/models; what they mean is said by models.kos.
 async function showModels() {
-  const view = await api("/api/models");
+  // Two lists: the models Studio itself uses for each kind of work
+  // (/api/models), and the models the agents reach through Kosika's router.
+  const [mine, view] = await Promise.all([api("/api/models").catch(() => null), api("/api/models/router")]);
   const badge = {ready: "ok", unused: "", limited: "warn", rejected: "warn", shaky: "warn", missing: "bad", "no-key": "bad"};
   const rows = view.slots.map((slot, index) => {
     const verdict = view.verdicts[index] || {};
@@ -1827,8 +1829,15 @@ async function showModels() {
   });
   const uses = (overview.agents || []).filter(agent => agent.models && agent.models.length);
   const routes = Object.entries(view.routes || {});
+  const studioUses = mine && mine.tasks ? h("div", {class: "card"}, h("ul", {class: "route-list"}, mine.tasks.map(task =>
+    h("li", null, h("b", null, task.label), h("span", null, (task.chosen || "none ready") + (task.then && task.then.length ? "  \u2192 then " + task.then.join(", ") : "") + " \u00b7 " + task.needs))))) : null;
+  const studioModels = mine && mine.models ? h("div", {class: "chips", style: "margin-top:10px"}, mine.models.map(model =>
+    chip(model.name + " \u00b7 " + (model.local ? "this laptop" : model.where.split(" \u00b7 ")[0]), model.ready ? "ok" : "bad"))) : null;
   main.replaceChildren(...[
     titled("Models"),
+    studioUses ? h("h2", null, "What Studio uses for each kind of work") : null,
+    studioUses, studioModels,
+    h("h2", null, "The agents' models, through Kosika's router"),
     h("p", {class: "lead"}, view.summary, " ", h("span", {class: "path"}, view.router_file)),
     view.ok ? null : h("div", {class: "banner bad"}, view.error),
     h("div", {class: "chips", style: "margin:-6px 0 18px"}, chip(view.router_up ? "router running" : "router stopped", view.router_up ? "ok" : "bad"),

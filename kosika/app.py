@@ -2785,7 +2785,7 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.pause_service(self._body()))
                 elif method == "GET" and url.path == "/api/home":
                     self._json(200, app.home())
-                elif method == "GET" and url.path == "/api/models":
+                elif method == "GET" and url.path == "/api/models/router":
                     self._json(200, app.models_page())
                 elif method == "GET" and url.path == "/api/morning":
                     self._json(200, app.morning())
