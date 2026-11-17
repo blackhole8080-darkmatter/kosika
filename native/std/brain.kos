@@ -348,7 +348,7 @@ fn br_choose_for(m: BrainMind, ask: DzAsk) -> BrainChoice {
   let words = dz_kind(ask)
   // Art asked for in so many words stays art: a thumb down on art was about
   // the piece, not the kind (thumbs on art before br_kind_value taught it so).
-  if words == "art" or words == "3d" { return none }
+  if words == "art" or words == "3d" or words == "plot" { return none }
   let out = predict(m.net, br_features(ask.text))
   let at = m.kinds.index_of(words)
   if not at.exists() or out[at.value()] >= 0.25 { return none }
