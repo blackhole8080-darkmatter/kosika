@@ -369,7 +369,7 @@ const updateBarScript = `(function(){
     box.id = 'kosika-update';
     box.setAttribute('role','status');
     box.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:360px;' +
-      'background:var(--panel,#fff);color:var(--ink,#1d1b18);border:1px solid var(--line,#e3dfd6);' +
+      'background:var(--bg,#f6f4ef);color:var(--ink,#1d1b18);border:1px solid var(--line,#e3dfd6);' +
       'border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.14);padding:14px 16px;font:13px/1.45 "Segoe UI",system-ui,sans-serif';
     var head = document.createElement('div');
     head.style.cssText = 'font-weight:600;margin-bottom:4px';

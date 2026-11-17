@@ -29,6 +29,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -202,16 +203,36 @@ func unzip(reader *zip.Reader, dest string) error {
 	return nil
 }
 
-// running says whether the app at PATH is open: Windows will not let an
-// open program's file be renamed.
+// running says whether the program at PATH is open, by asking Windows which
+// programs are running and where each one's file is.
 func running(path string) bool {
-	if _, err := os.Stat(path); err != nil {
+	want, err := filepath.Abs(path)
+	if err != nil {
 		return false
 	}
-	if err := os.Rename(path, path+".check"); err != nil {
-		return true
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return false
 	}
-	_ = os.Rename(path+".check", path)
+	defer windows.CloseHandle(snapshot)
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	for err = windows.Process32First(snapshot, &entry); err == nil; err = windows.Process32Next(snapshot, &entry) {
+		if !strings.EqualFold(windows.UTF16ToString(entry.ExeFile[:]), filepath.Base(want)) {
+			continue
+		}
+		process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, entry.ProcessID)
+		if err != nil {
+			continue
+		}
+		buffer := make([]uint16, windows.MAX_LONG_PATH)
+		size := uint32(len(buffer))
+		err = windows.QueryFullProcessImageName(process, 0, &buffer[0], &size)
+		windows.CloseHandle(process)
+		if err == nil && strings.EqualFold(filepath.Clean(windows.UTF16ToString(buffer[:size])), want) {
+			return true
+		}
+	}
 	return false
 }
 

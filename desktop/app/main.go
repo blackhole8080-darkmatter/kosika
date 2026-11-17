@@ -62,6 +62,8 @@ func dataDir() string {
 
 type settings struct {
 	AgentsHome string `json:"agents_home,omitempty"`
+	// Folder is the folder Studio opens, as `kosika start FOLDER` takes it.
+	Folder     string `json:"folder,omitempty"`
 	SkipUpdate string `json:"skip_update,omitempty"`
 }
 
@@ -143,7 +145,11 @@ func (s *server) start(dir string, set settings, log io.Writer) (string, error) 
 	if !fileExists(python) {
 		return "", fmt.Errorf("the app's Python is missing: %s", python)
 	}
-	cmd := exec.Command(python, "-m", "kosika.cli", "start", "--no-browser")
+	arguments := []string{"-m", "kosika.cli", "start", "--no-browser"}
+	if set.Folder != "" {
+		arguments = append(arguments, set.Folder)
+	}
+	cmd := exec.Command(python, arguments...)
 	cmd.Dir = filepath.Join(dir, "app")
 	cmd.Env = s.environment(dir, set)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
