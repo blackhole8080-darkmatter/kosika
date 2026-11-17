@@ -1,0 +1,119 @@
+// Studio's home screen, decided in Kosika: what the day looks like when you
+// open Studio. Studio's server gathers the facts (who is at work, what waits
+// for your Keep, the to-do list, what the swarm finished) and runs this; it
+// says how to greet you, which cards come first and what each one says, and
+// the colours, all from Kosika Designs' own palette.
+
+import "std/designs_palette.kos"
+
+export [HomeIn, HomeOut, Card, Worker, greeting, worker_colour, cards_for, home]
+
+record Worker { name: Text colour: Text doing: Text }
+
+record HomeIn {
+  hour: Number
+  person: Text
+  working: Worker[]
+  waiting: Number
+  open: Number
+  taken: Number
+  finished: Number
+  passed: Number
+}
+
+record Card { key: Text title: Text line: Text accent: Text }
+
+record HomeOut {
+  greeting: Text
+  line: Text
+  cards: Card[]
+  glow: Text[]
+  tabs: Text[]
+}
+
+// Good morning before noon, good afternoon until six, good evening after.
+fn greeting(hour: Number, person: Text) -> Text {
+  let part = if hour < 5 { "Working late" } else { if hour < 12 { "Good morning" } else { if hour < 18 { "Good afternoon" } else { "Good evening" } } }
+  if person.trim() == "" { return part }
+  return part + ", " + person.trim()
+}
+
+// An agent's colour: the one its pointer has, or a hue of Kosika's palette
+// chosen by the letters of its name, so it is the same every time.
+fn worker_colour(w: Worker) -> Text {
+  if w.colour.starts_with("#") and w.colour.length() == 7 { return w.colour }
+  let hues = palette_named("dark_matter").hues
+  var sum = 0
+  for ch in w.name.chars() { sum = sum + "abcdefghijklmnopqrstuvwxyz0123456789-".index_of(ch.lower()).or(0) }
+  return hues[sum % hues.length()]
+}
+
+fn plural(n: Number, one: Text, many: Text) -> Text {
+  if n == 1 { return "1 " + one }
+  return n.to_text() + " " + many
+}
+
+// The cards, most pressing first: agents at work while anyone works, then
+// what waits for you, then the day's list and what was finished.
+fn cards_for(h: HomeIn) -> Card[] {
+  let p = palette_named("dark_matter")
+  let at_work: Card = {key: "working", title: "At work now",
+    line: if h.working.is_empty() { "No agent is working. Start the swarm from Coders." } else { plural(h.working.length(), "agent is", "agents are") + " working" },
+    accent: p.accent}
+  let waiting: Card = {key: "waiting", title: "Waiting for your Keep",
+    line: if h.waiting == 0 { "Nothing waits for you." } else { plural(h.waiting, "change passed its checks", "changes passed their checks") + " and wait for you" },
+    accent: p.gold}
+  let tasks: Card = {key: "tasks", title: "Today's list",
+    line: plural(h.open, "request open", "requests open") + ", " + h.taken.to_text() + " being worked on",
+    accent: p.think}
+  let done: Card = {key: "done", title: "What the swarm did",
+    line: plural(h.finished, "run", "runs") + " finished today, " + h.passed.to_text() + " passed",
+    accent: hues_at(p, 4)}
+  if h.working.is_empty() and h.waiting > 0 { return [waiting, at_work, tasks, done] }
+  return [at_work, waiting, tasks, done]
+}
+
+fn hues_at(p: Palette, at: Number) -> Text {
+  return p.hues[at % p.hues.length()]
+}
+
+fn home_of(h: HomeIn) -> HomeOut {
+  let line = if h.working.is_empty() { "The swarm is resting." } else { "Your agents are building Kosika." }
+  return {greeting: greeting(h.hour, h.person), line: line, cards: cards_for(h),
+          glow: (for w in h.working { worker_colour(w) }), tabs: ["Today", "Chat", "Designs", "Coders"]}
+}
+
+workflow home(h: HomeIn) -> HomeOut {
+  shown = home_of(h)
+}
+
+test "you are greeted for the time of day" {
+  expect greeting(8, "Aryan") == "Good morning, Aryan"
+  expect greeting(14, "") == "Good afternoon"
+  expect greeting(21, "Aryan") == "Good evening, Aryan"
+  expect greeting(2, "Aryan") == "Working late, Aryan"
+}
+
+test "agents keep their pointer's colour, or get one of Kosika's" {
+  expect worker_colour({name: "coder-1", colour: "#ff3ea5", doing: ""}) == "#ff3ea5"
+  c = worker_colour({name: "coder-9", colour: "", doing: ""})
+  expect palette_named("dark_matter").hues.contains(c)
+  expect worker_colour({name: "coder-9", colour: "", doing: ""}) == c
+}
+
+test "what is most pressing comes first" {
+  busy: HomeIn = {hour: 9, person: "", working: [{name: "coder-1", colour: "#ff3ea5", doing: "x"}], waiting: 2, open: 3, taken: 1, finished: 4, passed: 2}
+  calm: HomeIn = {hour: 9, person: "", working: [], waiting: 2, open: 0, taken: 0, finished: 4, passed: 2}
+  expect cards_for(busy)[0].key == "working"
+  expect cards_for(calm)[0].key == "waiting"
+  expect cards_for(busy)[1].line == "2 changes passed their checks and wait for you"
+  expect home_of(busy).glow == ["#ff3ea5"]
+  expect home_of(busy).tabs == ["Today", "Chat", "Designs", "Coders"]
+}
+
+test "every colour on the home screen is Kosika's own" {
+  p = palette_named("dark_matter")
+  own = p.hues.concat([p.accent, p.gold, p.think])
+  cards = cards_for({hour: 9, person: "", working: [], waiting: 0, open: 0, taken: 0, finished: 0, passed: 0})
+  expect (for c in cards { if own.contains(c.accent) { "" } else { c.accent } }).join("") == ""
+}

@@ -95,6 +95,8 @@ from .system_tools import (
 from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
+#: Studio's look, "Clear": written by this Kosika program and put into the page.
+LOOK = Path(__file__).parent / "app_assets" / "look.kos"
 #: The program that describes Studio's own moving mark.
 BRAND = Path(__file__).parent / "app_assets" / "brand.kos"
 MAX_AGENTS = 200
@@ -1727,6 +1729,29 @@ class App:
             raise AppError(f"Could not save: {exc}", 422) from exc
         return {"saved": True, **checked}
 
+    def look(self) -> str:
+        """Studio's look as look.kos writes it, made once and kept. If it
+        cannot be made the page keeps its own older look."""
+
+        if getattr(self, "_look", None) is None:
+            try:
+                with tempfile.TemporaryDirectory(prefix="kosika-look-") as scratch:
+                    made = run(load_program(LOOK), "main", Path(scratch) / "run.jsonl", inputs={"a": {"name": "clear"}})
+                made = made.get("made", made)
+                self._look = str(made["css"]) if not made.get("problems") else ""
+            except (ValueError, RuntimeError, OSError, KeyError):
+                self._look = ""
+        return self._look
+
+    def page(self) -> bytes:
+        """Studio's page, with its look put in."""
+
+        page = PAGE.read_text(encoding="utf-8")
+        css = self.look()
+        if css:
+            page = page.replace("</head>", "<style id=\"kosika-look\">" + css + "</style>\n</head>", 1)
+        return page.encode("utf-8")
+
     def brand(self) -> dict[str, Any]:
         """Studio's own moving mark. It is not a stored picture: the Kosika
         program beside the page is run, and the scene it describes is
@@ -2253,6 +2278,36 @@ class App:
             raise AppError(str(exc), 404) from exc
         return self.services()
 
+    def home(self) -> dict[str, Any]:
+        """The home screen: who is at work, what waits for a Keep, the day's
+        list and what the swarm did, shown as app_assets/home.kos says."""
+
+        from . import home
+
+        return home.home()
+
+    def models_page(self) -> dict[str, Any]:
+        """The models the agents reach through Kosika's router, and how each
+        is doing, as app_assets/models.kos says."""
+
+        from . import models_page
+
+        return models_page.page()
+
+    def morning(self) -> dict[str, Any]:
+        """Kosi's plan for the day, as app_assets/morning.kos writes it."""
+
+        from . import morning
+
+        return morning.plan()
+
+    def approve_morning(self, body: dict[str, Any]) -> dict[str, Any]:
+        """"Looks good" on the day's plan."""
+
+        from . import morning
+
+        return morning.approve(body)
+
     def coders(self) -> dict[str, Any]:
         """The coder swarm: the latest day's runs, who is on what and how
         each ended, and the to-do list the coders take requests from."""
@@ -2464,7 +2519,7 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
             agent_id = (query.get("id") or [""])[0]
             try:
                 if method == "GET" and url.path == "/":
-                    self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+                    self._send(200, app.page(), "text/html; charset=utf-8")
                 elif method == "GET" and url.path == "/api/agents":
                     self._json(200, app.overview())
                 elif method == "GET" and url.path == "/api/agent":
@@ -2728,6 +2783,14 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.services())
                 elif method == "POST" and url.path == "/api/services/pause":
                     self._json(200, app.pause_service(self._body()))
+                elif method == "GET" and url.path == "/api/home":
+                    self._json(200, app.home())
+                elif method == "GET" and url.path == "/api/models/router":
+                    self._json(200, app.models_page())
+                elif method == "GET" and url.path == "/api/morning":
+                    self._json(200, app.morning())
+                elif method == "POST" and url.path == "/api/morning/approve":
+                    self._json(200, app.approve_morning(self._body()))
                 elif method == "GET" and url.path == "/api/coders":
                     self._json(200, app.coders())
                 elif method == "POST" and url.path == "/api/coders/request":

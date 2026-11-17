@@ -1131,7 +1131,59 @@ pre.diff .hunk { color: var(--faint); }
 [data-skin="graphite"] pre, [data-skin="graphite"] code { font-family: "JetBrains Mono", var(--mono); }
 [data-skin="graphite"] .path { font-family: var(--mono); color: var(--faint); }
 [data-skin="graphite"] main { animation: none !important; }
-</style>
+/* Home: the day at a glance (home.kos decides the words, order and colours). */
+.home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.home-head h1 { margin: 0; font-size: 30px; letter-spacing: -.01em; }
+.home-head p { margin: 4px 0 0; color: var(--soft); }
+.home-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); margin: 14px 0 18px; width: max-content; max-width: 100%; overflow-x: auto; }
+.home-tab { padding: 7px 14px; border-radius: 9px; cursor: pointer; color: var(--soft); font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+.home-tab.on { background: var(--accent); color: #fff; }
+.home-ask { display: flex; gap: 8px; margin: 0 0 18px; }
+.home-ask input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; }
+.home-ask input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.model-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.model-top h3 { margin: 0; }
+.model-card .chips { margin: 10px 0 6px; }
+.model-tip { color: var(--soft); font-size: 13px; margin: 6px 0 10px; line-height: 1.45; }
+.model-bar { display: flex; height: 6px; border-radius: 99px; overflow: hidden; background: var(--line); gap: 1px; }
+.model-bar i { display: block; min-width: 0; }
+.model-bar .ok { background: var(--ok); } .model-bar .warn { background: var(--accent); } .model-bar .bad { background: var(--bad); } .model-bar .soft { background: var(--soft); }
+.route-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.route-list li { display: grid; grid-template-columns: 160px 1fr; gap: 12px; font-size: 13.5px; padding: 4px; border-radius: 8px; }
+.route-list li.hit { cursor: pointer; } .route-list li.hit:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.route-list span { color: var(--soft); }
+.plan { margin: 0 0 16px; border-top: 3px solid var(--accent) !important; }
+.plan.done { border-top-color: var(--ok) !important; }
+.plan-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.plan-head h3 { margin: 0 0 2px; }
+.plan-head .line { margin: 0; color: var(--soft); font-size: 13.5px; }
+.plan-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; }
+.plan-steps li { display: grid; grid-template-columns: 32px 1fr auto; gap: 12px; align-items: center; padding: 8px; border-radius: 10px; }
+.plan-steps li:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.plan-steps b { display: block; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-steps small { color: var(--soft); font-size: 12.5px; }
+.plan-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 15px; }
+.plan-icon[data-kind="keep"] { background: var(--ok-soft); color: var(--ok); }
+.plan-icon[data-kind="paper"], .plan-icon[data-kind="study"] { background: var(--think-soft); color: var(--think); }
+.plan-steps button { min-height: 30px; padding: 0 12px; font-size: 13px; }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.home-card { border-top: 3px solid var(--card-accent, var(--accent)); }
+.home-card h3 { margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
+.home-card h3 i { width: 9px; height: 9px; border-radius: 50%; background: var(--card-accent, var(--accent)); box-shadow: 0 0 10px var(--card-accent, var(--accent)); }
+.home-card .line { color: var(--soft); margin: 0 0 10px; font-size: 13.5px; }
+.home-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.home-card li { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; font-size: 13.5px; line-height: 1.4; }
+.home-card li .txt { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.home-card li.hit { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; }
+.home-card li.hit:hover { background: var(--accent-soft); }
+.home-who { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #0b0d12; background: var(--who); box-shadow: 0 0 0 3px color-mix(in srgb, var(--who) 30%, transparent), 0 0 16px var(--who); animation: home-breathe 3.4s ease-in-out infinite; }
+.home-typing { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--ink); opacity: .85; }
+.home-typing::after { content: "\258D"; animation: home-caret 1s steps(1) infinite; color: var(--who); }
+@keyframes home-breathe { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--who) 18%, transparent), 0 0 26px var(--who); } }
+@keyframes home-caret { 50% { opacity: 0; } }
+.home-glow { position: fixed; inset: 0; pointer-events: none; z-index: 50; border-radius: 0; transition: opacity .9s; animation: home-glow 3.4s ease-in-out infinite; }
+@keyframes home-glow { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .home-who, .home-glow, .home-typing::after { animation: none; } }</style>
 </head>
 <body>
 <aside class="rail">
@@ -1141,6 +1193,8 @@ pre.diff .hunk { color: var(--faint); }
 </aside>
 <main id="main"></main>
 <template id="icon-assistant"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></template>
+<template id="icon-home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h5v-5h4v5h5v-9"/></svg></template>
+<template id="icon-models"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg></template>
 <template id="icon-project"><svg viewBox="0 0 24 24"><path d="M4 5h6v6H4z"/><path d="M14 5h6v6h-6z"/><path d="M4 15h6v4H4z"/><path d="M14 15h6v4h-6z"/></svg></template>
 <template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
@@ -1336,9 +1390,15 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
-  document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
-    h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
+  // Grouped, so the rail reads as a few short lists rather than one long one.
+  const groups = [
+    [null, [["home", "Home"], ["assistant", "Assistant"], ["coders", "Coders"]]],
+    ["Create", [["designs", "Designs"], ["study", "Study"]]],
+    ["Build", [["project", "Project"], ["agents", "Agents"], ["models", "Models"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"]]],
+    ["System", [["services", "Services"], ["permissions", "Permissions"], ["mayaos", "MayaOS"]]]
+  ];
+  const item = ([key, label]) => h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null);
+  document.getElementById("nav").replaceChildren(...groups.flatMap(([name, items]) => [name ? h("div", {class: "nav-group"}, name) : null, ...items.map(item)].filter(Boolean)));
   document.getElementById("foot").replaceChildren(
     h("div", null, h("span", {class: "dot" + (overview.can_run ? "" : " off")}), overview.can_run ? overview.model : "no model: view and test only"),
     h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")),
@@ -1352,11 +1412,25 @@ async function route() {
   const [view, rawId] = location.hash.slice(1).split("/");
   const id = rawId ? decodeURIComponent(rawId) : "";
   try {
+    // Home needs no agent list: on the first open it is drawn at once and
+    // the side bar is finished when the list (seconds, the first time) comes.
+    if ((view || "home") === "home" && !overview) {
+      overview = {loading: true, can_run: true, model: "Reading your agents…", root: "", agents: []};
+      drawRail("home");
+      await showHome(id);
+      const listed = await api("/api/agents");
+      overview = listed;
+      if (mine === routing) { drawRail("home"); if (id === "chat") await showHome(id); }
+      return;
+    }
     overview = await api("/api/agents");
     if (mine !== routing) return;
-    const active = view || "assistant";
+    const active = view || "home";
     drawRail(active === "agent" ? "agents" : active);
-    if (active === "agents") showAgents();
+    if (active !== "home") clearTimeout(homeTimer);
+    if (active === "home") await showHome(id);
+    else if (active === "agents") showAgents();
+    else if (active === "models") await showModels();
     else if (active === "agent") await showAgent(id, false);
     else if (active === "project") await showProject();
     else if (active === "runs") await showRuns();
@@ -1730,6 +1804,169 @@ async function showServices() {
 // to-do list it takes requests from; a box to add one, and a button that
 // starts the swarm. The page looks again every few seconds while any coder
 // is still working.
+// Home: the day at a glance. The facts come from /api/home; what is said,
+// in which order and in which colours is decided by app_assets/home.kos.
+// Models: what the agents can ask, and how each model is doing today.
+// The facts come from /api/models; what they mean is said by models.kos.
+async function showModels() {
+  // Two lists: the models Studio itself uses for each kind of work
+  // (/api/models), and the models the agents reach through Kosika's router.
+  const [mine, view] = await Promise.all([api("/api/models").catch(() => null), api("/api/models/router")]);
+  const badge = {ready: "ok", unused: "", limited: "warn", rejected: "warn", shaky: "warn", missing: "bad", "no-key": "bad"};
+  const rows = view.slots.map((slot, index) => {
+    const verdict = view.verdicts[index] || {};
+    const rate = slot.tries ? Math.round(100 * slot.ok / slot.tries) + "% answered" : "not asked today";
+    return h("div", {class: "card model-card"},
+      h("div", {class: "model-top"},
+        h("div", null, h("h3", null, slot.slot), h("small", {class: "path"}, slot.id)),
+        chip(verdict.label || "", badge[verdict.state] || "")),
+      h("div", {class: "chips"}, chip(slot.provider, slot.local ? "think" : ""), chip(slot.local ? "on this laptop" : "free cloud"),
+        slot.local ? null : chip(slot.key_set ? "key set" : "no key", slot.key_set ? "ok" : "bad"), chip(rate)),
+      h("p", {class: "model-tip"}, verdict.tip || ""),
+      slot.tries ? h("div", {class: "model-bar", title: slot.ok + " answered, " + slot.limited + " over the free limit, " + slot.missing + " not found, " + slot.rejected + " refused"},
+        h("i", {class: "ok", style: "flex:" + slot.ok}), h("i", {class: "warn", style: "flex:" + slot.limited}),
+        h("i", {class: "bad", style: "flex:" + slot.missing}), h("i", {class: "soft", style: "flex:" + slot.rejected})) : null);
+  });
+  const uses = (overview.agents || []).filter(agent => agent.models && agent.models.length);
+  const routes = Object.entries(view.routes || {});
+  const studioUses = mine && mine.tasks ? h("div", {class: "card"}, h("ul", {class: "route-list"}, mine.tasks.map(task =>
+    h("li", null, h("b", null, task.label), h("span", null, (task.chosen || "none ready") + (task.then && task.then.length ? "  \u2192 then " + task.then.join(", ") : "") + " \u00b7 " + task.needs))))) : null;
+  const studioModels = mine && mine.models ? h("div", {class: "chips", style: "margin-top:10px"}, mine.models.map(model =>
+    chip(model.name + " \u00b7 " + (model.local ? "this laptop" : model.where.split(" \u00b7 ")[0]), model.ready ? "ok" : "bad"))) : null;
+  main.replaceChildren(...[
+    titled("Models"),
+    studioUses ? h("h2", null, "What Studio uses for each kind of work") : null,
+    studioUses, studioModels,
+    h("h2", null, "The agents' models, through Kosika's router"),
+    h("p", {class: "lead"}, view.summary, " ", h("span", {class: "path"}, view.router_file)),
+    view.ok ? null : h("div", {class: "banner bad"}, view.error),
+    h("div", {class: "chips", style: "margin:-6px 0 18px"}, chip(view.router_up ? "router running" : "router stopped", view.router_up ? "ok" : "bad"),
+      chip(view.ollama_up ? "Ollama running" : "Ollama not running", view.ollama_up ? "ok" : "warn"), chip(view.ready + " of " + view.slots.length + " ready")),
+    h("div", {class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"}, rows),
+    routes.length ? h("h2", null, "Which models each kind of job tries, in order") : null,
+    routes.length ? h("div", {class: "card"}, h("ul", {class: "route-list"}, routes.map(([kind, order]) =>
+      h("li", null, h("b", null, kind), h("span", null, order.join(" \u2192 ")))))) : null,
+    uses.length ? h("h2", null, "Agents and the models they declare") : null,
+    uses.length ? h("div", {class: "card"}, h("p", {class: "lead", style: "margin:0 0 10px"}, "Each model an agent declares is answered by kosika-virtual, Kosika's router, unless a run names another."),
+      h("ul", {class: "route-list"}, uses.map(agent => h("li", {class: "hit", onclick: () => go("agent", agent.id)}, h("b", null, agent.title || agent.id),
+        h("span", null, agent.models.join(", ")))))) : null
+  ].filter(Boolean));
+}
+
+let homeTimer = 0;
+// A request in a few words: the file it is about and what it is for.
+function shortAsk(text) {
+  const found = /^(?:write|add|make) (?:a )?(?:new )?(?:file )?([\w./-]+)[:,]?\s*(.*)$/i.exec(text || "");
+  if (!found) return text || "";
+  const rest = found[2].replace(/^Kosika Studio's\s*/i, "").split(/[.;(]/)[0].trim();
+  return found[1].split("/").pop() + (rest ? " \u2014 " + rest : "");
+}
+async function showHome(tab, quiet) {
+  clearTimeout(homeTimer);
+  const view = await api("/api/home");
+  const look = view.look;
+  const tabs = (look.tabs || ["Today", "Chat", "Designs", "Coders"]).map(name => {
+    const key = name === "Today" ? "" : name.toLowerCase();
+    return h("div", {class: "home-tab" + (key === (tab || "") ? " on" : ""), onclick: () => go("home", key)}, name);
+  });
+  const strip = h("div", {class: "home-tabs"}, tabs);
+  glow(look.glow || []);
+  if (tab === "chat" && overview.assistant) { await showAgent(overview.assistant, true); main.prepend(strip); return; }
+  if (tab === "designs") { showDesigns(); main.prepend(strip); return; }
+  if (tab === "coders") { await showCoders(); main.prepend(strip); return; }
+  const ask = h("input", {placeholder: "Ask Kosi anything, or tell the agents what to do next…", "aria-label": "Ask Kosi"});
+  function send() {
+    const text = ask.value.trim();
+    if (!text) return;
+    if (!overview.assistant) { alert(overview.loading ? "Studio is still reading your agents. Ask again in a moment." : "There is no assistant agent in this folder to ask."); return; }
+    handed = {agent: overview.assistant, text, why: "you asked from Home"};
+    go("home", "chat");
+  }
+  ask.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
+  const lists = {
+    working: view.working.length
+      ? view.working.map(w => h("li", null, h("span", {class: "home-who", style: "--who:" + (w.colour || "var(--accent)")}, (w.tag || w.name).slice(0, 1).toUpperCase()),
+          h("div", null, h("b", null, w.tag || w.name), " ", h("small", {class: "path"}, w.name), h("div", {class: "txt", title: w.doing}, shortAsk(w.doing) || "working"),
+            w.typing ? h("div", {class: "home-typing", style: "--who:" + (w.colour || "var(--accent)")}, w.typing.slice(-70)) : null)))
+      : [],
+    waiting: view.waiting.map(run => h("li", {class: "hit", onclick: () => go("coders", run.run), title: "See the change, and keep it"}, chip("passed", "ok"), h("span", {class: "txt", title: run.request}, shortAsk(run.request)))),
+    tasks: view.tasks.items.map(item => h("li", null, chip(item.state === "taken" ? "working" : "waiting", item.state === "taken" ? "warn" : ""), h("span", {class: "txt", title: item.text}, shortAsk(item.text)))),
+    done: view.done.recent.map(run => h("li", {class: "hit", onclick: () => go("coders", run.run)}, chip(run.result === "passed" ? "passed" : "did not pass", run.result === "passed" ? "ok" : "bad"), h("span", {class: "txt", title: run.request}, shortAsk(run.request))))
+  };
+  const cards = (look.cards || []).map(card => h("div", {class: "card home-card", style: "--card-accent:" + card.accent},
+    h("h3", null, h("i"), card.title), h("p", {class: "line"}, card.line), lists[card.key] && lists[card.key].length ? h("ul", null, lists[card.key]) : null));
+  const again = () => { homeTimer = setTimeout(() => { if (["", "#", "#home"].includes(location.hash)) showHome("", true); }, view.working.length ? 2000 : 8000); };
+  const grid = quiet && main.querySelector(".home-grid");
+  if (grid) {
+    // Live while you look: only the cards change, so nothing jumps and the
+    // box keeps what you were writing.
+    grid.replaceChildren(...cards);
+    main.querySelector(".home-head h1").textContent = look.greeting;
+    main.querySelector(".home-head p").textContent = look.line;
+    again();
+    return;
+  }
+  const plan = h("div", {class: "plan-slot"});
+  morningPlan(plan);
+  main.replaceChildren(...[
+    h("div", {class: "home-head"}, h("div", null, h("h1", null, look.greeting), h("p", null, look.line))),
+    strip,
+    h("div", {class: "home-ask"}, ask, h("button", {onclick: send}, "Ask Kosi")),
+    plan,
+    view.ok ? null : h("div", {class: "banner bad"}, view.error || "home.kos could not be run"),
+    h("div", {class: "home-grid"}, cards)].filter(Boolean));
+  again();
+}
+
+// Kosi's plan for the day, written by app_assets/morning.kos: one action
+// for each thing, and "Looks good" to approve the plan once a day.
+async function morningPlan(slot) {
+  let plan;
+  try { plan = await api("/api/morning"); } catch (error) { return; }
+  if (!plan.steps || !plan.steps.length) return;
+  async function act(step, button) {
+    if (/^https?:\/\//.test(step.go)) { window.open(step.go, "_blank", "noopener"); return; }
+    if (step.go === "start") {
+      button.disabled = true;
+      try { const said = await api("/api/coders/start", {method: "POST", body: JSON.stringify({size: 3})}); button.textContent = said.started + " started"; }
+      catch (error) { button.disabled = false; alert(error.message); }
+      return;
+    }
+    const [view, id] = step.go.split("/");
+    go(view, id || "");
+  }
+  async function approve(button) {
+    button.disabled = true;
+    try { await api("/api/morning/approve", {method: "POST", body: JSON.stringify({by: "studio"})}); morningPlan(slot); }
+    catch (error) { button.disabled = false; alert(error.message); }
+  }
+  const icons = {overnight: "\u263E", keep: "\u2713", swarm: "\u25B6", paper: "\u2197", study: "\u270E"};
+  const done = plan.approved;
+  slot.replaceChildren(h("section", {class: "card plan" + (done ? " done" : "")},
+    h("div", {class: "plan-head"},
+      h("div", null, h("h3", null, "Kosi\u2019s plan for today"), h("p", {class: "line"}, plan.summary)),
+      done ? h("span", {class: "chip ok"}, "Approved at " + String(done.at).slice(11, 16))
+           : h("button", {onclick: event => approve(event.currentTarget)}, plan.approve)),
+    done ? null : h("ol", {class: "plan-steps"}, plan.steps.map(step => {
+      const button = h("button", {class: "ghost", onclick: event => act(step, event.currentTarget)}, step.label);
+      return h("li", null, h("span", {class: "plan-icon", "data-kind": step.kind}, icons[step.kind] || "\u2022"),
+        h("div", null, h("b", null, step.title), h("small", null, step.detail)), button);
+    }))));
+}
+
+// The edge of Studio glows in the colours of the agents at work, as the
+// edges of the screen do (the overlay), and fades when they stop.
+function glow(colours) {
+  let edge = document.querySelector(".home-glow");
+  if (!edge) { edge = h("div", {class: "home-glow"}); document.body.append(edge); }
+  if (!colours.length) { edge.style.opacity = "0"; return; }
+  const ring = colours.concat(colours[0]).join(", ");
+  edge.style.opacity = "1";
+  edge.style.boxShadow = "inset 0 0 38px 2px " + colours[0];
+  edge.style.background = "none";
+  edge.style.border = "3px solid transparent";
+  edge.style.borderImage = "linear-gradient(120deg, " + ring + ") 1";
+}
 let codersTimer = 0;
 async function showCoders(note) {
   clearTimeout(codersTimer);
@@ -3088,7 +3325,8 @@ async function showAgent(id, isAssistant) {
   pick(Object.keys(tabs)[0]);
 }
 
-loadBrand().finally(route);
+// The page is drawn at once; the moving mark joins it when it is ready.
+route(); loadBrand();
 
 // ------------------------------------------------- Cinema: the motion layer
 // It only watches and moves what the views above draw; it draws no view of
@@ -3103,7 +3341,7 @@ loadBrand().finally(route);
   function intro() {
     let shown = false;
     try { shown = sessionStorage.getItem("kosika-intro") === "1"; sessionStorage.setItem("kosika-intro", "1"); } catch (error) { shown = false; }
-    if (shown || calm() || document.documentElement.dataset.skin === "graphite") return;
+    if (shown || calm() || ["graphite", "clear"].includes(document.documentElement.dataset.skin)) return;
     const ns = SVGNS;
     const ink = s("linearGradient", {id: "introInk", x1: "0", y1: "0", x2: "1", y2: "1"},
       s("stop", {offset: "0", "stop-color": "#ff8a4c"}), s("stop", {offset: ".55", "stop-color": "#a993ff"}), s("stop", {offset: "1", "stop-color": "#55d6ff"}));
@@ -3307,7 +3545,7 @@ loadBrand().finally(route);
     if (document.hidden || now - last < 33) return;
     const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
     const look = document.documentElement.dataset.skin;
-    if (look === "swiss" || look === "spy" || look === "graphite") { canvas.style.opacity = "0"; return; }
+    if (look === "swiss" || look === "spy" || look === "graphite" || look === "clear") { canvas.style.opacity = "0"; return; }
     TINTS.idle = look === "cutting-room" ? [0.6, 0.38, 0.22] : look === "dark-matter" ? [0.54, 0.44, 1.0] : [0.66, 0.58, 1.0];
     if (now > calmUntil) { wantEnergy = look === "cutting-room" ? 0.07 : look === "dark-matter" ? 0.06 : 0.15; wantTint = TINTS.idle; }
     energy += (wantEnergy - energy) * Math.min(1, dt * 1.6);
@@ -3329,7 +3567,8 @@ loadBrand().finally(route);
 // Studio has one look now, Graphite ("Kosika Studio, Modern"): quieter,
 // flatter, one accent. The older looks' rules stay below, unused.
 const SKINS = [["graphite", "Graphite"]];
-function skin() { return "graphite"; }
+// "Clear", written by app_assets/look.kos, when the server put it in the page.
+function skin() { return document.getElementById("kosika-look") ? "clear" : "graphite"; }
 function setSkin(name) {
   try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
   if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;
