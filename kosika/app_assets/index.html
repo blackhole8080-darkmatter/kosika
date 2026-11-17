@@ -1152,6 +1152,57 @@ pre.diff .hunk { color: var(--faint); }
 .route-list li { display: grid; grid-template-columns: 160px 1fr; gap: 12px; font-size: 13.5px; padding: 4px; border-radius: 8px; }
 .route-list li.hit { cursor: pointer; } .route-list li.hit:hover { background: var(--hover, rgba(127,127,127,.08)); }
 .route-list span { color: var(--soft); }
+#nav { display: flex; flex-direction: column; flex: 1; gap: 2px; }
+.nav-gap { flex: 1; }
+.rail-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); margin: 6px auto; }
+.rail-dot.off { background: var(--bad); box-shadow: none; }
+.rail-theme { text-align: center; cursor: pointer; color: var(--soft); font-size: 16px; padding: 6px 0; border-radius: 8px; }
+.rail-theme:hover { background: var(--hover, rgba(127,127,127,.1)); color: var(--ink); }
+.section-tabs { margin: 0 0 18px; }
+.card-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.page-top { margin-bottom: 22px; }
+.page-top h1 { margin: 0; }
+.quiet-line { color: var(--soft); font-size: 13px; margin: 4px 0 0; }
+.home-grid.compact { grid-template-columns: 1.3fr 1fr 1fr; align-items: start; }
+.home-grid.compact .today { grid-row: span 2; }
+.home-grid.compact .wide { grid-column: span 2; }
+.home-card h3 { margin: 0 0 12px; font-size: 15px; }
+.home-card.hit { cursor: pointer; }
+.home-card .big { font-size: 40px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.home-card .big small { font-size: 18px; color: var(--faint); font-weight: 700; }
+.today-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.today-list li { display: grid; grid-template-columns: 10px 1fr; gap: 12px; align-items: center; padding: 7px 8px; border-radius: 9px; cursor: pointer; font-size: 14px; }
+.today-list li:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.today-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-list i, .pip { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.chip .pip { margin-right: 6px; vertical-align: 1px; }
+.faces { display: flex; gap: 10px; flex-wrap: wrap; }
+.face { width: 58px; height: 58px; display: grid; place-items: center; }
+.face b { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #0c0d13; }
+.face svg, .coder-face-big svg, .coder-mini svg, .kosi-face svg { width: 100%; height: auto; }
+.coder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.coder-card { display: grid; justify-items: center; gap: 8px; text-align: center; padding: 20px 16px; cursor: pointer; }
+.coder-card.picked { outline: 2px solid var(--ok); outline-offset: -1px; }
+.coder-face-big { width: 104px; height: 104px; display: grid; place-items: center; }
+.coder-card b { font-size: 16px; }
+.coder-what { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coder-pick { margin-top: 18px; display: grid; grid-template-columns: 56px 1fr auto; gap: 18px; align-items: center; padding: 16px 20px; }
+.coder-mini { width: 56px; }
+.kosi { max-width: 760px; margin: 0 auto; height: calc(100vh - 80px); display: flex; flex-direction: column; }
+.kosi-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding: 24px 4px 12px; }
+.kosi-row { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: start; }
+.kosi-face { width: 44px; height: 44px; }
+.kosi-text { padding-top: 9px; line-height: 1.65; white-space: pre-wrap; font-size: 15px; }
+.kosi-you { align-self: flex-end; max-width: 72%; background: var(--hover, rgba(127,127,127,.12)); padding: 10px 16px; border-radius: 18px 18px 4px 18px; font-size: 15px; }
+.kosi-ask { padding: 14px 16px; display: grid; gap: 10px; margin-left: 56px; }
+.kosi-suggest { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 10px; }
+.kosi-suggest .chip { cursor: pointer; }
+.kosi-bar { display: flex; gap: 8px; align-items: center; padding: 8px 8px 8px 20px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); }
+.kosi-bar input { flex: 1; border: 0 !important; background: transparent !important; box-shadow: none !important; font-size: 15px; outline: 0; color: var(--ink); }
+.kosi-send { width: 40px; height: 40px; min-height: 40px !important; padding: 0 !important; border-radius: 50% !important; font-size: 18px !important; font-weight: 800; }
+.kosi-dots i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: var(--soft); animation: kosi-dot 1.2s infinite; }
+.kosi-dots i:nth-child(2) { animation-delay: .2s; } .kosi-dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes kosi-dot { 50% { opacity: .25; } }
 .plan { margin: 0 0 16px; border-top: 3px solid var(--accent) !important; }
 .plan.done { border-top-color: var(--ok) !important; }
 .plan-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -1195,6 +1246,7 @@ pre.diff .hunk { color: var(--faint); }
 <template id="icon-assistant"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></template>
 <template id="icon-home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h5v-5h4v5h5v-9"/></svg></template>
 <template id="icon-models"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg></template>
+<template id="icon-settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></template>
 <template id="icon-project"><svg viewBox="0 0 24 24"><path d="M4 5h6v6H4z"/><path d="M14 5h6v6h-6z"/><path d="M4 15h6v4H4z"/><path d="M14 15h6v4h-6z"/></svg></template>
 <template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
@@ -1389,21 +1441,39 @@ async function loadBrand() {
 function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURIComponent(id) : ""); }
 window.addEventListener("hashchange", route);
 
+// The side bar: seven icons with one word each. Agents and Settings each
+// hold a few pages, shown as tabs on top of them.
+const SECTIONS = {
+  agents: [["agents", "Agents"], ["project", "Project"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"]],
+  settings: [["models", "Models"], ["services", "Services"], ["permissions", "Permissions"]]
+};
+function sectionOf(view) {
+  if (view === "agent") return "agents";
+  for (const [name, items] of Object.entries(SECTIONS)) if (items.some(([key]) => key === view)) return name;
+  return view;
+}
+function sectionTabs(view) {
+  const items = SECTIONS[sectionOf(view)];
+  if (!items) return null;
+  return h("div", {class: "home-tabs section-tabs"}, items.map(([key, label]) =>
+    h("div", {class: "home-tab" + (key === view ? " on" : ""), onclick: () => go(key)}, label)));
+}
+// Pages that draw late (after loading) replace what was there; the tabs of
+// their section are put back on top whenever that happens.
+new MutationObserver(() => {
+  const view = location.hash.slice(1).split("/")[0] || "home";
+  const strip = sectionTabs(view === "settings" ? "models" : view);
+  if (strip && !main.querySelector(".section-tabs")) main.prepend(strip);
+}).observe(main, {childList: true});
 function drawRail(active) {
-  // Grouped, so the rail reads as a few short lists rather than one long one.
-  const groups = [
-    [null, [["home", "Home"], ["assistant", "Assistant"], ["coders", "Coders"]]],
-    ["Create", [["designs", "Designs"], ["study", "Study"]]],
-    ["Build", [["project", "Project"], ["agents", "Agents"], ["models", "Models"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"]]],
-    ["System", [["services", "Services"], ["permissions", "Permissions"], ["mayaos", "MayaOS"]]]
-  ];
-  const item = ([key, label]) => h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null);
-  document.getElementById("nav").replaceChildren(...groups.flatMap(([name, items]) => [name ? h("div", {class: "nav-group"}, name) : null, ...items.map(item)].filter(Boolean)));
+  const on = sectionOf(active);
+  const top = [["home", "Home"], ["assistant", "Kosi"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"]];
+  const bottom = [["agents", "Agents"], ["settings", "Settings"]];
+  const item = ([key, label]) => h("div", {class: "nav" + (key === on ? " on" : ""), title: label, onclick: () => go(key === "settings" ? "models" : key)}, icon(key), h("span", null, label));
+  document.getElementById("nav").replaceChildren(...top.map(item), h("div", {class: "nav-gap"}), ...bottom.map(item));
   document.getElementById("foot").replaceChildren(
-    h("div", null, h("span", {class: "dot" + (overview.can_run ? "" : " off")}), overview.can_run ? overview.model : "no model: view and test only"),
-    h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")),
-    h("div", {class: "theme", title: "Jump to any agent, workflow, tool or record", onclick: openJump}, h("span", null, "Jump to…"), h("small", {style: "margin-left:auto;color:var(--faint)"}, "Ctrl K")),
-    h("div", {class: "theme", title: "Change between your computer's setting, light and dark", onclick: () => { setTheme(THEMES[(THEMES.indexOf(theme()) + 1) % THEMES.length]); drawRail(active); }}, h("i"), "Theme: " + THEME_WORDS[theme()]));
+    h("div", {class: "rail-dot" + (overview.can_run ? "" : " off"), title: overview.can_run ? "Model: " + overview.model : "No model: Studio can show agents but not run them"}),
+    h("div", {class: "rail-theme", title: "Theme: " + THEME_WORDS[theme()], onclick: () => { setTheme(THEMES[(THEMES.indexOf(theme()) + 1) % THEMES.length]); drawRail(active); }}, "\u25D0"));
 }
 
 let routing = 0;
@@ -1426,11 +1496,11 @@ async function route() {
     overview = await api("/api/agents");
     if (mine !== routing) return;
     const active = view || "home";
-    drawRail(active === "agent" ? "agents" : active);
+    drawRail(active);
     if (active !== "home") clearTimeout(homeTimer);
     if (active === "home") await showHome(id);
     else if (active === "agents") showAgents();
-    else if (active === "models") await showModels();
+    else if (active === "models" || active === "settings") await showModels();
     else if (active === "agent") await showAgent(id, false);
     else if (active === "project") await showProject();
     else if (active === "runs") await showRuns();
@@ -1441,8 +1511,11 @@ async function route() {
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
     else if (active === "coders") await (id ? showCoderRun(id) : showCoders());
-    else if (overview.assistant) await showAgent(overview.assistant, true);
+    else if (active === "assistant") await showKosi();
     else showAgents();
+    // Agents and Settings keep their pages as tabs on top.
+    const strip = mine === routing ? sectionTabs(active === "settings" ? "models" : active) : null;
+    if (strip && !main.querySelector(".section-tabs")) main.prepend(strip);
   } catch (error) {
     main.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
   }
@@ -1806,6 +1879,68 @@ async function showServices() {
 // is still working.
 // Home: the day at a glance. The facts come from /api/home; what is said,
 // in which order and in which colours is decided by app_assets/home.kos.
+// Kosi: one clean chat column. It talks to the assistant agent the same way
+// the agent's own page does (follow), and shows nothing else.
+let kosiLog = null;
+async function showKosi() {
+  if (!overview.assistant) { main.replaceChildren(h("p", {class: "lead"}, "There is no assistant agent in this folder.")); return; }
+  const agent = await api("/api/agent?id=" + encodeURIComponent(overview.assistant));
+  if (!agent.chat) {
+    // This folder's first agent is not one you talk to: say so, briefly.
+    main.replaceChildren(h("div", {class: "kosi"}, h("div", {class: "kosi-log"}, h("div", {class: "kosi-row"}, (() => { const b = h("div", {class: "kosi-face"}); mascotInto(b, "Kosika", "idle"); return b; })(),
+      h("div", {class: "kosi-text"}, "Kosi isn\u2019t in this agents folder yet. Add the assistant agent, or open a folder that has it, in Settings.")))));
+    return;
+  }
+  const live = liveView(agent);
+  const avatar = () => { const box = h("div", {class: "kosi-face"}); mascotInto(box, "Kosika", "idle"); return box; };
+  const log = kosiLog || h("div", {class: "kosi-log"});
+  kosiLog = log;
+  const input = h("input", {placeholder: "Message Kosi", "aria-label": "Message Kosi"});
+  const sendButton = h("button", {class: "kosi-send", title: "Send", onclick: () => send()}, "\u2191");
+  let busy = false;
+  const say = (who, content) => {
+    const row = who === "you" ? h("div", {class: "kosi-you"}, content) : h("div", {class: "kosi-row"}, avatar(), h("div", {class: "kosi-text"}, content));
+    log.append(row); log.scrollTop = log.scrollHeight; return row;
+  };
+  async function send(given, quiet) {
+    const text = (typeof given === "string" ? given : input.value).trim();
+    if (!text || busy) return;
+    if (!overview.can_run) { say("kosi", "Studio was started without a model, so I can\u2019t answer yet. Choose one in Settings \u203a Models."); return; }
+    busy = true; input.value = ""; sendButton.disabled = true;
+    if (!quiet) say("you", text);
+    const waiting = say("kosi", h("span", {class: "kosi-dots"}, h("i"), h("i"), h("i")));
+    const into = waiting.querySelector(".kosi-text");
+    try {
+      const view = await follow(agent, {text}, live, (request, decide) => {
+        const card = h("div", {class: "card kosi-ask"});
+        const press = allow => async () => { card.replaceChildren(h("span", {class: "quiet-line"}, allow ? "Allowed once." : "Refused.")); await decide(allow); };
+        card.append(h("b", null, askTitle(request)), h("div", {class: "row"}, h("button", {class: "ghost", onclick: press(false)}, "Refuse"), h("button", {onclick: press(true)}, request.plan ? "Allow this plan" : "Allow")));
+        log.insertBefore(card, waiting); log.scrollTop = log.scrollHeight;
+      }, words => { if (words) { into.replaceChildren(words); log.scrollTop = log.scrollHeight; } });
+      if (view.state === "done") {
+        const words = typeof view.text === "string" ? view.text : JSON.stringify(view.text);
+        into.replaceChildren(words); sayAloud(words, () => {});
+        const offers = view.result && Array.isArray(view.result.suggest) ? view.result.suggest.filter(item => typeof item === "string" && item).slice(0, 3) : [];
+        drawSuggestions(offers);
+      } else into.replaceChildren(h("span", {style: "color:var(--bad)"}, view.error || "That did not finish."));
+    } catch (error) { into.replaceChildren(h("span", {style: "color:var(--bad)"}, error.message)); }
+    busy = false; sendButton.disabled = false; input.focus(); log.scrollTop = log.scrollHeight;
+  }
+  const suggestions = h("div", {class: "kosi-suggest"});
+  function drawSuggestions(items) {
+    const shown = items && items.length ? items : ["Plan my day", "What did the swarm do?", "Quiz me"];
+    suggestions.replaceChildren(...shown.map(item => h("span", {class: "chip", onclick: () => send(item)}, item)));
+  }
+  drawSuggestions();
+  input.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
+  main.replaceChildren(h("div", {class: "kosi"}, log, suggestions, h("div", {class: "kosi-bar"}, input, sendButton)));
+  log.scrollTop = log.scrollHeight;
+  if (handed && handed.agent === agent.id) { const mine = handed; handed = null; setTimeout(() => send(mine.text), 0); }
+  else if (!log.children.length && overview.can_run) setTimeout(() => send("hello", true), 200);
+  else if (!log.children.length) say("kosi", "Hi. Studio has no model yet; choose one in Settings \u203a Models.");
+  input.focus();
+}
+
 // Models: what the agents can ask, and how each model is doing today.
 // The facts come from /api/models; what they mean is said by models.kos.
 async function showModels() {
@@ -1863,59 +1998,77 @@ function shortAsk(text) {
 }
 async function showHome(tab, quiet) {
   clearTimeout(homeTimer);
-  const view = await api("/api/home");
+  // Home is four small cards; the other pages have their own place in the rail.
+  if (tab === "chat") { go("assistant"); return; }
+  if (tab === "designs" || tab === "coders") { go(tab); return; }
+  const [view, plan, models] = await Promise.all([api("/api/home"), api("/api/morning").catch(() => null), api("/api/models/router").catch(() => null)]);
   const look = view.look;
-  const tabs = (look.tabs || ["Today", "Chat", "Designs", "Coders"]).map(name => {
-    const key = name === "Today" ? "" : name.toLowerCase();
-    return h("div", {class: "home-tab" + (key === (tab || "") ? " on" : ""), onclick: () => go("home", key)}, name);
-  });
-  const strip = h("div", {class: "home-tabs"}, tabs);
   glow(look.glow || []);
-  if (tab === "chat" && overview.assistant) { await showAgent(overview.assistant, true); main.prepend(strip); return; }
-  if (tab === "designs") { showDesigns(); main.prepend(strip); return; }
-  if (tab === "coders") { await showCoders(); main.prepend(strip); return; }
-  const ask = h("input", {placeholder: "Ask Kosi anything, or tell the agents what to do next…", "aria-label": "Ask Kosi"});
+  const ask = h("input", {placeholder: "Ask Kosi\u2026", "aria-label": "Ask Kosi"});
   function send() {
     const text = ask.value.trim();
     if (!text) return;
     if (!overview.assistant) { alert(overview.loading ? "Studio is still reading your agents. Ask again in a moment." : "There is no assistant agent in this folder to ask."); return; }
     handed = {agent: overview.assistant, text, why: "you asked from Home"};
-    go("home", "chat");
+    go("assistant");
   }
   ask.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
-  const lists = {
-    working: view.working.length
-      ? view.working.map(w => h("li", null, h("span", {class: "home-who", style: "--who:" + (w.colour || "var(--accent)")}, (w.tag || w.name).slice(0, 1).toUpperCase()),
-          h("div", null, h("b", null, w.tag || w.name), " ", h("small", {class: "path"}, w.name), h("div", {class: "txt", title: w.doing}, shortAsk(w.doing) || "working"),
-            w.typing ? h("div", {class: "home-typing", style: "--who:" + (w.colour || "var(--accent)")}, w.typing.slice(-70)) : null)))
-      : [],
-    waiting: view.waiting.map(run => h("li", {class: "hit", onclick: () => go("coders", run.run), title: "See the change, and keep it"}, chip("passed", "ok"), h("span", {class: "txt", title: run.request}, shortAsk(run.request)))),
-    tasks: view.tasks.items.map(item => h("li", null, chip(item.state === "taken" ? "working" : "waiting", item.state === "taken" ? "warn" : ""), h("span", {class: "txt", title: item.text}, shortAsk(item.text)))),
-    done: view.done.recent.map(run => h("li", {class: "hit", onclick: () => go("coders", run.run)}, chip(run.result === "passed" ? "passed" : "did not pass", run.result === "passed" ? "ok" : "bad"), h("span", {class: "txt", title: run.request}, shortAsk(run.request))))
-  };
-  const cards = (look.cards || []).map(card => h("div", {class: "card home-card", style: "--card-accent:" + card.accent},
-    h("h3", null, h("i"), card.title), h("p", {class: "line"}, card.line), lists[card.key] && lists[card.key].length ? h("ul", null, lists[card.key]) : null));
-  const again = () => { homeTimer = setTimeout(() => { if (["", "#", "#home"].includes(location.hash)) showHome("", true); }, view.working.length ? 2000 : 8000); };
-  const grid = quiet && main.querySelector(".home-grid");
-  if (grid) {
-    // Live while you look: only the cards change, so nothing jumps and the
-    // box keeps what you were writing.
-    grid.replaceChildren(...cards);
-    main.querySelector(".home-head h1").textContent = look.greeting;
-    main.querySelector(".home-head p").textContent = look.line;
+  const grid = h("div", {class: "home-grid compact"}, homeCards(view, plan, models));
+  const again = () => { homeTimer = setTimeout(async () => {
+    if (!["", "#", "#home"].includes(location.hash)) return;
+    try {
+      const [v, p, m] = await Promise.all([api("/api/home"), api("/api/morning").catch(() => null), api("/api/models/router").catch(() => null)]);
+      grid.replaceChildren(...homeCards(v, p, m)); glow(v.look.glow || []); main.querySelector(".home-head h1").textContent = v.look.greeting;
+    } catch (error) { /* the cards stay as they were */ }
     again();
-    return;
-  }
-  const plan = h("div", {class: "plan-slot"});
-  morningPlan(plan);
+  }, view.working.length ? 3000 : 10000); };
   main.replaceChildren(...[
-    h("div", {class: "home-head"}, h("div", null, h("h1", null, look.greeting), h("p", null, look.line))),
-    strip,
-    h("div", {class: "home-ask"}, ask, h("button", {onclick: send}, "Ask Kosi")),
-    plan,
+    h("div", {class: "home-head"}, h("h1", null, look.greeting)),
+    h("div", {class: "home-ask"}, ask, h("button", {onclick: send}, "Ask")),
     view.ok ? null : h("div", {class: "banner bad"}, view.error || "home.kos could not be run"),
-    h("div", {class: "home-grid"}, cards)].filter(Boolean));
+    grid].filter(Boolean));
   again();
+}
+
+// The four cards: Today (Kosi's plan, one line a step), who is at work (their
+// mascots), what was done today, and the models.
+const mascots = {};
+async function mascotInto(holder, agent, state) {
+  const key = agent + "/" + state;
+  try {
+    if (!mascots[key]) mascots[key] = await api("/api/coders/mascot?agent=" + encodeURIComponent(agent) + "&state=" + state);
+    const svg = new DOMParser().parseFromString(mascots[key].svg, "image/svg+xml").documentElement;
+    if (svg.nodeName === "svg") { holder.replaceChildren(document.importNode(svg, true)); holder.title = mascots[key].title || agent; }
+  } catch (error) { /* the agent is shown by its initial */ }
+}
+function homeCards(view, plan, models) {
+  const out = [];
+  if (plan && plan.steps && plan.steps.length) {
+    const marks = {overnight: "var(--soft)", keep: "var(--ok)", swarm: "var(--accent)", paper: "var(--think)", study: "var(--think)"};
+    const act = step => { if (/^https?:\/\//.test(step.go)) window.open(step.go, "_blank", "noopener"); else if (step.go === "start") api("/api/coders/start", {method: "POST", body: JSON.stringify({size: 3})}).then(() => go("coders")).catch(error => alert(error.message)); else { const [v, i] = step.go.split("/"); go(v === "home" ? (i || "home") : v, v === "home" ? "" : (i || "")); } };
+    const done = plan.approved;
+    out.push(h("div", {class: "card home-card today"},
+      h("div", {class: "card-top"}, h("h3", null, "Today"), done ? chip("approved", "ok") : h("button", {onclick: async event => { event.currentTarget.disabled = true; try { await api("/api/morning/approve", {method: "POST", body: JSON.stringify({by: "studio"})}); route(); } catch (error) { alert(error.message); } }}, "Looks good")),
+      h("ul", {class: "today-list"}, plan.steps.map(step => h("li", {class: "hit", title: step.detail, onclick: () => act(step)},
+        h("i", {style: "background:" + (marks[step.kind] || "var(--soft)")}), h("span", null, step.title.replace(/^Study: /, "Study \u00b7 ")))))));
+  }
+  const atWork = h("div", {class: "faces"});
+  for (const w of view.working.slice(0, 6)) {
+    const face = h("div", {class: "face", title: w.tag || w.name}, h("b", {style: "background:" + (w.colour || "var(--accent)")}, (w.tag || w.name).slice(0, 1)));
+    atWork.append(face);
+    if (/^coder-\d$|^Kosika$|^scout$/.test(w.name)) mascotInto(face, w.name, "typing");
+  }
+  out.push(h("div", {class: "card home-card"}, h("h3", null, "At work"),
+    view.working.length ? atWork : h("p", {class: "quiet-line"}, "Resting"),
+    h("p", {class: "quiet-line"}, view.working.length ? view.working.length + (view.working.length === 1 ? " agent" : " agents") : "")));
+  out.push(h("div", {class: "card home-card hit", onclick: () => go("coders")}, h("h3", null, "Done today"),
+    h("div", {class: "big"}, String(view.done.passed), h("small", null, " / " + view.done.finished)), h("p", {class: "quiet-line"}, "passed")));
+  if (models && models.slots) {
+    const colour = {ready: "var(--ok)", unused: "var(--ok)", limited: "var(--gold, var(--accent))", rejected: "var(--gold, var(--accent))", shaky: "var(--gold, var(--accent))", missing: "var(--bad)", "no-key": "var(--bad)"};
+    out.push(h("div", {class: "card home-card hit wide", onclick: () => go("models")}, h("h3", null, "Models"),
+      h("div", {class: "chips"}, models.slots.map((slot, i) => { const v = models.verdicts[i] || {}; return h("span", {class: "chip", title: v.label || ""}, h("i", {class: "pip", style: "background:" + (colour[v.state] || "var(--soft)")}), slot.slot); }))));
+  }
+  return out;
 }
 
 // Kosi's plan for the day, written by app_assets/morning.kos: one action
@@ -1971,58 +2124,59 @@ let codersTimer = 0;
 async function showCoders(note) {
   clearTimeout(codersTimer);
   const view = await api("/api/coders");
-  const faces = {};
-  async function face(agent, state, holder) {
-    try {
-      const drawn = await api("/api/coders/mascot?agent=" + encodeURIComponent(agent) + "&state=" + state);
-      if (drawn.svg) { const svg = new DOMParser().parseFromString(drawn.svg, "image/svg+xml").documentElement; if (svg.nodeName === "svg") { const box = h("div", {class: "coder-face"}, document.importNode(svg, true)); holder.face.replaceWith(box); holder.face = box; } }
-      holder.title.textContent = drawn.title || agent;
-    } catch (error) { /* the coder is shown by its name alone */ }
+  const dropped = (() => { try { return JSON.parse(localStorage.getItem("kosika-dropped") || "[]"); } catch (error) { return []; } })();
+  const drop = name => { try { localStorage.setItem("kosika-dropped", JSON.stringify([...dropped, name].slice(-200))); } catch (error) { /* this visit only */ } showCoders(); };
+  // One card per coder: its newest run.
+  const newest = {};
+  for (const run of view.runs) newest[run.agent] = run;
+  const state = run => run.result === "passed" ? ["done", "passed", "var(--ok)"] : run.result ? ["failed", "to retry", "var(--bad)"] : ["typing", "working", "var(--accent)"];
+  const passed = view.runs.filter(r => r.result === "passed").length, failed = view.runs.filter(r => r.result && r.result !== "passed").length;
+  let picked = Object.values(newest).find(run => run.result === "passed" && !dropped.includes(run.run)) || null;
+  const detail = h("div");
+  function pick(run) {
+    picked = run;
+    for (const card of grid.children) card.classList.toggle("picked", card.dataset.run === (run && run.run));
+    if (!run) { detail.replaceChildren(); return; }
+    const [, word, colour] = state(run);
+    const face = h("div", {class: "coder-mini"}); mascotInto(face, run.agent, state(run)[0]);
+    detail.replaceChildren(h("div", {class: "card coder-pick"}, face,
+      h("div", null, h("b", null, shortAsk(run.request)), h("div", {class: "quiet-line"}, h("span", {style: "color:" + colour}, word), " \u00b7 " + Math.round(run.seconds / 60) + " min \u00b7 " + run.run)),
+      h("div", {class: "row"}, h("button", {class: "ghost", onclick: () => go("coders", run.run)}, "See change"),
+        run.result === "passed" ? h("button", {class: "ghost", onclick: () => drop(run.run)}, "Drop") : null,
+        run.result === "passed" ? h("button", {onclick: () => go("coders", run.run)}, "Keep") : null)));
   }
-  const words = run => run.result === "passed" ? ["passed its checks", "ok"] : run.result ? ["did not pass", "bad"] : ["working", "warn"];
-  const cards = view.runs.slice().reverse().map(run => {
-    const [said, kind] = words(run);
-    const state = run.result === "passed" ? "done" : run.result ? "failed" : "typing";
-    const holder = {face: h("div", {class: "coder-face"}), title: h("h3", null, run.agent)};
-    face(run.agent, state, holder);
-    return h("div", {class: "card coder", "data-state": state, title: "See the change and its report", onclick: () => go("coders", run.run)},
-      h("div", {class: "coder-who"}, holder.face, h("div", null, holder.title, h("small", null, run.agent + " · " + run.run))),
-      h("p", {class: "coder-ask"}, run.request || "(no request written)"),
-      h("div", {class: "chips"}, chip(said, kind), chip(Math.floor(run.seconds / 60) + " min " + (run.seconds % 60) + " s"), run.patch ? chip("change ready", "think") : null),
-      run.why ? h("div", {class: "why"}, run.why) : null);
-  });
-  const open = view.todo.items.filter(item => item.state === "open").length;
-  const box = h("textarea", {id: "coder-request", placeholder: "add a Text method shout() that gives the text in capitals, giving a Text; examples: `\"hi\".shout()` is `\"HI\"`"});
-  const size = h("select", {id: "coder-size"}, [1, 2, 3, 4].map(n => h("option", {value: n, selected: n === 4 ? "" : null}, n + (n === 1 ? " coder" : " coders"))));
-  async function add() {
+  const grid = h("div", {class: "coder-grid"}, Object.values(newest).map(run => {
+    const [mood, word, colour] = state(run);
+    const face = h("div", {class: "coder-face-big"});
+    mascotInto(face, run.agent, mood);
+    const title = h("b", null, run.agent);
+    api("/api/coders/mascot?agent=" + encodeURIComponent(run.agent) + "&state=" + mood).then(m => { title.textContent = (m.title || run.agent).split(" ")[0]; }).catch(() => {});
+    return h("div", {class: "card coder-card", "data-run": run.run, onclick: () => pick(run)}, face, title,
+      h("div", {class: "coder-what"}, shortAsk(run.request)),
+      h("span", {class: "chip", style: "color:" + colour}, h("i", {class: "pip", style: "background:" + colour}), word));
+  }));
+  const box = h("input", {placeholder: "A request for the coders, like: add a Text method shout()"});
+  const adding = h("div", {class: "home-ask", style: "display:none"}, box, h("button", {onclick: async () => {
     if (!box.value.trim()) return;
-    try { await api("/api/coders/request", {method: "POST", body: JSON.stringify({text: box.value})}); await showCoders("Added to the to-do list."); }
-    catch (error) { alert(error.message); }
-  }
-  async function begin(button) {
-    button.disabled = true;
-    try { const said = await api("/api/coders/start", {method: "POST", body: JSON.stringify({size: Number(size.value)})}); await showCoders(said.started + " coder" + (said.started === 1 ? "" : "s") + " started."); }
-    catch (error) { button.disabled = false; alert(error.message); }
-  }
-  const startButton = h("button", {onclick: event => begin(event.currentTarget), disabled: open && view.can_start ? null : ""}, "Start the swarm");
-  main.replaceChildren(...[titled("Coders"),
-    h("p", {class: "lead"}, view.day
-      ? "The coder swarm on " + view.day + ", its latest " + view.runs.length + " request" + (view.runs.length === 1 ? "" : "s") + ": " + view.passed + " passed, " + view.working + " working. "
-      : "The coder swarm has not run yet. ", h("span", {class: "path"}, view.work)),
+    try { await api("/api/coders/request", {method: "POST", body: JSON.stringify({text: box.value})}); showCoders("Added."); } catch (error) { alert(error.message); }
+  }}, "Add"));
+  const open = view.todo.items.filter(item => item.state === "open").length;
+  const start = h("button", {disabled: open && view.can_start ? null : "", title: open ? open + " open" : "Nothing open: add a request first", onclick: async event => {
+    event.currentTarget.disabled = true;
+    try { await api("/api/coders/start", {method: "POST", body: JSON.stringify({size: 4})}); showCoders("Started."); } catch (error) { alert(error.message); }
+  }}, "Start swarm");
+  main.replaceChildren(...[
+    h("div", {class: "card-top page-top"},
+      h("div", null, h("h1", null, "Coders"), h("p", {class: "quiet-line"}, passed + " passed \u00b7 " + view.working + " working \u00b7 " + failed + " to retry")),
+      h("div", {class: "row"}, h("button", {class: "ghost", onclick: () => { adding.style.display = adding.style.display === "none" ? "" : "none"; box.focus(); }}, "+ Request"), start)),
     note ? h("div", {class: "banner"}, note) : null,
-    cards.length ? h("div", {class: "grid coders"}, cards) : null,
-    h("h2", null, "To-do list"),
-    h("p", {class: "lead"}, open + " waiting. A request with examples, a call and what it gives in backticks, gets its tests written from them. ", h("span", {class: "path"}, view.todo.file)),
-    h("div", {class: "ask-box"}, box, h("div", {class: "row"}, h("button", {class: "ghost", onclick: add}, "Add request"), size, startButton,
-      view.can_start ? null : h("span", {class: "why"}, "The swarm lives in kosika-agents: put it beside kosika to start it from here."))),
-    h("ul", {class: "todo-list"}, view.todo.items.slice().reverse().map(item =>
-      h("li", null, chip({open: "waiting", taken: "working", passed: "passed", failed: "did not pass"}[item.state], {open: "", taken: "warn", passed: "ok", failed: "bad"}[item.state]), h("span", null, item.text))))].filter(Boolean));
+    adding,
+    Object.keys(newest).length ? grid : h("p", {class: "quiet-line"}, "The swarm hasn\u2019t run yet."),
+    detail].filter(Boolean));
+  pick(picked);
   if (view.working) codersTimer = setTimeout(() => { if (location.hash.startsWith("#coders")) showCoders(); }, 5000);
 }
 
-// One coder run: what it was asked, its report, and its change line by line.
-// A run that passed can be kept: its change goes on a branch of its own and
-// a pull request into studio is opened for review. Nothing is merged here.
 async function showCoderRun(name) {
   clearTimeout(codersTimer);
   const run = await api("/api/coders/run?run=" + encodeURIComponent(name));
