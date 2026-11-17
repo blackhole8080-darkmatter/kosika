@@ -20,6 +20,7 @@ import json
 import os
 import re
 import tempfile
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -129,3 +130,47 @@ def approve(body: dict[str, Any], work: Path | None = None) -> dict[str, Any]:
     approvals().mkdir(parents=True, exist_ok=True)
     (approvals() / f"{today.isoformat()}.json").write_text(json.dumps(record), encoding="utf-8")
     return record
+
+
+# ------------------------------------------------------------- the phone
+
+def phone_text(shown: dict[str, Any]) -> str:
+    """The plan as a short phone notification: one line a step."""
+
+    lines = [shown.get("summary", "")]
+    for step in shown.get("steps", []):
+        lines.append(f"- {step['title']}: {step['detail']}")
+    lines.append("Open Kosika Studio and press \u201c" + str(shown.get("approve", "Looks good")) + "\u201d to approve.")
+    return "\n".join(line for line in lines if line)
+
+
+def topic_file() -> Path:
+    asked = os.environ.get("KOSIKA_NTFY_TOPIC_FILE")
+    return Path(asked) if asked else Path.home() / "Aryan_Private" / "kosika-bench" / "digest" / "topic.txt"
+
+
+def send(shown: dict[str, Any] | None = None) -> int:
+    """Send the plan to the phone, through the ntfy topic the research digest
+    already uses. Returns the HTTP status."""
+
+    import urllib.request
+
+    topic = topic_file().read_text(encoding="utf-8").strip()
+    if not topic:
+        raise ValueError(f"No ntfy topic in {topic_file()}")
+    shown = shown or plan()
+    request = urllib.request.Request(f"https://ntfy.sh/{urllib.parse.quote(topic)}", data=phone_text(shown).encode("utf-8"),
+                                     method="POST", headers={"Title": shown.get("greeting", "Good morning").encode("utf-8").decode("latin-1", "replace"),
+                                                             "Tags": "sunrise", "User-Agent": "kosika-morning"})
+    with urllib.request.urlopen(request, timeout=30) as answer:
+        return answer.status
+
+
+if __name__ == "__main__":
+    import sys
+    import urllib.parse  # noqa: F401  (used by send)
+
+    if "--send" in sys.argv:
+        print("sent:", send())
+    else:
+        print(phone_text(plan()))
