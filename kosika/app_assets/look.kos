@@ -1,0 +1,147 @@
+// Kosika Studio's look, "Clear", written in Kosika: modern, quiet and easy
+// to read, in light and dark. Studio's server runs this once and puts the
+// style it writes into the page, so the look is changed here, not in the
+// page. Every colour comes from Kosika Designs' palettes (paper for light,
+// dark_matter for dark), and the words are checked readable on their
+// ground with Kosika Designs' own contrast arithmetic before they are used.
+
+import "std/designs_palette.kos"
+
+export [Tokens, tokens_for, readable_tokens, spacing, look_css]
+
+record Tokens {
+  bg: Text        // the ground
+  panel: Text     // cards and panels
+  rail: Text      // the side bar
+  ink: Text       // words
+  soft: Text      // quieter words
+  faint: Text     // the quietest words, hints
+  line: Text      // hairlines
+  hover: Text     // a row under the pointer
+  accent: Text    // the one colour that asks for attention
+  on_accent: Text // words on the accent
+  ok: Text
+  bad: Text
+  think: Text
+  shadow: Text
+}
+
+record LookAsk { name: Text }
+record Look { css: Text problems: Text[] }
+
+// The spacing scale: every gap and padding is one of these.
+fn spacing() -> Number[] { return [4, 8, 12, 16, 24, 32, 48] }
+
+fn tokens_for(mode: Text) -> Tokens {
+  if mode == "light" {
+    let p = palette_named("paper")
+    return {bg: "#f7f6f3", panel: "#ffffff", rail: "#f1efea", ink: p.ink, soft: p.soft, faint: "#6f675c",
+            line: "#e4e0d8", hover: "#ebe8e1", accent: p.accent, on_accent: "#ffffff",
+            ok: "#047857", bad: "#b91c1c", think: p.think, shadow: "0 1px 2px rgba(31,27,22,.06), 0 4px 14px rgba(31,27,22,.05)"}
+  }
+  let d = palette_named("dark_matter")
+  return {bg: "#0c0d13", panel: "#13151d", rail: "#0f1017", ink: d.ink, soft: d.soft, faint: "#868ba0",
+          line: "#232634", hover: "#1a1d28", accent: d.accent, on_accent: "#0c0d13",
+          ok: "#4fe0a6", bad: "#ff8a95", think: d.think, shadow: "none"}
+}
+
+// What would be hard to read, said plainly; nothing when all is well.
+fn readable_tokens(t: Tokens, mode: Text) -> Text[] {
+  var out: Text[] = []
+  if contrast(t.ink, t.bg) < 7 { out = out.append(mode + ": words on the ground are below 7:1") }
+  if contrast(t.soft, t.panel) < 4.5 { out = out.append(mode + ": quiet words on a card are below 4.5:1") }
+  if contrast(t.faint, t.bg) < 3 { out = out.append(mode + ": hints are below 3:1") }
+  if contrast(t.on_accent, t.accent) < 4.5 { out = out.append(mode + ": words on the accent are below 4.5:1") }
+  if contrast(t.accent, t.bg) < 3 { out = out.append(mode + ": the accent is too faint on the ground") }
+  return out
+}
+
+fn vars(t: Tokens) -> Text {
+  return f"--bg:{t.bg};--panel:{t.panel};--rail:{t.rail};--ink:{t.ink};--soft:{t.soft};--faint:{t.faint};--line:{t.line};--hover:{t.hover};--accent:{t.accent};--on-accent:{t.on_accent};--accent-soft:color-mix(in srgb,{t.accent} 12%,transparent);--ok:{t.ok};--ok-soft:color-mix(in srgb,{t.ok} 12%,transparent);--bad:{t.bad};--bad-soft:color-mix(in srgb,{t.bad} 12%,transparent);--warn:{t.accent};--warn-soft:color-mix(in srgb,{t.accent} 12%,transparent);--think:{t.think};--think-soft:color-mix(in srgb,{t.think} 12%,transparent);--mem:{t.think};--mem-soft:color-mix(in srgb,{t.think} 12%,transparent);--code:{t.ink};--code-soft:{t.hover};--card-shadow:{t.shadow};--glass:{t.panel};--glass-edge:{t.line};--shadow:{t.shadow};--lift:{t.shadow};--glow:transparent;"
+}
+
+// The rules of the look. S is the scope every rule is under.
+fn rules() -> Text {
+  let s = "[data-skin=\"clear\"]"
+  let sp = spacing()
+  return [
+    s + " body{font-family:Figtree,\"Segoe UI\",system-ui,sans-serif;font-size:14.5px;background:var(--bg);color:var(--ink);grid-template-columns:240px minmax(0,1fr);-webkit-font-smoothing:antialiased;font-feature-settings:\"tnum\" 1}",
+    s + " body::before," + s + " body::after," + s + " .nebula," + s + " .grain," + s + " .spot," + s + " .runner," + s + " .track," + s + " .titled .hero," + s + " .nav-pill{display:none!important}",
+    s + " ::selection{background:var(--accent-soft)}",
+    s + " :focus-visible{outline:2px solid var(--accent);outline-offset:2px}",
+    s + " aside.rail{background:var(--rail);border-right:1px solid var(--line);padding:" + sp[3].to_text() + "px 12px;gap:2px;backdrop-filter:none}",
+    s + " .brand{font-weight:700;font-size:15px;letter-spacing:-.01em;padding:4px 8px " + sp[3].to_text() + "px}",
+    s + " .brand," + s + " .brand span{font-family:Figtree,\"Segoe UI\",sans-serif!important;font-style:normal}",
+    s + " .brand small{font:500 12px Figtree,sans-serif;color:var(--faint)}",
+    s + " .nav-group{font:600 11px/1 Figtree,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:" + sp[3].to_text() + "px 10px 6px}",
+    s + " .nav{border-radius:8px;padding:7px 10px;color:var(--soft);font-size:14px;font-weight:500;transition:background .12s,color .12s}",
+    s + " .nav:hover{background:var(--hover);color:var(--ink)}",
+    s + " .nav.on{background:var(--hover)!important;color:var(--ink);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)!important}",
+    s + " .nav.on::before," + s + " .nav.on::after{display:none!important}",
+    s + " .rail .foot{border-top:1px solid var(--line);padding:" + sp[2].to_text() + "px 8px 0;gap:4px;font-size:12.5px}",
+    s + " .rail .foot .path{font:12px Figtree,sans-serif;color:var(--faint)}",
+    s + " .rail .foot .theme{border-radius:8px;padding:6px 8px;margin:0 -8px;cursor:pointer}",
+    s + " .rail .foot .theme:hover{background:var(--hover);color:var(--ink)}",
+    s + " main{padding:" + sp[5].to_text() + "px " + sp[5].to_text() + "px " + sp[6].to_text() + "px;max-width:1240px;width:100%;box-sizing:border-box;margin:0 auto}",
+    s + " main h1{font:700 26px/1.2 Figtree,sans-serif;letter-spacing:-.02em;margin:0 0 4px;background:none;color:var(--ink);-webkit-text-fill-color:currentColor;animation:none}",
+    s + " main h1::after{content:none}",
+    s + " main h2{font:600 12px/1 Figtree,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:" + sp[5].to_text() + "px 0 " + sp[2].to_text() + "px}",
+    s + " main h2::after{display:none}",
+    s + " p.lead{color:var(--soft);font-size:14.5px;margin:0 0 " + sp[4].to_text() + "px;max-width:72ch}",
+    s + " .card," + s + " .panel{background:var(--panel)!important;border:1px solid var(--line);border-radius:14px;box-shadow:var(--card-shadow);backdrop-filter:none!important;-webkit-backdrop-filter:none!important;transform:none!important}",
+    s + " .card::after{display:none}",
+    s + " .card:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--line));box-shadow:var(--card-shadow)}",
+    s + " .card h3," + s + " .panel h3{font:600 15px/1.3 Figtree,sans-serif;letter-spacing:-.005em}",
+    s + " .grid{gap:" + sp[3].to_text() + "px}",
+    s + " .chip{font:600 11.5px/1.6 Figtree,sans-serif;letter-spacing:0;text-transform:none;border-radius:999px;padding:1px 9px;border:0;background:var(--hover);color:var(--soft)}",
+    s + " .chip.ok{background:var(--ok-soft);color:var(--ok)}",
+    s + " .chip.bad{background:var(--bad-soft);color:var(--bad)}",
+    s + " .chip.warn," + s + " .chip.accent{background:var(--accent-soft);color:var(--accent)}",
+    s + " .chip.think," + s + " .chip.mem{background:var(--think-soft);color:var(--think)}",
+    s + " button," + s + " .btn{font:600 13.5px Figtree,sans-serif;border-radius:10px;min-height:36px;padding:0 16px;background:var(--accent);color:var(--on-accent);border:0;box-shadow:none;cursor:pointer}",
+    s + " button:hover," + s + " .btn:hover{filter:brightness(1.06)}",
+    s + " button.ghost," + s + " .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}",
+    s + " button.ghost:hover{background:var(--hover)}",
+    s + " button:disabled{opacity:.45;cursor:default;filter:none}",
+    s + " input," + s + " textarea," + s + " select{font:14px Figtree,sans-serif;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px}",
+    s + " input:focus," + s + " textarea:focus," + s + " select:focus{border-color:var(--accent);outline:0;box-shadow:0 0 0 3px var(--accent-soft)}",
+    s + " .banner{border-radius:12px;border:1px solid var(--line);background:var(--panel)}",
+    s + " .banner.bad{border-color:color-mix(in srgb,var(--bad) 40%,var(--line));background:var(--bad-soft);color:var(--ink)}",
+    s + " .home-tab.on{background:var(--accent);color:var(--on-accent)}",
+    s + " .home-who{color:var(--on-accent)}",
+    s + " .ripple," + s + " .spy-only," + s + " [class^=\"cr-\"]," + s + " [class*=\" cr-\"]{display:none!important}"
+  ].join("\n")
+}
+
+fn look_css() -> Text {
+  let light = tokens_for("light")
+  let dark = tokens_for("dark")
+  return ":root[data-skin=\"clear\"]{" + vars(light) + "color-scheme:light}\n"
+    + "@media (prefers-color-scheme:dark){:root[data-skin=\"clear\"]:not([data-theme=\"light\"]){" + vars(dark) + "color-scheme:dark}}\n"
+    + ":root[data-skin=\"clear\"][data-theme=\"dark\"]{" + vars(dark) + "color-scheme:dark}\n"
+    + rules() + "\n"
+}
+
+workflow main(a: LookAsk) -> Look {
+  made = {css: look_css(), problems: readable_tokens(tokens_for("light"), "light").concat(readable_tokens(tokens_for("dark"), "dark"))}
+}
+
+test "both modes are easy to read, by Kosika Designs' own contrast" {
+  expect readable_tokens(tokens_for("light"), "light") == []
+  expect readable_tokens(tokens_for("dark"), "dark") == []
+}
+
+test "the accent and words come from Kosika's palettes" {
+  expect tokens_for("dark").accent == palette_named("dark_matter").accent
+  expect tokens_for("light").accent == palette_named("paper").accent
+  expect tokens_for("light").ink == palette_named("paper").ink
+}
+
+test "the style covers light, dark and the person's own choice" {
+  css = look_css()
+  expect css.contains(":root[data-skin=\"clear\"]{")
+  expect css.contains("prefers-color-scheme:dark")
+  expect css.contains("[data-theme=\"dark\"]")
+  expect css.contains(".nav-group")
+  expect not css.contains("undefined")
+}

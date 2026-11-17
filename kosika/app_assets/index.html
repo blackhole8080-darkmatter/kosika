@@ -1364,9 +1364,15 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["home", "Home"], ["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
-  document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
-    h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
+  // Grouped, so the rail reads as a few short lists rather than one long one.
+  const groups = [
+    [null, [["home", "Home"], ["assistant", "Assistant"], ["coders", "Coders"]]],
+    ["Create", [["designs", "Designs"], ["study", "Study"]]],
+    ["Build", [["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"]]],
+    ["System", [["services", "Services"], ["permissions", "Permissions"], ["mayaos", "MayaOS"]]]
+  ];
+  const item = ([key, label]) => h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null);
+  document.getElementById("nav").replaceChildren(...groups.flatMap(([name, items]) => [name ? h("div", {class: "nav-group"}, name) : null, ...items.map(item)].filter(Boolean)));
   document.getElementById("foot").replaceChildren(
     h("div", null, h("span", {class: "dot" + (overview.can_run ? "" : " off")}), overview.can_run ? overview.model : "no model: view and test only"),
     h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")),
@@ -3195,7 +3201,8 @@ async function showAgent(id, isAssistant) {
   pick(Object.keys(tabs)[0]);
 }
 
-loadBrand().finally(route);
+// The page is drawn at once; the moving mark joins it when it is ready.
+route(); loadBrand();
 
 // ------------------------------------------------- Cinema: the motion layer
 // It only watches and moves what the views above draw; it draws no view of
@@ -3210,7 +3217,7 @@ loadBrand().finally(route);
   function intro() {
     let shown = false;
     try { shown = sessionStorage.getItem("kosika-intro") === "1"; sessionStorage.setItem("kosika-intro", "1"); } catch (error) { shown = false; }
-    if (shown || calm() || document.documentElement.dataset.skin === "graphite") return;
+    if (shown || calm() || ["graphite", "clear"].includes(document.documentElement.dataset.skin)) return;
     const ns = SVGNS;
     const ink = s("linearGradient", {id: "introInk", x1: "0", y1: "0", x2: "1", y2: "1"},
       s("stop", {offset: "0", "stop-color": "#ff8a4c"}), s("stop", {offset: ".55", "stop-color": "#a993ff"}), s("stop", {offset: "1", "stop-color": "#55d6ff"}));
@@ -3414,7 +3421,7 @@ loadBrand().finally(route);
     if (document.hidden || now - last < 33) return;
     const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
     const look = document.documentElement.dataset.skin;
-    if (look === "swiss" || look === "spy" || look === "graphite") { canvas.style.opacity = "0"; return; }
+    if (look === "swiss" || look === "spy" || look === "graphite" || look === "clear") { canvas.style.opacity = "0"; return; }
     TINTS.idle = look === "cutting-room" ? [0.6, 0.38, 0.22] : look === "dark-matter" ? [0.54, 0.44, 1.0] : [0.66, 0.58, 1.0];
     if (now > calmUntil) { wantEnergy = look === "cutting-room" ? 0.07 : look === "dark-matter" ? 0.06 : 0.15; wantTint = TINTS.idle; }
     energy += (wantEnergy - energy) * Math.min(1, dt * 1.6);
@@ -3436,7 +3443,8 @@ loadBrand().finally(route);
 // Studio has one look now, Graphite ("Kosika Studio, Modern"): quieter,
 // flatter, one accent. The older looks' rules stay below, unused.
 const SKINS = [["graphite", "Graphite"]];
-function skin() { return "graphite"; }
+// "Clear", written by app_assets/look.kos, when the server put it in the page.
+function skin() { return document.getElementById("kosika-look") ? "clear" : "graphite"; }
 function setSkin(name) {
   try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
   if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;

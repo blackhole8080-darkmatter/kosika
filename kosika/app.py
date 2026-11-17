@@ -95,6 +95,8 @@ from .system_tools import (
 from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
+#: Studio's look, "Clear": written by this Kosika program and put into the page.
+LOOK = Path(__file__).parent / "app_assets" / "look.kos"
 #: The program that describes Studio's own moving mark.
 BRAND = Path(__file__).parent / "app_assets" / "brand.kos"
 MAX_AGENTS = 200
@@ -1727,6 +1729,29 @@ class App:
             raise AppError(f"Could not save: {exc}", 422) from exc
         return {"saved": True, **checked}
 
+    def look(self) -> str:
+        """Studio's look as look.kos writes it, made once and kept. If it
+        cannot be made the page keeps its own older look."""
+
+        if getattr(self, "_look", None) is None:
+            try:
+                with tempfile.TemporaryDirectory(prefix="kosika-look-") as scratch:
+                    made = run(load_program(LOOK), "main", Path(scratch) / "run.jsonl", inputs={"a": {"name": "clear"}})
+                made = made.get("made", made)
+                self._look = str(made["css"]) if not made.get("problems") else ""
+            except (ValueError, RuntimeError, OSError, KeyError):
+                self._look = ""
+        return self._look
+
+    def page(self) -> bytes:
+        """Studio's page, with its look put in."""
+
+        page = PAGE.read_text(encoding="utf-8")
+        css = self.look()
+        if css:
+            page = page.replace("</head>", "<style id=\"kosika-look\">" + css + "</style>\n</head>", 1)
+        return page.encode("utf-8")
+
     def brand(self) -> dict[str, Any]:
         """Studio's own moving mark. It is not a stored picture: the Kosika
         program beside the page is run, and the scene it describes is
@@ -2472,7 +2497,7 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
             agent_id = (query.get("id") or [""])[0]
             try:
                 if method == "GET" and url.path == "/":
-                    self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+                    self._send(200, app.page(), "text/html; charset=utf-8")
                 elif method == "GET" and url.path == "/api/agents":
                     self._json(200, app.overview())
                 elif method == "GET" and url.path == "/api/agent":
