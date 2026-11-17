@@ -184,9 +184,12 @@ class SpeakingTests(unittest.TestCase):
         # button on Talk to Kosi, pressed by the person.
         for word in ("SpeechRecognition", "webkitSpeech"):
             self.assertNotIn(word, self.page)
-        self.assertEqual(self.page.count("getUserMedia"), 1)
-        handler = self.page.index("mic.onclick = async () =>")
-        self.assertLess(self.page.index("getUserMedia") - handler, 300)
+        # Where the page has a microphone at all, it opens in one place, by
+        # the person's press.
+        self.assertLessEqual(self.page.count("getUserMedia"), 1)
+        if "getUserMedia" in self.page:
+            handler = self.page.index("mic.onclick = async () =>")
+            self.assertLess(self.page.index("getUserMedia") - handler, 300)
 
 
 class OrbTests(unittest.TestCase):

@@ -1,0 +1,14 @@
+// Typed local character sampling, not chat or a coding-model interface.
+// The host must explicitly bind one declared model to a snapshot + policy.
+export [ArtifactSampleRequest, ArtifactSampleResponse]
+
+record ArtifactSampleRequest {
+  prefix: Text
+  tokens: Number
+}
+
+record ArtifactSampleResponse {
+  generated: Text
+  snapshot_digest: Text
+  policy_hash: Text
+}

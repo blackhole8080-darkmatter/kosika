@@ -15,6 +15,7 @@ Key features:
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -250,12 +251,74 @@ class Skill:
         )
 
 
+@dataclass
+class SkillMessage:
+    """One message on the skill bus: a sender asks a recipient to handle a
+    typed payload. `SkillRegistry.route` delivers it and returns a reply
+    whose `reply_to` is this message's id, tying an answer to its question.
+    A skill's handler is `implementation(type, payload)`, so one skill can
+    route to another mid-handling — that is how capabilities compose."""
+
+    sender: str
+    recipient: str
+    type: str
+    payload: Dict[str, Any] = field(default_factory=dict)
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    reply_to: Optional[str] = None
+
+
 class SkillRegistry:
     """Registry for managing skills."""
 
     def __init__(self):
         self.skills: Dict[str, Skill] = {}
         self.skill_templates: Dict[str, Skill] = {}
+        self._ticks: Dict[str, Callable[[float], Any]] = {}
+
+    def load_skill(
+        self, skill: Skill, *, tick: Optional[Callable[[float], Any]] = None
+    ) -> str:
+        """Register a capability for routing, with an optional background
+        `tick(dt)` that `tick_all` runs. Native skills only."""
+        skill_id = self.register(skill)
+        if tick is not None:
+            self._ticks[skill_id] = tick
+        return skill_id
+
+    def route(self, msg: SkillMessage) -> SkillMessage:
+        """Deliver `msg` to its recipient and return a reply. An unknown
+        recipient or a handler that raises comes back as an `error` reply
+        rather than crashing the caller, so composition stays robust."""
+        skill = self.get(msg.recipient)
+        if skill is None:
+            return SkillMessage(
+                sender=msg.recipient,
+                recipient=msg.sender,
+                type="error",
+                payload={"problem": f"no skill registered as {msg.recipient!r}"},
+                reply_to=msg.id,
+            )
+        try:
+            value = skill.execute({"type": msg.type, "payload": msg.payload})
+        except Exception as exc:  # a handler boundary: report, do not crash the bus
+            return SkillMessage(
+                sender=msg.recipient,
+                recipient=msg.sender,
+                type="error",
+                payload={"problem": str(exc)},
+                reply_to=msg.id,
+            )
+        return SkillMessage(
+            sender=msg.recipient,
+            recipient=msg.sender,
+            type="result",
+            payload={"value": value},
+            reply_to=msg.id,
+        )
+
+    def tick_all(self, dt: float) -> Dict[str, Any]:
+        """Run each loaded skill's background tick once, keyed by skill id."""
+        return {skill_id: tick(dt) for skill_id, tick in self._ticks.items()}
 
     def register(self, skill: Skill) -> str:
         """Register a skill."""

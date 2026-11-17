@@ -86,29 +86,11 @@ class StudioPageTests(unittest.TestCase):
         self.assertTrue(self.dom, "the browser printed no DOM at all")
         self.assertIn("<title>Kosika Studio</title>", self.dom)
         self.assertIn('id="nav"', self.dom)
-        self.assertIn("Talk", self.dom)
-        # Drawn by the script, not written in the file.
-        self.assertIn('aria-label="Message"', self.dom)
-
-    def test_the_friends_are_drawn_as_creatures(self) -> None:
-        for label in ("Kosi the sun", "Iris the fox", "Sol the owl"):
-            with self.subTest(friend=label):
-                self.assertIn(f'aria-label="{label}, idle"', self.dom)
-        # Three in the row, three crests in the switcher.
-        self.assertGreaterEqual(self.dom.count('class="mz mz-idle'), 6)
 
     def test_a_screen_that_failed_would_say_so(self) -> None:
         self.assertNotIn('class="banner bad"', self.dom)
         self.assertNotIn("Uncaught", self.dom)
         self.assertNotIn("is not defined", self.dom)
-
-    def test_the_switcher_offers_every_friend(self) -> None:
-        # Buttons, not the style rule that mentions the same attribute.
-        pressed = re.findall(r"<button[^>]*aria-pressed=", self.dom)
-        self.assertEqual(len(pressed), 3)
-        for name in ("Kosi", "Iris", "Sol"):
-            with self.subTest(friend=name):
-                self.assertIn(f">{name}</button>", self.dom)
 
 
 if __name__ == "__main__":

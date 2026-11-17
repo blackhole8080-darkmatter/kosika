@@ -726,7 +726,11 @@ class RuleEngine:
                             fact = self._instantiate_fact(fp, b)
                             if fact:
                                 h = str(fact.content_hash())
-                                # Only add if new
+                                # Only add if new. `existing` is already the
+                                # exact (head, relation, tail), and a derived
+                                # fact's timestamp is regenerated each pass, so
+                                # identity is the triple plus its source — not
+                                # the clock, which would re-derive forever.
                                 existing = self.graph.query_facts(
                                     head=fact.head,
                                     relation=fact.relation,
@@ -734,7 +738,6 @@ class RuleEngine:
                                 )
                                 if not any(
                                     e.context.source == fact.context.source
-                                    and e.context.timestamp == fact.context.timestamp
                                     for e in existing
                                 ):
                                     self.graph.add_hyperedge(

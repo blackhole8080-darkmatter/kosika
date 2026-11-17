@@ -92,6 +92,22 @@ class BrainSkillTests(unittest.TestCase):
         )
         self.assertEqual(query.payload["value"]["rows"], [["alice", "carol"]])
 
+    def test_maths_visualize_renders_the_solved_knowledge_with_labels(self) -> None:
+        clock = iter(range(1_000_000, 2_000_000))
+        with patch.object(kl_module.time, "time", lambda: next(clock)):
+            self.route("kosika.maths", "infer", {"rules": [GRANDPARENT_RULE]})
+        reply = self.route(
+            "kosika.maths", "visualize", {"relation": "grandparent", "title": "Derived"}
+        )
+        self.assertEqual(reply.type, "result", reply.payload)
+        picture = reply.payload["value"]
+        self.assertEqual(picture["count"], 1)
+        self.assertTrue(picture["digest"])
+        self.assertIn(">grandparent</text>", picture["svg"])
+        self.assertIn(">alice</text>", picture["svg"])
+        self.assertIn(">carol</text>", picture["svg"])
+        self.assertIn("Derived", picture["html"])
+
     def test_memory_remembers_and_recalls(self) -> None:
         remembered = self.route(
             "kosika.memory",

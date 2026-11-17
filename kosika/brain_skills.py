@@ -2,7 +2,7 @@
 
 Two capabilities wrap engines the brains already have:
 
-    kosika.maths   knowledge_graph + KL   query, assert, infer, consolidate
+    kosika.maths   knowledge_graph + KL   query, assert, infer, consolidate, visualize
     kosika.memory  memory_tiers           remember, recall, consolidate
 
 Each is a Skill whose handler is `implementation(type, payload)`, so the
@@ -107,6 +107,20 @@ def maths_skill(registry: SkillRegistry, graph: KnowledgeGraph) -> Skill:
             if reply.type == "error":
                 return {"remembered": 0, "problem": reply.payload["problem"]}
             return {"remembered": reply.payload["value"]["remembered"], "facts": len(facts)}
+        if type == "visualize":
+            from .knowledge_layout import render_knowledge
+
+            filters = {
+                key: payload[key]
+                for key in ("head", "relation", "tail")
+                if key in payload
+            }
+            facts = graph.query_facts(**filters)
+            return render_knowledge(
+                facts,
+                title=str(payload.get("title", "")),
+                strategy=str(payload.get("strategy", "auto")),
+            )
         raise ValueError(f"unknown maths message type {type!r}")
 
     return Skill(
@@ -114,7 +128,7 @@ def maths_skill(registry: SkillRegistry, graph: KnowledgeGraph) -> Skill:
         name="Maths",
         kind=SkillKind.KNOWLEDGE,
         description="Query, assert and infer over the knowledge graph with KL; "
-        "consolidate what it knows into memory.",
+        "consolidate what it knows into memory, and visualize it as a labelled graph.",
         parameters=_parameters(),
         output=SkillOutput("Record"),
         implementation=handle,

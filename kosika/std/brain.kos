@@ -280,7 +280,24 @@ fn br_new_mind() -> BrainMind {
   return {kinds: kinds, net: net([br_buckets(), 8, kinds.length()], 7), xs: [], ys: [], seen: 0}
 }
 
-fn br_mind_of(had: MindsRecalled) -> BrainMind { return if had.value.exists() { had.value.value() } else { br_new_mind() } }
+fn br_mind_upgrade(old: BrainMind) -> BrainMind {
+  let kinds = dz_kinds()
+  if old.kinds == kinds { return old }
+  let fresh = br_new_mind()
+  var ys: Number[][] = []
+  for row in old.ys {
+    var widened: Number[] = []
+    for kind in kinds {
+      let at = old.kinds.index_of(kind)
+      widened = widened.append(if at.exists() and at.value() < row.length() { row[at.value()] } else { 0.3 })
+    }
+    ys = ys.append(widened)
+  }
+  let learned = if old.xs.is_empty() or ys.is_empty() { fresh.net } else { train(fresh.net, old.xs, ys, 0.5, 25) }
+  return {kinds: kinds, net: learned, xs: old.xs, ys: ys, seen: old.seen}
+}
+
+fn br_mind_of(had: MindsRecalled) -> BrainMind { return if had.value.exists() { br_mind_upgrade(had.value.value()) } else { br_new_mind() } }
 
 // One example: the kind it was, and how well it went, as the network's
 // wanted outputs. That kind: 0.85 when it passed its checks, 1 when you
@@ -331,7 +348,7 @@ fn br_choose_for(m: BrainMind, ask: DzAsk) -> BrainChoice {
   let words = dz_kind(ask)
   // Art asked for in so many words stays art: a thumb down on art was about
   // the piece, not the kind (thumbs on art before br_kind_value taught it so).
-  if words == "art" { return none }
+  if words == "art" or words == "3d" { return none }
   let out = predict(m.net, br_features(ask.text))
   let at = m.kinds.index_of(words)
   if not at.exists() or out[at.value()] >= 0.25 { return none }
@@ -845,6 +862,22 @@ test "the Brain learns which kind of drawing suits asks like these" {
   expect br_chose({..br_test_result(), kind: "canvas", why: "asked for canvas"}, {text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).why.ends_with("so no model was asked to choose")
   expect br_features("how do ocean tides work").length() == 24
   expect br_features("sort 3 1 2") == br_features("sort 9 8 7")
+}
+
+test "the Brain widens saved preference models when a design kind is added" {
+  old_kinds: Text[] = ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element", "algorithm"]
+  xs = [br_features("how do ocean tides work")]
+  ys = [br_wanted(old_kinds, "canvas", 1)]
+  old: BrainMind = {kinds: old_kinds, net: train(net([br_buckets(), 8, old_kinds.length()], 7), xs, ys, 0.5, 25), xs: xs, ys: ys, seen: 3}
+  widened = br_mind_upgrade(old)
+  three_d = widened.kinds.index_of("3d").value()
+  canvas = widened.kinds.index_of("canvas").value()
+  expect widened.kinds == dz_kinds()
+  expect widened.seen == old.seen
+  expect widened.xs == old.xs
+  expect widened.ys[0].length() == widened.kinds.length()
+  expect widened.ys[0][canvas] == 1
+  expect widened.ys[0][three_d] == 0.3
 }
 
 fn br_test_feed() -> Text {

@@ -835,6 +835,7 @@ def _ask_approval_in(
 ) -> ApprovalRecord | None:
     """Ask in a folder and wait for the answer there (see kosika.ask_folder)."""
 
+    from .agent import ApprovalRecord
     from .ask_folder import wait_for_answer
 
     yes, by = wait_for_answer(

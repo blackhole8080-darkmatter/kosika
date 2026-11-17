@@ -560,9 +560,7 @@ class ServerTests(Fixture):
 
     def test_the_page_has_a_skills_section(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
-        # Skills is a tab under Agents, and still a page Jump to can open.
-        self.assertIn('tab("skills", "Skills")', page)
-        self.assertIn('["skills", "Skills"]', page)
+        self.assertEqual(page.count('["skills", "Skills"]'), 2)
         self.assertIn('id="icon-skills"', page)
         self.assertIn("async function showSkills(", page)
 
