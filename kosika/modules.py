@@ -214,7 +214,9 @@ def load_program(
             raise
         if (
             candidate.is_symlink()
-            or not (resolved.is_relative_to(boundary) or resolved.is_relative_to(STD_ROOT))
+            or not (
+                resolved.is_relative_to(boundary) or resolved.is_relative_to(STD_ROOT)
+            )
             or resolved.suffix != ".kos"
         ):
             mark_error(resolved)
@@ -347,10 +349,14 @@ def load_program(
             if recalled and module.memories:
                 # The type of what `recall` gives is named after the memory,
                 # not after the record it keeps.
-                hint += " " + "; ".join(
-                    f"recall {memory.name} gives {recalled_record(memory.name)}"
-                    for memory in module.memories
-                ) + "."
+                hint += (
+                    " "
+                    + "; ".join(
+                        f"recall {memory.name} gives {recalled_record(memory.name)}"
+                        for memory in module.memories
+                    )
+                    + "."
+                )
             raise CheckError(
                 f"{resolved}: unknown names, not declared here and not exported "
                 f"by an import (unavailable or private symbols {sorted(hidden)!r})."
@@ -388,10 +394,14 @@ def load_program(
     # Thinking steps are lowered once over the merged program, so a general
     # model declared in one module serves steps written in another and the
     # built-in records are added a single time.
+    from .model_evidence import lower_model_evidence
+
     try:
         merged = lower_sugar(
             lower_thinking(
-                lower_board(lower_memory(lower_direct(lower_ambient(merged))))
+                lower_model_evidence(
+                    lower_board(lower_memory(lower_direct(lower_ambient(merged))))
+                )
             )
         )
     except (ThinkingError, MemoryError_, BoardError) as exc:

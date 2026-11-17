@@ -1,0 +1,35 @@
+{
+  "schema": "kosika.learning-tasks/v1",
+  "workflow": "reply",
+  "tasks": [
+    {
+      "id": "card",
+      "inputs": { "q": { "text": "How do I change my card?", "amount": 0 } },
+      "expected": { "text": "Change it under Billing, then Payment methods." },
+      "responses": {
+        "helper": [{ "text": "Change it under Billing, then Payment methods." }]
+      },
+      "warm_inputs": { "q": { "text": "change my card how do I?", "amount": 0 } }
+    },
+    {
+      "id": "invoice",
+      "inputs": { "q": { "text": "Where is my invoice for last month?", "amount": 3 } },
+      "expected": { "text": "Invoices are kept under Billing for 12 months." },
+      "responses": { "helper": [{ "text": "Invoices are kept under Billing for 12 months." }] },
+      "warm_inputs": {
+        "q": { "text": "my invoice for last month where is?", "amount": 3 }
+      }
+    },
+    {
+      "id": "balance",
+      "inputs": { "q": { "text": "the balance is +15 on my statement", "amount": 2 } },
+      "expected": { "text": "A plus sign means the account is in credit." },
+      "responses": {
+        "helper": [{ "text": "A plus sign means the account is in credit." }]
+      },
+      "warm_inputs": {
+        "q": { "text": "on my statement the balance is +15", "amount": 2 }
+      }
+    }
+  ]
+}

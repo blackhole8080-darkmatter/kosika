@@ -303,4 +303,7 @@ type Program struct {
 	Enums []*EnumDecl
 	// `shape Priced { fn price(self) -> Number }`: see shapes.go.
 	Shapes []*ShapeDecl
+	// Identity names the program's sources, as both engines compute it:
+	// see identity.go.
+	Identity string
 }

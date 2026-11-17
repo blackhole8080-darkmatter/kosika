@@ -85,6 +85,10 @@ DIAGNOSTIC_GUIDE = """Diagnostic codes you will see:
 - check/duplicate-field: a record declares the same field twice.
 - check/empty-workflow: a workflow has no steps, or two steps share a name.
 - check/type-mismatch: a value's type does not match the required type.
+- parse/step-call, parse/step-return, parse/workflow-item: the workflow step
+  grammar. A workflow step is one line `name = <one call>`; a step block holds
+  one call and then `return <name>`; a workflow body may not use `return`, and
+  its last step's value is the result. Put other statements in a `fn`.
 - parse/expected-token, parse/expected-identifier, parse/invalid-declaration,
   lex/unexpected-character: a syntax error. Balance the braces and brackets and
   make every declaration header well formed."""

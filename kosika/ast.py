@@ -553,6 +553,37 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class DeclRef:
+    """A bare identifier in a declaration body: a reference, not text.
+
+    The rule that makes a declaration worth more than JSON. `"coder"` is inert
+    text; `coder` is a name the checker resolves, so a reference to nothing is
+    a refusal rather than a string that fails at run time.
+    """
+
+    name: str
+
+
+@dataclass(frozen=True)
+class DeclList:
+    """A `[...]` in a declaration body."""
+
+    items: tuple[Any, ...] = ()
+
+
+@dataclass(frozen=True)
+class DeclMap:
+    """A `{k: v}` in a declaration body.
+
+    Entries and not a dict, in both engines: a Go map's iteration order is
+    randomised, and the payload the two engines hash must be identical. Order
+    is the source's, which is also what an author reads.
+    """
+
+    entries: tuple[tuple[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
 class ModelParameters:
     temperature: float | None = None
     max_output_tokens: int | None = None
@@ -585,6 +616,11 @@ class ModelDecl:
     # and the answer fills the output record's one Text field. A small model
     # writes a file far better as itself than escaped inside a JSON string.
     plain: bool = False
+    # The declaration-body fields a model config carries: `base`, `embed`,
+    # `sources`, `limits`, `cache`, `fallback`. Values are what the parser
+    # read, not yet typed; the checker types them. Ordered pairs, so the
+    # payload is the same in both engines.
+    config: tuple[tuple[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -613,6 +649,10 @@ class ThinkCall:
 class ModelCall:
     model_name: str
     arguments: tuple[tuple[str, Expression], ...] = ()
+    # `with evidence` on a plain model step: the rule its quotes must satisfy,
+    # or None. `kosika.model_evidence` lowers such a call to a generated model
+    # declaration, so nothing after lowering reads this field.
+    evidence: str | None = None
 
 
 @dataclass(frozen=True)
@@ -684,6 +724,11 @@ class Step:
     # is not the whole of what the model is given.
     learns: bool = False
     learn_by: Any = None
+    # `learn near`: an answer kept for the same inputs may also be given to
+    # a question that reads differently. Opt-in, because telling two
+    # questions apart by their words alone is wrong often enough that it is
+    # a decision the program has to make, not one the runtime makes for it.
+    learn_near: bool = False
 
 
 @dataclass(frozen=True)
@@ -946,6 +991,8 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "learns": (False,),
     "plain": (False,),
     "learn_by": (None,),
+    "learn_near": (False,),
+    "config": ((), []),
 }
 
 
@@ -971,7 +1018,6 @@ def program_payload(program: Program) -> dict[str, Any]:
 
 
 def _program_payload(program: Program) -> dict[str, Any]:
-
     def prune(value: Any) -> Any:
         if isinstance(value, dict):
             return {

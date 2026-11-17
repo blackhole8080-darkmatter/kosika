@@ -383,8 +383,7 @@ class SourceScoutTests(unittest.TestCase):
                 "def load():\n    return 1\n", encoding="utf-8"
             )
             (root / "main.py").write_text(
-                "from store import load\n\n"
-                "def start():\n    return load()\n",
+                "from store import load\n\ndef start():\n    return load()\n",
                 encoding="utf-8",
             )
             graph = scout_sources(root)["graph"]

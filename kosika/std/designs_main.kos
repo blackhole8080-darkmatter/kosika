@@ -18,7 +18,7 @@
 import "designs_draw.kos"
 import "designs_palette.kos"
 
-export [Ask, Plan, Job, Review, Reviewed, think, describe, critique, automation, kinds_guide]
+export [Ask, Answer, Plan, Job, Review, Reviewed, answer_kind, think, describe, critique, automation, kinds_guide]
 
 record Ask { text: Text }
 record Brief { task: Text ask: Text }
@@ -134,7 +134,7 @@ fn palettes_guide() -> Text {
 }
 
 fn planner_task() -> Text {
-  return "Choose the one kind of picture that would explain the request most clearly, and the colours that suit its subject. The kinds: " + kinds_guide() + " The palettes: " + palettes_guide() + ". Give shape (one of flow, cycle, layers, hub, nested, tree, mindmap, graph, timeline, compare, sketch), figure (golden_spiral only if the request is about the Fibonacci sequence, the golden ratio or the golden spiral, otherwise empty), palette (one palette name; dark_matter unless another clearly suits the subject better) and why (one sentence)."
+  return "Choose the one kind of picture that would explain the request most clearly, and the colours that suit its subject. The kinds: " + kinds_guide() + " The palettes: " + palettes_guide() + ". Give shape (one of " + kinds().join(", ") + "), figure (golden_spiral only if the request is about the Fibonacci sequence, the golden ratio or the golden spiral, otherwise empty), palette (one palette name; dark_matter unless another clearly suits the subject better) and why (one sentence)."
 }
 
 // The colours to draw in: the palette the person names in their words
@@ -379,6 +379,19 @@ test "an unknown kind from the planner becomes a flow" {
   expect plan_of({shape: "spaghetti", figure: "", palette: "", why: "w"}).starts_with("Draw it as a flow.")
   expect steered(no_structure(), {shape: "graph", figure: "It shows weights", palette: "", why: "w"}).figure == ""
   expect steered(no_structure(), {shape: "graph", figure: "", palette: "", why: "w"}).shape == "graph"
+}
+
+// Every kind Kosika can draw is offered to the model: the planner may name
+// any of them, the guide explains each, the designer says how to put each
+// together, and whichever the planner names is the one used. Kosika's kinds
+// are one list, so none can be left out of what the model reads.
+test "the model is offered every kind Kosika can draw" {
+  expect planner_task().contains("Give shape (one of " + kinds().join(", ") + ")")
+  expect (for k in kinds() where not offered(k) { k }).is_empty()
+}
+
+fn offered(k: Text) -> Bool {
+  return kinds_guide().contains(k + ":") and designer_task().contains(k) and chosen_shape({shape: k, figure: "", palette: "", why: "w"}) == k
 }
 
 test "the colours you name win, then the planner's, then Dark Matter" {

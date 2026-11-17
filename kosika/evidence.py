@@ -24,6 +24,11 @@ The rule a step follows is named by its kind:
     For `decide`. Evidence is a list of quotes. A `true` answer needs at least
     one; a `false` answer may have none, because the absence of a statement
     cannot be quoted.
+`input`
+    For a plain `use_model` step written `with evidence`. Evidence is a list
+    with at least one quote, and every quote must appear in the text of the
+    call's own Text arguments. A plain call chooses its own argument names, so
+    there is no agreed field to read the text from.
 
 Matching ignores letter case, runs of whitespace, and the difference between
 straight and curly quotation marks. Nothing else is forgiven: a paraphrase is
@@ -58,6 +63,11 @@ INSTRUCTIONS = {
         " Also set evidence to a list of short exact quotes, copied character "
         "for character from the given text, that support the answer. A true "
         "answer needs at least one quote."
+    ),
+    "input": (
+        " Also set evidence to a list of one or more short exact quotes, "
+        "copied character for character from the text you were given, that "
+        "support the answer."
     ),
 }
 
@@ -118,9 +128,17 @@ def verify(
 ) -> None:
     """Raise `EvidenceError` unless the evidence backs the answer as required."""
 
-    if kind not in SOURCES:
+    given: Any
+    if kind == "input":
+        # A plain `use_model` step names its own arguments, so the text it was
+        # given is every text it passed; there is no agreed field name.
+        given = "\n".join(
+            value for value in arguments.values() if isinstance(value, str)
+        )
+    elif kind in SOURCES:
+        given = arguments.get(SOURCES[kind])
+    else:
         raise EvidenceError(f"Unknown evidence kind {kind!r}")
-    given = arguments.get(SOURCES[kind])
     if not isinstance(given, str):
         raise EvidenceError("Evidence needs the text the step was given")
     source = normalize(given)
@@ -135,7 +153,7 @@ def verify(
         raise EvidenceError("Evidence must be a list of quotes")
     for quote in evidence:
         _found(quote, source, "The answer")
-    needs_quote = kind == "quotes" or result.get("answer") is True
+    needs_quote = kind in ("quotes", "input") or result.get("answer") is True
     if needs_quote and not evidence:
         raise EvidenceError("The answer has no quote from the given text")
 

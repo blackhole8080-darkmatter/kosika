@@ -555,7 +555,7 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		result := r.agent(agent, arguments)
 		returned := event("agent_return", "agent", agent.Name, "result", result, "content", r.note.content,
 			"finish_reason", "stop", "model_steps", bigInt(r.note.modelSteps), "messages", eventList(r.note.messages),
-			"plan_hash", programHash(agent.Name+"\x00"+pyJSON(recorded, true)))
+			"plan_hash", nativeDigest(agent.Name+"\x00"+pyJSON(recorded, true)))
 		if r.note.reformatted != nil {
 			returned.set("reformatted_from", *r.note.reformatted)
 		}
@@ -675,9 +675,9 @@ func (r *run) learned(model *ModelDecl, arguments map[string]Value) (Value, *Rec
 		input.set(name, value)
 	}
 	r.validate(input, model.Input, "$")
-	if r.lessons != nil {
+	if r.lessons != nil && r.check == nil && (r.plan == nil || r.plan.votes == 0) {
 		question := r.question(arguments)
-		known := r.lessons.recall(lessonName(learning.workflow, learning.step, model), question, model.Verb == "classify" || model.Verb == "decide")
+		known := r.lessons.recallExact(lessonName(learning.workflow, learning.step, model), lessonRequest(question, arguments))
 		if known != nil && schemaProblem(known.answer, r.checker.schemaFor(model.Output), "$", r.checker.schemaFor(model.Output)) == "" {
 			how := newRecord()
 			how.set("how", known.how)
@@ -706,10 +706,11 @@ func (r *run) question(arguments map[string]Value) string {
 
 // keepLesson keeps a learning step's accepted answer.
 func (r *run) keepLesson(model *ModelDecl, arguments map[string]Value, answer Value) {
-	if r.learning == nil || r.lessons == nil {
+	if r.learning == nil || r.lessons == nil || r.check != nil || (r.plan != nil && r.plan.votes > 0) {
 		return
 	}
-	r.lessons.keep(lessonName(r.learning.workflow, r.learning.step, model), r.question(arguments), answer)
+	question := r.question(arguments)
+	r.lessons.keep(lessonName(r.learning.workflow, r.learning.step, model), question, answer, lessonRequest(question, arguments))
 }
 
 // boundName is the name a model's host binding goes by: a model made for a
@@ -889,8 +890,12 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 	}
 	var note answerNote
 	rejected := 0
+	var shape Value
+	if !model.Plain {
+		shape = asked
+	}
 	for {
-		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true})
+		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true, Schema: shape})
 		if len(response.ToolCalls) > 0 || response.Finish != "stop" {
 			runFail("Model step requires a completed response without tool calls")
 		}
@@ -924,7 +929,13 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 				record, quotes := splitEvidence(answer.(*Record))
 				answer = record
 				if missing := evidenceProblem(model.Evidence, arguments, record, quotes); missing != "" {
-					problem = model.Verb + " answered without evidence: " + missing
+					// A model that is only a record shape has no verb, and a
+					// message that begins "None answered" names nothing.
+					named := model.Verb
+					if named == "" {
+						named = model.Name
+					}
+					problem = named + " answered without evidence: " + missing
 				} else {
 					note.evidence = &answerQuotes{quotes}
 					problem = brokenPromise(model, arguments, record)

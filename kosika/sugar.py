@@ -382,11 +382,15 @@ def _type_from_use(program: Program, workflow: Any, name: str) -> str | None:
                 if not (isinstance(value, VariableExpr) and value.name == name):
                     continue
                 if isinstance(call, FunctionCall) and call.function_name in functions:
-                    found = _parameter_for(functions[call.function_name].parameters, arguments, index)
+                    found = _parameter_for(
+                        functions[call.function_name].parameters, arguments, index
+                    )
                     if found:
                         return found
                 if isinstance(call, WorkflowCall) and call.workflow_name in workflows:
-                    found = _parameter_for(workflows[call.workflow_name].parameters, arguments, index)
+                    found = _parameter_for(
+                        workflows[call.workflow_name].parameters, arguments, index
+                    )
                     if found:
                         return found
                 if isinstance(call, ToolCall) and call.tool_name in tools:
@@ -441,7 +445,9 @@ def fill_defaults(program: Program) -> Program:
             record.name,
             record.fields,
             record.name,
-            RecordExpr(tuple((item.name, VariableExpr(item.name)) for item in record.fields)),
+            RecordExpr(
+                tuple((item.name, VariableExpr(item.name)) for item in record.fields)
+            ),
         )
         for record in program.records
         if record.name in called and record.name not in declared

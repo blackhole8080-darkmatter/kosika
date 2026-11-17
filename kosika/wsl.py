@@ -61,13 +61,17 @@ def distributions(runner: Runner = _run) -> list[str]:
     if shutil.which("wsl.exe") is None and runner is _run:
         return []
     code, out, _ = runner(["wsl.exe", "-l", "-q"], TIMEOUT_SECONDS)
-    return [line.strip() for line in out.splitlines() if line.strip()] if code == 0 else []
+    return (
+        [line.strip() for line in out.splitlines() if line.strip()] if code == 0 else []
+    )
 
 
 def status(distro: str, runner: Runner = _run) -> dict[str, Any]:
     """How the distribution is doing, read without changing anything."""
 
-    code, out, err = runner(["wsl.exe", "-d", distro, "--exec", "sh", "-c", STATUS_SCRIPT], TIMEOUT_SECONDS)
+    code, out, err = runner(
+        ["wsl.exe", "-d", distro, "--exec", "sh", "-c", STATUS_SCRIPT], TIMEOUT_SECONDS
+    )
     if code != 0:
         raise WslError(f"Linux ({distro}) did not answer: {(err or out).strip()[:300]}")
     found: dict[str, Any] = {"distro": distro, "top": []}

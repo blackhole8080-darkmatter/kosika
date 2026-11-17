@@ -934,6 +934,26 @@ pages or three different hosted models overlap fully. Two steps that ask
 the same local model do not, because one model on one computer answers one
 question at a time.
 
+### A model step that must quote its input
+
+`with evidence` is not only for thinking steps. A plain model step can be held
+to the same guarantee:
+
+```kosika
+workflow main(question: Question) -> Answer {
+  answer = use_model assistant(question.text) with evidence
+}
+```
+
+The model is asked for its record plus `evidence`: a list of short exact
+quotes, and every quote must appear in the text the step passed as arguments.
+A quote that is not there is refused like any broken answer, so `retry N` can
+ask again and `otherwise` can recover. The quotes are kept in the run's trace
+and checked again by `kosika replay`: the guarantee survives the recording,
+which is the part a program written in a general-purpose language cannot offer
+for free. What it proves is that the words were in the input; it does not prove
+that they support the conclusion.
+
 ### Checking a model's answer with your own code
 
 A model step can name a function that judges its answer:

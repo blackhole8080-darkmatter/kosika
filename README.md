@@ -269,6 +269,7 @@ language, not convention — read on.
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Examples, APIs, security boundaries, limitations |
 | [KOSIKA_PLAN.md](KOSIKA_PLAN.md) | Capability matrix, verification record, backlog |
 | [KOSIKA_VISION.md](KOSIKA_VISION.md) | The long-term target — argued for, not claimed |
+| [docs/SELF_DEVELOPMENT.md](docs/SELF_DEVELOPMENT.md) | Kosika improving Kosika: the survey, the check, the ledger |
 
 ## Repository
 

@@ -9,6 +9,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -35,6 +36,9 @@ var evidenceInstructions = map[string]string{
 	"quotes_if_true": " Also set evidence to a list of short exact quotes, copied character " +
 		"for character from the given text, that support the answer. A true " +
 		"answer needs at least one quote.",
+	"input": " Also set evidence to a list of one or more short exact quotes, " +
+		"copied character for character from the text you were given, that " +
+		"support the answer.",
 }
 
 var quoteMarks = strings.NewReplacer("‘", "'", "’", "'", "“", "\"", "”", "\"", " ", " ")
@@ -144,11 +148,25 @@ func quoteProblem(quote Value, source, what string) string {
 // evidenceProblem is "" when the evidence backs the answer as its kind
 // requires, and else what is wrong, as verify in kosika/evidence.py says.
 func evidenceProblem(kind string, arguments map[string]Value, result *Record, evidence Value) string {
-	source, known := evidenceSources[kind]
-	if !known {
+	var given string
+	var ok bool
+	if kind == evidenceInput {
+		// A plain `use_model` step names its own arguments, so the text it
+		// was given is every text it passed. The names are sorted so that
+		// the same call reads the same text on every run; Go's maps do not
+		// keep the order arguments were written in.
+		var parts []string
+		for _, name := range sortedValueNames(arguments) {
+			if text, isText := arguments[name].(string); isText {
+				parts = append(parts, text)
+			}
+		}
+		given, ok = strings.Join(parts, "\n"), true
+	} else if source, known := evidenceSources[kind]; known {
+		given, ok = arguments[source].(string)
+	} else {
 		return fmt.Sprintf("Unknown evidence kind %s", pyRepr(kind))
 	}
-	given, ok := arguments[source].(string)
 	if !ok {
 		return "Evidence needs the text the step was given"
 	}
@@ -176,10 +194,20 @@ func evidenceProblem(kind string, arguments map[string]Value, result *Record, ev
 			return problem
 		}
 	}
-	if (kind == "quotes" || result.Fields["answer"] == true) && len(quotes) == 0 {
+	if (kind == "quotes" || kind == evidenceInput || result.Fields["answer"] == true) && len(quotes) == 0 {
 		return "The answer has no quote from the given text"
 	}
 	return ""
+}
+
+// sortedValueNames are an argument map's names, in a fixed order.
+func sortedValueNames(arguments map[string]Value) []string {
+	names := make([]string, 0, len(arguments))
+	for name := range arguments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // statedQuotes is evidence without its empty entries: a missing quote and

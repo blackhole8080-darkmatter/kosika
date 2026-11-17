@@ -9,7 +9,10 @@ from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, cast
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; mind imports runtime's shapes
+    from .mind import MindHooks
 
 from .agent import ApprovalRequiredError, ToolExecutor
 from .agent_steps import (
@@ -71,6 +74,7 @@ from .durable import PLAN_TOOL, ApprovalPending, Claimed, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import function_type, public_type
+from .identity import program_identity
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from .lessons import Lessons
 from .manifest import ManifestError, MCPManifest, verify_server
@@ -198,7 +202,7 @@ class MockMCP:
         )
 
 
-def _next_inline_name(functions: dict[str, Any]) -> str:
+def _next_inline_name(functions: Mapping[str, Any]) -> str:
     """A name for an anonymous function literal, counted within this run.
 
     The name reaches the trace, so it must depend only on the program and the
@@ -1227,6 +1231,7 @@ def _ask_model(
     *,
     retries: int,
     verify_answer: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None = None,
+    mind: "MindHooks | None" = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Ask a model for one accepted answer.
 
@@ -1237,15 +1242,30 @@ def _ask_model(
     `retry N`: a rejected answer is shown back to the model with the reason,
     up to N more times. Every attempt is a model call for the limits, and
     every rejected one is kept in the trace.
+
+    `mind`: what the Mind layer has to say about this call. Its `context` is
+    folded into what the model is asked, so the model reasons with what it
+    resonates with; its `verify` is reflected on every answer the program's own
+    check also accepts, and a complaint refuses the answer like any other fault.
+
+    Both are kept in the trace under `mind`, beside the answer. They are not
+    kept as `verified`: that field is the program's own check, recorded as the
+    function call it was, which a replay proves again. The Mind layer is not a
+    function of the program, so it claims no such record.
     """
 
+    asked = arguments
+    retrieved = ""
+    if mind is not None and mind.context is not None:
+        retrieved = mind.context(arguments)
+        asked = {**arguments, "mind_context": retrieved}
     rejected: list[tuple[str, str]] = []
     while True:
         answered = None
         try:
             result, response = call_model(
                 provider,
-                arguments,
+                asked,
                 asked_schema,
                 instruction=model.instruction,
                 model=model.deployment,
@@ -1264,8 +1284,11 @@ def _ask_model(
                 try:
                     verify(model.evidence, arguments, result, quotes)
                 except EvidenceError as exc:
+                    # A model that is only a record shape has no verb, and a
+                    # message that begins "None answered" tells nobody which
+                    # step to look at.
                     raise ThinkingAnswerError(
-                        f"{model.verb} answered without evidence: {exc}"
+                        f"{model.verb or model.name} answered without evidence: {exc}"
                     ) from exc
                 response = {**response, "evidence": quotes}
             check_answer(model, arguments, result)
@@ -1277,6 +1300,16 @@ def _ask_model(
                         answered,
                     )
                 response = {**response, "verified": checked}
+            if mind is not None and mind.verify is not None:
+                complaint, judged = mind.verify(result)
+                if complaint.strip():
+                    raise RejectedAnswer(
+                        f"The Mind layer reflected and refused: {complaint.strip()}",
+                        answered,
+                    )
+                response = {**response, "mind": {**judged, "retrieved": retrieved}}
+            elif retrieved:
+                response = {**response, "mind": {"retrieved": retrieved}}
             break
         except (RejectedAnswer, ThinkingAnswerError) as exc:
             if len(rejected) >= retries:
@@ -1302,6 +1335,7 @@ def _ask_with_votes(
     retries: int,
     votes: int,
     verify_answer: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None = None,
+    mind: "MindHooks | None" = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """`vote N`: ask N times and accept only what more than half agree on.
 
@@ -1321,6 +1355,7 @@ def _ask_with_votes(
             asked_schema,
             retries=retries,
             verify_answer=verify_answer,
+            mind=mind,
         )
     field = {"classify": "label", "decide": "answer"}.get(model.verb or "")
     ballots: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
@@ -1337,6 +1372,7 @@ def _ask_with_votes(
                 asked_schema,
                 retries=retries,
                 verify_answer=verify_answer,
+                mind=mind,
             )
         except (RejectedAnswer, ThinkingAnswerError) as exc:
             failed.append(str(exc))
@@ -1394,6 +1430,37 @@ def _plain_field(model: ModelDecl, schema: dict[str, Any]) -> str | None:
     if not model.plain:
         return None
     return next(iter(schema.get("properties", {})), None)
+
+
+def _context_of(arguments: Mapping[str, Any], question: str) -> str:
+    """The inputs a question was asked about, apart from the question itself.
+
+    A near step may reuse an answer for a question written differently, but
+    never for other inputs, so what the question was read from is dropped
+    and the amounts, flags, lists and choices are kept: two runs that differ
+    in any of those get different contexts, and the lesson does not cross.
+    """
+
+    def without(value: Any) -> Any:
+        if isinstance(value, str):
+            return None if question and question in value else value
+        if isinstance(value, Mapping):
+            return {
+                key: kept
+                for key, kept in ((k, without(v)) for k, v in value.items())
+                if kept is not None
+            }
+        if isinstance(value, list):
+            return [without(item) for item in value]
+        return value
+
+    kept = {name: without(value) for name, value in arguments.items()}
+    return json.dumps(
+        {name: value for name, value in kept.items() if value is not None},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
 
 
 def _lesson_name(workflow: str, step: str, model: ModelDecl) -> str:
@@ -1464,6 +1531,7 @@ def run(
     on_event: Callable[[dict[str, Any], int], None] | None = None,
     skills: SkillCatalog | None = None,
     lessons: Lessons | None = None,
+    mind: "MindHooks | None" = None,
     _events_out: list[dict[str, Any]] | None = None,
     _scope: tuple[str, ...] = (),
     _control: ExecutionControl | None = None,
@@ -1481,6 +1549,9 @@ def run(
         # What the program's learning steps have learned, for the whole
         # run, including the workflows it calls.
         _control.lessons = lessons
+        # What the Mind layer resonates and reflects, for the whole run,
+        # folded into every model call the workflow makes.
+        _control.mind = mind
         # The clock and chance need no grant; see kosika.ambient. A caller
         # may still supply its own, as a test does with scripted answers.
         ambient = bind_ambient_tools(program)
@@ -1806,9 +1877,7 @@ def _run_workflow(
         "run_start",
         workflow=workflow.name,
         trace_version=5,
-        program_hash=hashlib.sha256(
-            json.dumps(program_payload(program), sort_keys=True).encode()
-        ).hexdigest(),
+        program_hash=program_identity(program),
         inputs=environment.copy(),
         output_schema=schema_for_record(program, workflow.output_type),
     )
@@ -1856,6 +1925,7 @@ def _run_workflow(
                 retries=member.retries,
                 votes=member.votes,
                 verify_answer=judge,
+                mind=_control.mind,
             )
         except (RejectedAnswer, ThinkingAnswerError) as refused:
             if member.escalate is None:
@@ -1870,6 +1940,7 @@ def _run_workflow(
                 retries=member.retries,
                 votes=0,
                 verify_answer=judge,
+                mind=_control.mind,
             )
             return answer, {
                 **reply,
@@ -2416,9 +2487,7 @@ def _run_workflow(
                             raise
                         agent_changed.append(declaration.name)
                         outcome = _agent_tool_outcome(declaration, values)
-                        validate(
-                            outcome, schema_for_type(program, declaration.output)
-                        )
+                        validate(outcome, schema_for_type(program, declaration.output))
                         session.complete(
                             inner,
                             [
@@ -2522,31 +2591,66 @@ def _run_workflow(
                     )
                 )
                 early = ahead.pop(step.name, None)
-                book = getattr(_control, "lessons", None) if step.learns else None
+                book = (
+                    getattr(_control, "lessons", None)
+                    if step.learns and not step.votes and _control.mind is None
+                    else None
+                )
                 known = None
                 if step.learns:
                     question = (
                         str(
                             _evaluate_expression(
-                                step.learn_by, environment, program, functions, [], depth=-1
+                                step.learn_by,
+                                environment,
+                                program,
+                                functions,
+                                [],
+                                depth=-1,
                             )
                         )
                         if step.learn_by is not None
                         else _question_of(arguments)
                     )
+                    request = json.dumps(
+                        {"question": question, "arguments": arguments},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    )
+                    context = _context_of(arguments, question)
                     lesson = _lesson_name(workflow.name, step.name, model)
                     if book is not None:
                         book.adopt(
-                            _earlier_lesson_name(workflow.name, step.name, model), lesson
+                            _earlier_lesson_name(workflow.name, step.name, model),
+                            lesson,
                         )
-                        known = book.recall(
-                            lesson, question, voting=model.verb in ("classify", "decide")
-                        )
+                        known = book.recall_exact(lesson, request)
+                        if known is None and step.learn_near:
+                            # `learn near`: only what was kept for these
+                            # inputs, and only a question carrying the same
+                            # figures and the same capitals.
+                            known = book.recall(
+                                lesson,
+                                question,
+                                voting=False,
+                                context=context,
+                                same_figures=True,
+                            )
                     if known is not None:
                         try:
                             validate(known["answer"], output_schema)
                         except ValueError:
                             known = None
+                if known is not None and step.verify is not None:
+                    # A kept answer is only as good as the check the program
+                    # would put a fresh one through: it is checked here, and a
+                    # refusal sends the question to the model.
+                    complaint, _ = _verifier(step, environment, program, functions)(
+                        known["answer"]
+                    )
+                    if complaint.strip():
+                        known = None
                 if known is not None:
                     result = known["answer"]
                     # Recorded as the model's answer would be, so the run
@@ -2556,7 +2660,7 @@ def _run_workflow(
                         "finish_reason": "stop",
                         "learned": {
                             key: known[key] for key in ("how", "likeness", "lessons")
-                        }
+                        },
                     }
                 else:
                     if step.learns and (model.provider or model.name) not in providers:
@@ -2570,7 +2674,9 @@ def _run_workflow(
                         else model_answer(step, arguments)
                     )
                     if book is not None:
-                        book.keep(lesson, question, result)
+                        book.keep(
+                            lesson, question, result, request=request, context=context
+                        )
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )
@@ -2672,11 +2778,18 @@ def _run_workflow(
                 votes=0,
                 verify=None,
                 escalate=None,
+                learns=False,
+                learn_by=None,
+                learn_near=False,
             )
             if isinstance(exc, ExecutionError):
                 # On resume, a step its fallback completed earlier is stored
                 # under the fallback's arguments, so look it up that way.
-                if exc.code != "checkpoint_mismatch":
+                # A provider failure is the model's, not the program's: the
+                # step may still answer with its `otherwise`. Budgets,
+                # deadlines, cancellation and missing approvals still stop
+                # the run, because those are the limits of the whole.
+                if exc.code not in {"checkpoint_mismatch", "provider"}:
                     raise
                 del events[events_before:]
                 queue.insert(0, fallback_step)

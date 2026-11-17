@@ -13,6 +13,7 @@ from kosika import cli
 from kosika.learning_evaluation import (
     LearningEvaluationError,
     evaluate_learning,
+    report_to_text,
 )
 from kosika.runtime import replay
 
@@ -122,8 +123,15 @@ class LearningEvaluationTests(unittest.TestCase):
                     sys,
                     "argv",
                     [
-                        "kosika", "learn-eval", str(SOURCE), "--tasks", str(task_file),
-                        "--output", str(root / "report"), "--format", "json",
+                        "kosika",
+                        "learn-eval",
+                        str(SOURCE),
+                        "--tasks",
+                        str(task_file),
+                        "--output",
+                        str(root / "report"),
+                        "--format",
+                        "json",
                     ],
                 ),
                 contextlib.redirect_stdout(stdout),
@@ -145,6 +153,40 @@ class LearningEvaluationTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 evaluate_learning(SOURCE, TASKS, output)
             self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
+
+
+NEAR = ROOT / "benchmarks" / "learning" / "near.kos"
+NEAR_TASKS = ROOT / "benchmarks" / "learning" / "tasks-near.json"
+
+
+class NearLearningTests(unittest.TestCase):
+    def test_reworded_warm_questions_cost_no_model_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = evaluate_learning(NEAR, NEAR_TASKS, Path(directory) / "result")
+
+            self.assertEqual(report["cold_passed"], 3)
+            self.assertEqual(report["warm_passed"], 3)
+            self.assertEqual(report["cold"]["live_model"], 3)
+            self.assertEqual(report["warm"]["live_model"], 0)
+            self.assertEqual(report["calls_saved"], 3)
+            self.assertEqual(report["calls_saved_ratio"], 1.0)
+            self.assertEqual(report["warm"]["how"], {"close": 3})
+            rendered = report_to_text(report)
+            self.assertIn("model calls cold    : 3", rendered)
+            self.assertIn("calls saved         : 3", rendered)
+
+    def test_warm_inputs_must_be_an_object(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tasks = json.loads(NEAR_TASKS.read_text(encoding="utf-8"))
+            tasks["tasks"][0]["warm_inputs"] = ["not", "a", "record"]
+            task_file = root / "tasks.json"
+            task_file.write_text(json.dumps(tasks), encoding="utf-8")
+            output = root / "output"
+
+            with self.assertRaises(LearningEvaluationError):
+                evaluate_learning(NEAR, task_file, output)
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

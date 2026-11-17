@@ -1,0 +1,12 @@
+// A model that answers with a choice has no record to carry the quotes, so
+// `with evidence` on it is refused as the program is read.
+
+record Question { text: Text }
+
+choice Verdict { yes(why: Text) no(why: Text) }
+
+model picker { input: Question output: Verdict }
+
+workflow main(question: Question) -> Verdict {
+  answer = use_model picker(question.text) with evidence
+}

@@ -102,7 +102,7 @@ class AlgorithmTests(unittest.TestCase):
         self.assertEqual(inputs, INPUTS, "inputs are never changed in place")
 
     def test_empty_arrays_give_neutral_or_absent_results(self) -> None:
-        inputs = {"input": {"orders": [], "scores": [], "words": []}}
+        inputs: dict[str, object] = {"input": {"orders": [], "scores": [], "words": []}}
         source = SOURCE.replace(
             'input.orders.max_by(field: "total").value().customer',
             '(for o in input.orders { o.customer }).first().or(default: "nobody")',

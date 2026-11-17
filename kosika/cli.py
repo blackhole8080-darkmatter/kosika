@@ -13,12 +13,10 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
-from .agent import AgentLoop, AgentLoopError, ApprovalRecord
 from .approval_ledger import ApprovalLedger
 from .ast import Program, ToolDecl
-from .checker import check
 from .command_model import CommandModelProvider
 from .component_declaration import (
     ComponentDeclarationError,
@@ -34,14 +32,6 @@ from .components import (
     verify_component_artifact,
 )
 from .controls import ControlledProvider, ExecutionError, ModelLimits
-from .development import check_project, execute_development_json
-from .durable import (
-    PLAN_TOOL,
-    AgentExecutionSession,
-    ApprovalPending,
-    ExecutionSession,
-    inspect_journal,
-)
 from .editor_features import EditorFeatureError, build_editor_features
 from .environment import DECIDED as ENVIRONMENT_DECIDED
 from .environment import Environment, EnvironmentError_, find_environment
@@ -121,6 +111,11 @@ from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
 from .system_tools import bind_system_tools, system_kind
 from .tracing import start as start_tracing
+
+if TYPE_CHECKING:
+    # Only for a name written in an annotation. Importing the agent loop
+    # here would make every command, `--help` included, load it.
+    from .agent import ApprovalRecord
 
 
 def command_metavar(subparsers: Any) -> str:
@@ -258,6 +253,8 @@ def _agent_tool_fixture(path: Path) -> dict[str, Any]:
 
 
 def _agent_tool_fixture_result(fixture: dict[str, Any], declaration: ToolDecl) -> Any:
+    from .agent import AgentLoopError
+
     value = fixture.get(declaration.name, fixture.get(declaration.operation))
     if value is None:
         raise AgentLoopError(
@@ -275,6 +272,10 @@ def _agent_tool_fixture_result(fixture: dict[str, Any], declaration: ToolDecl) -
 def _run_agent_command(
     args: argparse.Namespace, parser: argparse.ArgumentParser
 ) -> int:
+    from .agent import AgentLoop, AgentLoopError, ApprovalRecord
+    from .checker import check
+    from .durable import AgentExecutionSession
+
     if args.mcp_server is not None and args.mcp_manifest is None:
         parser.error("--mcp-manifest is required when --mcp-server is used")
     if args.mcp_server is None and args.mcp_manifest is not None:
@@ -394,6 +395,9 @@ def _run_agent_command(
 
         try:
             provider: Any
+            provider_model = (
+                model_name if isinstance(model_name, str) else str(agent_decl.model)
+            )
             if args.models is not None:
                 # The agent's declared model is answered by whatever route the
                 # person named: an endpoint, or a command such as the Langflow
@@ -415,11 +419,11 @@ def _run_agent_command(
                     return 2
                 provider = agent_routes[agent_decl.model]
             elif args.model_fixture is not None:
-                provider = _agent_model_fixture(args.model_fixture, model_name)
+                provider = _agent_model_fixture(args.model_fixture, provider_model)
             else:
                 provider = OpenAICompatibleProvider(
                     args.model_url,
-                    model_name,
+                    provider_model,
                     api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
                 )
             if args.virtual_model is not None:
@@ -748,6 +752,7 @@ def _workflow_model_bindings(
             api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
             protocol=args.model_protocol,
             timeout=getattr(args, "model_timeout", None) or 60.0,
+            context=getattr(args, "model_context", None),
         )
 
     made = {name: provider_for(name) for name in {base, *overrides.values()}}
@@ -756,6 +761,7 @@ def _workflow_model_bindings(
 
 def _failure_line(source: Path) -> str:
     """Where the first diagnostic points, when a truthful position exists."""
+    from .development import check_project
 
     try:
         report = check_project(source)["diagnostics"]
@@ -777,6 +783,8 @@ def _ask_approval(
     refused or nobody is there to ask. The answer covers this one call with
     these arguments only; the next action is asked about separately.
     """
+    from .agent import ApprovalRecord
+    from .durable import PLAN_TOOL
 
     if not sys.stdin.isatty():
         return None
@@ -827,6 +835,7 @@ def _ask_approval_in(
 ) -> ApprovalRecord | None:
     """Ask in a folder and wait for the answer there (see kosika.ask_folder)."""
 
+    from .agent import ApprovalRecord
     from .ask_folder import wait_for_answer
 
     yes, by = wait_for_answer(
@@ -1133,6 +1142,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON request file, or '-' to read the request from standard input.",
     )
 
+    subparsers.add_parser(
+        "engines",
+        help="Which engines can run Kosika programs, and whether each is here.",
+    )
     check_parser = subparsers.add_parser("check")
     check_parser.add_argument("source", type=Path)
     check_parser.add_argument(
@@ -1140,6 +1153,51 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("text", "json"),
         default="text",
         help="Output format. JSON emits machine-readable diagnostics.",
+    )
+
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Write a kosika.toml for a folder so it can be built.",
+    )
+    init_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        default=Path("."),
+        help="Folder to start a project in. Default: this folder.",
+    )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace a kosika.toml that is already there.",
+    )
+    init_parser.add_argument(
+        "--json", action="store_true", help="Print what was written as JSON."
+    )
+
+    build_parser = subparsers.add_parser(
+        "build",
+        help="Build a project's targets from its kosika.toml.",
+    )
+    build_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        default=Path("."),
+        help="Project folder holding kosika.toml.",
+    )
+    build_parser.add_argument(
+        "--out",
+        type=Path,
+        help="Where the artifact is written. Default: <folder>/build.",
+    )
+    build_parser.add_argument(
+        "--key",
+        type=Path,
+        help="Signing key. Default: <folder>/.kosika/pack-key.json.",
+    )
+    build_parser.add_argument(
+        "--json", action="store_true", help="Print the manifest as JSON."
     )
 
     benchmark_parser = subparsers.add_parser(
@@ -1485,6 +1543,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("source", type=Path)
+    run_parser.add_argument(
+        "--require-qualified",
+        action="store_true",
+        help=(
+            "Ask nothing of a model that has no recorded evaluation showing no "
+            "wrong answer. Refuses the run instead, naming what is missing."
+        ),
+    )
+    run_parser.add_argument(
+        "--qualifications",
+        type=Path,
+        default=Path(".kosika/virtual-models.json"),
+        help="Where recorded evaluations are kept.",
+    )
     run_parser.add_argument("--workflow", default="main")
     run_parser.add_argument(
         "--env",
@@ -1650,6 +1722,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=MODEL_PROTOCOLS,
         default="openai",
         help="Wire format of the model endpoint.",
+    )
+    run_parser.add_argument(
+        "--model-context",
+        type=int,
+        metavar="TOKENS",
+        help=(
+            "The context window to ask Ollama for, in tokens, instead of the "
+            "smallest tier that fits. A prompt that needs more than this is "
+            "refused rather than cut short. Needs --model-protocol ollama."
+        ),
     )
     run_parser.add_argument(
         "--allow-site",
@@ -2156,7 +2238,22 @@ def build_parser() -> argparse.ArgumentParser:
     pack_check.add_argument(
         "--test", action="store_true", help="Also run the tests inside the pack."
     )
+    pack_check.add_argument(
+        "--require-signature",
+        action="store_true",
+        help="Refuse a pack that is unsigned, or whose signature does not verify.",
+    )
     pack_check.add_argument("--json", action="store_true")
+    pack_sign = pack_commands.add_parser(
+        "sign", help="Sign a pack with this device's key, showing who made it."
+    )
+    pack_sign.add_argument("pack", type=Path)
+    pack_sign.add_argument(
+        "--key",
+        type=Path,
+        default=None,
+        help="The key file to sign with; .kosika/pack-key.json by default.",
+    )
     pack_unpack = pack_commands.add_parser(
         "unpack", help="Verify a pack, then write its files into an empty folder."
     )
@@ -2291,6 +2388,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     measure_parser.add_argument("--model-timeout", type=float, default=300.0)
     measure_parser.add_argument(
+        "--model-context",
+        type=int,
+        metavar="TOKENS",
+        help=(
+            "The context window to ask Ollama for, in tokens, so every model "
+            "measured is given the same one. Needs --model-protocol ollama."
+        ),
+    )
+    measure_parser.add_argument(
         "--repeat",
         type=int,
         default=1,
@@ -2316,6 +2422,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="A new folder to keep the traces, the memory and the report in.",
     )
     learn_eval_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format.",
+    )
+    learn_calibrate_parser = subparsers.add_parser(
+        "learn-calibrate",
+        help=(
+            "Measure how near a question must be to one already answered "
+            "before it is answered again, and report the threshold that "
+            "trades precision for recall best."
+        ),
+    )
+    learn_calibrate_parser.add_argument("pairs", type=Path)
+    learn_calibrate_parser.add_argument(
+        "--embed-model",
+        metavar="NAME",
+        help=(
+            "Also measure by meaning with this embedding model, as run "
+            "--embed-model would."
+        ),
+    )
+    learn_calibrate_parser.add_argument(
+        "--embed-url", help="The address the embedding model answers at."
+    )
+    learn_calibrate_parser.add_argument(
         "--format",
         choices=("text", "json"),
         default="text",
@@ -2410,6 +2542,87 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the structured diff as JSON instead of a human-readable summary.",
     )
 
+    train_parser = subparsers.add_parser(
+        "train",
+        help=(
+            "Train a small model's weights from this project's verified examples "
+            "and keep the checkpoint as a ranker a virtual model can use."
+        ),
+    )
+    train_commands = train_parser.add_subparsers(dest="train_command", required=True)
+
+    def add_training_hyperparameters(target: Any) -> None:
+        target.add_argument("--epochs", type=int, default=30)
+        target.add_argument("--batch-size", type=int, default=8)
+        target.add_argument("--learning-rate", type=float, default=0.05)
+        target.add_argument("--hidden", type=int, default=24)
+        target.add_argument("--feature-dim", type=int, default=512)
+        target.add_argument(
+            "--negatives",
+            type=int,
+            default=3,
+            help="Uncited passages sampled against each verified example.",
+        )
+        target.add_argument("--seed", type=int, default=7)
+
+    train_ranker_parser = train_commands.add_parser(
+        "ranker",
+        help=(
+            "Learn which source passages answer which verified task, instead of "
+            "ranking them by shared words alone."
+        ),
+    )
+    train_ranker_parser.add_argument("profile", type=Path)
+    train_ranker_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Where the checkpoint is written.",
+    )
+    add_training_hyperparameters(train_ranker_parser)
+    train_ranker_parser.add_argument(
+        "--json", action="store_true", help="Print the checkpoint summary as JSON."
+    )
+    train_eval_parser = train_commands.add_parser(
+        "eval",
+        help=(
+            "Hold verified examples out of training, train on the rest, and fail "
+            "when held-out accuracy misses a threshold."
+        ),
+    )
+    train_eval_parser.add_argument("profile", type=Path)
+    train_eval_parser.add_argument(
+        "--holdout",
+        type=int,
+        default=1,
+        help="Verified examples kept out of training and scored instead.",
+    )
+    train_eval_parser.add_argument(
+        "--min-accuracy",
+        type=float,
+        default=0.8,
+        help="Held-out accuracy that must be reached for the gate to pass.",
+    )
+    train_eval_parser.add_argument(
+        "--min-train-examples",
+        type=int,
+        default=2,
+        help=(
+            "Verified examples that must remain for training; one is refused "
+            "by default because its score says nothing about generalizing."
+        ),
+    )
+    train_eval_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Keep the checkpoint only when the gate passes.",
+    )
+    add_training_hyperparameters(train_eval_parser)
+    train_eval_parser.add_argument(
+        "--json", action="store_true", help="Print the gate result as JSON."
+    )
+
     virtual_model_parser = subparsers.add_parser(
         "virtual-model",
         help="Review and keep the verified examples of a virtual-model profile.",
@@ -2426,6 +2639,172 @@ def build_parser() -> argparse.ArgumentParser:
     )
     virtual_model_add.add_argument("profile", type=Path)
     virtual_model_add.add_argument("candidate", type=Path)
+    virtual_model_serve = virtual_model_commands.add_parser(
+        "serve",
+        help=(
+            "Serve this profile's model at /v1/chat/completions, metered per "
+            "caller, so any agent -- in this project or outside it -- can use it."
+        ),
+    )
+    virtual_model_serve.add_argument("profile", type=Path)
+    virtual_model_serve.add_argument(
+        "--model",
+        required=True,
+        help="The model that answers, on this computer or a service.",
+    )
+    virtual_model_serve.add_argument("--base-url", default=None)
+    virtual_model_serve.add_argument(
+        "--protocol", choices=("openai", "ollama"), default=None
+    )
+    virtual_model_serve.add_argument(
+        "--model-key",
+        default="KOSIKA_MODEL_API_KEY",
+        help="The environment variable holding the model's key, never the key itself.",
+    )
+    virtual_model_serve.add_argument("--model-timeout", type=float, default=240.0)
+    virtual_model_serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Loopback unless you mean to expose it: 0.0.0.0 opens it to the network.",
+    )
+    virtual_model_serve.add_argument("--port", type=int, default=8765)
+    virtual_model_serve.add_argument("--calls-per-day", type=int, default=200)
+    virtual_model_serve.add_argument("--tokens-per-day", type=int, default=200_000)
+    virtual_model_serve.add_argument("--tokens-per-call", type=int, default=8_000)
+    virtual_model_serve.add_argument(
+        "--key",
+        action="append",
+        default=[],
+        metavar="NAME=KEY",
+        help=(
+            "A caller's name and key; repeat for more. Without one, a key is "
+            "made and printed once, and never written anywhere."
+        ),
+    )
+    virtual_model_serve.add_argument(
+        "--state",
+        type=Path,
+        help="Where the usage journal goes (default: .kosika/<profile>-usage.jsonl).",
+    )
+    virtual_model_serve.add_argument(
+        "--warm",
+        action="store_true",
+        help=(
+            "Load the model and read the profile's documents before the first "
+            "caller asks, then say how long that took. The answers are unchanged."
+        ),
+    )
+    virtual_model_serve.add_argument(
+        "--answers",
+        type=Path,
+        help=(
+            "Where answers already paid for are kept (default: beside the "
+            "usage journal). Asking the same question again costs nothing."
+        ),
+    )
+    virtual_model_serve.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Ask the model every time, even for a question already answered.",
+    )
+    virtual_model_serve.add_argument(
+        "--answer-age-hours",
+        type=float,
+        default=24.0,
+        help=(
+            "How long a kept answer may be served (default: 24). A kept answer "
+            "is never re-checked, so an old one is a miss; zero keeps it until "
+            "the cache is pruned by hand."
+        ),
+    )
+    virtual_model_usage = virtual_model_commands.add_parser(
+        "usage",
+        help=(
+            "What each caller asked for and spent, day by day, read back from "
+            "the journal rather than remembered."
+        ),
+    )
+    virtual_model_usage.add_argument("profile", type=Path)
+    virtual_model_usage.add_argument(
+        "--state",
+        type=Path,
+        help="The usage journal to read (default: .kosika/<profile>-usage.jsonl).",
+    )
+    virtual_model_usage.add_argument(
+        "--days",
+        type=int,
+        help="Only the most recent this many days with activity.",
+    )
+    virtual_model_usage.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    virtual_model_serve.add_argument(
+        "--no-citations",
+        action="store_true",
+        help=(
+            "Accept an answer that names a file, flag or folder the profile's "
+            "documents do not contain. By default such an answer is refused."
+        ),
+    )
+    virtual_model_serve.add_argument(
+        "--require-citations",
+        action="store_true",
+        help=(
+            "Refuse an answer that names a file or flag without a citation whose "
+            "line shows that name. Measured to refuse real names as well as "
+            "invented ones, so the default only reports them (kosika.unbacked)."
+        ),
+    )
+    virtual_model_eval = virtual_model_commands.add_parser(
+        "eval",
+        help=(
+            "Score a recorded benchmark run as evidence for a virtual-model "
+            "combination, and refuse it when it showed a wrong answer."
+        ),
+    )
+    virtual_model_eval.add_argument("results", type=Path)
+    virtual_model_eval.add_argument(
+        "--profile",
+        type=Path,
+        help=(
+            "Bind the evidence to this profile, so editing the profile "
+            "invalidates the pass instead of inheriting it."
+        ),
+    )
+    virtual_model_eval.add_argument(
+        "--state",
+        type=Path,
+        default=Path(".kosika/virtual-models.json"),
+        help="Where recorded evaluations are kept.",
+    )
+    virtual_model_eval.add_argument(
+        "--record",
+        action="store_true",
+        help="Keep this evaluation, and say what changed since the last one.",
+    )
+    virtual_model_eval.add_argument(
+        "--min-right",
+        type=float,
+        help="Refuse the combination below this share of right answers (0..1).",
+    )
+    virtual_model_eval.add_argument(
+        "--allow-wrong",
+        action="store_true",
+        help=(
+            "Qualify even when a wrong answer was shown. Off by default, "
+            "because a wrong answer is what this exists to prevent."
+        ),
+    )
+    virtual_model_eval.add_argument(
+        "--gate",
+        action="store_true",
+        help="Exit 1 when the combination does not qualify.",
+    )
+    virtual_model_eval.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the evaluation as JSON instead of a human-readable summary.",
+    )
     component_parser = subparsers.add_parser(
         "component",
         help="Validate, describe, or declare a pinned cross-language component contract.",
@@ -2501,10 +2880,660 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the structured validation summary as JSON.",
     )
 
+    selfdev_parser = subparsers.add_parser(
+        "selfdev",
+        help="Improve this tree's own source: propose, check, keep or undo, and remember.",
+    )
+    selfdev_commands = selfdev_parser.add_subparsers(
+        dest="selfdev_command", required=True
+    )
+    selfdev_survey = selfdev_commands.add_parser(
+        "survey", help="List the work the tree itself names. No model is asked."
+    )
+    selfdev_survey.add_argument("--root", type=Path, default=Path("."))
+    selfdev_survey.add_argument(
+        "--folder",
+        action="append",
+        help="A folder to read for markers. Repeatable; defaults to kosika and tests.",
+    )
+    selfdev_survey.add_argument("--limit", type=int, default=50)
+    selfdev_survey.add_argument("--state", type=Path, help="Where the ledger is kept.")
+    selfdev_survey.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    selfdev_status = selfdev_commands.add_parser(
+        "status", help="What earlier runs tried, kept, undid and gave up on."
+    )
+    selfdev_status.add_argument("--root", type=Path, default=Path("."))
+    selfdev_status.add_argument("--state", type=Path, help="Where the ledger is kept.")
+    selfdev_status.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    selfdev_run = selfdev_commands.add_parser(
+        "run",
+        help=(
+            "Try the work in the backlog: each change is checked, and only one "
+            "that passes is kept."
+        ),
+    )
+    selfdev_run.add_argument("--root", type=Path, default=Path("."))
+    selfdev_run.add_argument(
+        "--allow",
+        action="append",
+        help="A path this run may edit, as a prefix. Repeatable; defaults to kosika and tests.",
+    )
+    selfdev_run.add_argument(
+        "--folder",
+        action="append",
+        help="A folder to read for markers. Repeatable; defaults to kosika and tests.",
+    )
+    selfdev_run.add_argument("--state", type=Path, help="Where the ledger is kept.")
+    selfdev_run.add_argument(
+        "--kind",
+        action="append",
+        help=(
+            "Only attempt tasks of this kind, for example roadmap or "
+            "notimplemented. Repeatable; default is every kind."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--model",
+        help=(
+            "A model on this computer, asked for one patch at a time. No quota "
+            "and no bill: a local Ollama server unless --base-url says otherwise."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--base-url", help="OpenAI-compatible base URL. Default http://127.0.0.1:11434"
+    )
+    selfdev_run.add_argument(
+        "--protocol",
+        choices=("openai", "ollama"),
+        help="Model wire format. Defaults to ollama with no --base-url, else openai.",
+    )
+    selfdev_run.add_argument(
+        "--command",
+        dest="command_line",
+        help=(
+            "An agent already installed, started in this folder with one request: "
+            'for example --command "claude -p". Its edits are checked the same way.'
+        ),
+    )
+    selfdev_run.add_argument(
+        "--virtual-model",
+        dest="virtual_model",
+        type=Path,
+        help=(
+            "A virtual-model profile whose sources and verified examples are "
+            "given to the answering model, so it answers from this project's "
+            "own documents. Needs --model."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--gate",
+        action="append",
+        help=(
+            "A command a change must also pass, run in the project. Repeatable, "
+            'for example --gate "python -m pytest -q tests/test_cli_coverage.py".'
+        ),
+    )
+    selfdev_run.add_argument("--gate-timeout", type=float, default=300.0)
+    selfdev_run.add_argument(
+        "--timeout", type=float, default=1800.0, help="How long one --command may run."
+    )
+    selfdev_run.add_argument("--model-timeout", type=float, default=180.0)
+    selfdev_run.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=2048,
+        help=(
+            "How long one answer may be. A patch is short; a smaller number is "
+            "what makes a model on a CPU finish at all."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--excerpt-chars",
+        type=int,
+        default=12000,
+        help=(
+            "How much of the file the proposer is shown. Smaller asks less of "
+            "a slow model; the window is centred on the reported line."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--cycles", type=int, default=1, help="How many tasks to attempt."
+    )
+    selfdev_run.add_argument(
+        "--until-hours",
+        type=float,
+        help="Keep going until this many hours have passed, then stop.",
+    )
+    selfdev_run.add_argument("--max-attempts", type=int, default=2)
+    selfdev_run.add_argument(
+        "--decompose",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Ask the model which existing code each of the first N tasks "
+            "would extend, and attempt only those that name one. The rest "
+            "belong to a person and are printed as dropped."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--max-task-failures",
+        type=int,
+        default=3,
+        help="Leave a task alone after this many attempts were given up on.",
+    )
+    selfdev_run.add_argument("--max-consecutive-failures", type=int, default=3)
+    selfdev_run.add_argument(
+        "--sleep", type=float, default=0.0, help="Seconds to wait between attempts."
+    )
+    selfdev_run.add_argument(
+        "--commit",
+        action="store_true",
+        help="Commit each change that passes, naming the task it came from.",
+    )
+    selfdev_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Ask nothing and change nothing: print what the next task would be asked.",
+    )
+    selfdev_run.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+
     # Every subparser is registered by this point, so the usage list can be
     # derived from them rather than maintained by hand.
     subparsers.metavar = command_metavar(subparsers)
     return parser
+
+
+def _warm_specialist(specialist: Any) -> None:
+    """Ask the profile one throwaway question, so the first caller is not the one
+    that pays for loading the model and reading the documents.
+
+    Run in the background: the port answers `/v1/models` while this is happening,
+    and a caller that arrives during it waits behind one short request rather than
+    behind a cold model. Failing is not fatal -- the first real call simply pays
+    what this would have paid, which is what happens without the flag.
+    """
+
+    import threading
+    import time as _time
+
+    from .model import ChatMessage, ModelRequest
+
+    def run() -> None:
+        started = _time.monotonic()
+        try:
+            specialist.complete(
+                ModelRequest(
+                    messages=(
+                        ChatMessage(
+                            role="user",
+                            content=(
+                                "Warm this context with the profile's own documents "
+                                "and reply with the single word ready."
+                            ),
+                        ),
+                    ),
+                    max_output_tokens=1,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - warming is best effort
+            print(
+                f"warm        : not done ({type(exc).__name__}: {exc}); "
+                "the first caller pays it",
+                file=sys.stderr,
+            )
+            return
+        print(f"warm        : ready in {_time.monotonic() - started:.0f}s")
+
+    print("warming     : loading the model and reading the documents")
+    threading.Thread(target=run, name="kosika-warm", daemon=True).start()
+
+
+def _virtual_serve(args: argparse.Namespace) -> int:
+    """Serve one virtual model under a daily allowance, until stopped.
+
+    The profile is the same one `selfdev` and `run --virtual-model` use, so what
+    is served is the grounding this project already trusts; only the door is
+    new, and it is metered per caller rather than per process.
+    """
+
+    from .model import OpenAICompatibleProvider
+    from .virtual_model import VirtualModelError, VirtualModelProvider
+    from .virtual_serve import (
+        AnswerCache,
+        Gateway,
+        Meter,
+        Quota,
+        UsageJournal,
+        address,
+        keys_from,
+        make_server,
+        new_key,
+    )
+
+    if min(args.calls_per_day, args.tokens_per_day, args.tokens_per_call) < 1:
+        print("Serve refused: every allowance must be at least one.", file=sys.stderr)
+        return 2
+    try:
+        keys = keys_from(",".join(args.key))
+    except ValueError as exc:
+        print(f"Serve refused: {exc}", file=sys.stderr)
+        return 2
+    made = None
+    if not keys:
+        made = new_key()
+        keys = {made: "owner"}
+
+    profile = Path(args.profile).resolve()
+    state = (
+        Path(args.state).resolve()
+        if args.state
+        else Path(".kosika") / f"{profile.stem}-usage.jsonl"
+    )
+    protocol = args.protocol or ("ollama" if args.base_url is None else "openai")
+    provider = OpenAICompatibleProvider(
+        args.base_url or "http://127.0.0.1:11434",
+        args.model,
+        api_key=os.environ.get(args.model_key) or None,
+        protocol=protocol,
+        timeout=args.model_timeout,
+        think=False,
+    )
+    try:
+        specialist = VirtualModelProvider(provider, profile)
+    except VirtualModelError as exc:
+        print(f"Serve refused: {exc}", file=sys.stderr)
+        return 2
+
+    journal = UsageJournal(state)
+    quota = Quota(
+        calls_per_day=args.calls_per_day,
+        tokens_per_day=args.tokens_per_day,
+        tokens_per_call=args.tokens_per_call,
+    )
+    answers = (
+        Path(args.answers).resolve()
+        if args.answers
+        else state.with_name(f"{state.stem}-answers.json")
+    )
+    cache = (
+        None
+        if args.no_cache
+        else AnswerCache(answers, max_age_seconds=args.answer_age_hours * 3600.0)
+    )
+
+    def _saved(tokens: int) -> None:
+        print(
+            f"saved       : repeat answered from the cache, {tokens} tokens not "
+            f"spent ({gateway.hits} so far)",
+            flush=True,
+        )
+
+    gateway = Gateway(
+        specialist,
+        Meter(journal, quota),
+        name=specialist.name or profile.stem,
+        keys=keys,
+        cache=cache,
+        ground=not args.no_citations,
+        require_citations=args.require_citations,
+        on_hit=_saved,
+    )
+    try:
+        server = make_server(gateway, host=args.host, port=args.port)
+    except OSError as exc:
+        print(f"Serve refused: {exc}", file=sys.stderr)
+        return 2
+
+    url = address(server)
+    print(f"serving     : {gateway.name}")
+    print(f"address     : {url}")
+    print(f"models      : {url}/v1/models")
+    print(f"chat        : {url}/v1/chat/completions")
+    print(f"callers     : {', '.join(sorted(keys.values()))}")
+    print(
+        "allowance   : "
+        f"{quota.calls_per_day} calls and {quota.tokens_per_day} tokens per caller "
+        f"per day, at most {quota.tokens_per_call} per call"
+    )
+    print(f"usage       : {journal.path}")
+    if cache is None:
+        print("answers     : not kept; every call asks the model")
+    else:
+        kept_for = (
+            "until pruned by hand"
+            if args.answer_age_hours <= 0
+            else f"for {args.answer_age_hours:g}h"
+        )
+        print(f"answers     : {answers} ({len(cache)} kept, {kept_for})")
+    print(
+        "grounding   : "
+        + (
+            "a file, flag, folder or path named in an answer must appear in the "
+            "documents, or the answer is refused"
+            if not args.no_citations
+            else "off; names in an answer are not checked against the documents"
+        )
+    )
+    if made is not None:
+        print(f"key         : {made}")
+        print("              shown once; keep it out of logs and shared files")
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            "warning     : bound beyond loopback, so anyone who can reach the port may ask"
+        )
+    sys.stdout.flush()
+    if args.warm:
+        _warm_specialist(specialist)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        if gateway.hits:
+            print(
+                f"\nsaved       : {gateway.hits} repeats answered from the cache, "
+                f"{gateway.saved_tokens} tokens not spent"
+            )
+        print("stopped")
+    finally:
+        server.server_close()
+    return 0
+
+
+def _virtual_usage(args: argparse.Namespace) -> int:
+    """What each caller spent, and what the cache gave back, from the journal."""
+
+    from .virtual_serve import UsageJournal, report
+
+    profile = Path(args.profile).resolve()
+    state = (
+        Path(args.state).resolve()
+        if args.state
+        else Path(".kosika") / f"{profile.stem}-usage.jsonl"
+    )
+    journal = UsageJournal(state)
+    if not journal.path.is_file():
+        print(f"Nothing recorded yet: {journal.path} does not exist.", file=sys.stderr)
+        return 2
+    spends = report(journal, days=args.days)
+    if args.format == "json":
+        print(
+            json.dumps(
+                {
+                    "journal": str(journal.path),
+                    "spends": [
+                        {
+                            "day": spend.day,
+                            "caller": spend.caller,
+                            "calls": spend.calls,
+                            "tokens": spend.tokens,
+                            "repeats": spend.repeats,
+                            "tokens_not_spent": spend.saved_tokens,
+                            "refused": spend.refusals,
+                        }
+                        for spend in spends
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 0
+    if not spends:
+        print(f"No calls recorded in {journal.path}.")
+        return 0
+    print(f"journal     : {journal.path}")
+    print(
+        f"{'day':<12}{'caller':<12}{'calls':>7}{'tokens':>10}{'repeats':>9}"
+        f"{'not spent':>11}{'refused':>9}"
+    )
+    for spend in spends:
+        print(
+            f"{spend.day:<12}{spend.caller:<12}{spend.calls:>7}{spend.tokens:>10,}"
+            f"{spend.repeats:>9}{spend.saved_tokens:>11,}{spend.refusals:>9}"
+        )
+    if len(spends) > 1:
+        print(
+            f"{'total':<12}{'-':<12}"
+            f"{sum(spend.calls for spend in spends):>7}"
+            f"{sum(spend.tokens for spend in spends):>10,}"
+            f"{sum(spend.repeats for spend in spends):>9}"
+            f"{sum(spend.saved_tokens for spend in spends):>11,}"
+            f"{sum(spend.refusals for spend in spends):>9}"
+        )
+    if any(spend.refusals for spend in spends):
+        print(
+            "refused     : answers the documents did not support; they were "
+            "replaced by a refusal and are still charged"
+        )
+    return 0
+
+
+def _selfdev_command(args: argparse.Namespace) -> int:
+    """Survey this tree for its own unfinished work, and improve it safely.
+
+    Nothing here trusts a model: `survey` names the work from the tree, a
+    change is only kept when the changed files compile, import and pass the
+    linter and any `--gate` command, and a change that does not is undone from
+    the bytes taken before it was applied.
+    """
+
+    import shlex
+
+    from .selfdev import (
+        DEFAULT_ALLOW,
+        DEFAULT_FOLDERS,
+        DelegateProposer,
+        Ledger,
+        ModelProposer,
+        SelfDevEngine,
+        SilentProposer,
+        VirtualModelProposer,
+        decompose,
+        default_state_folder,
+        make_ask,
+        rank,
+        survey,
+    )
+
+    root = Path(getattr(args, "root", Path("."))).resolve()
+    if not root.is_dir():
+        print(f"Selfdev refused: there is no folder at {str(root)!r}", file=sys.stderr)
+        return 2
+    state = (
+        Path(args.state).resolve()
+        if getattr(args, "state", None)
+        else default_state_folder(root)
+    )
+    ledger = Ledger(state / "ledger.jsonl")
+    folders = tuple(getattr(args, "folder", None) or DEFAULT_FOLDERS)
+
+    if args.selfdev_command == "survey":
+        tasks = rank(survey(root, folders=folders, max_findings=args.limit), ledger)
+        if args.format == "json":
+            print(
+                json.dumps(
+                    {
+                        "root": str(root),
+                        "folders": list(folders),
+                        "tasks": [task.to_dict() for task in tasks],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        print(
+            f"{len(tasks)} task(s) named by {root}"
+            + (f" under {', '.join(folders)}" if tasks else "")
+        )
+        for task in tasks:
+            print("  " + task.describe())
+        if not tasks:
+            print("  Nothing unfinished was named. That is the good outcome.")
+        return 0
+
+    if args.selfdev_command == "status":
+        records = ledger.records()
+        stats = ledger.stats()
+        payload = {
+            "root": str(root),
+            "state": str(state),
+            "ledger": str(ledger.path),
+            "attempts": len(records),
+            "by_kind": stats,
+            "last": records[-1] if records else None,
+        }
+        if args.format == "json":
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        print(f"root        : {root}")
+        print(f"ledger      : {ledger.path}")
+        print(f"attempts    : {len(records)}")
+        for kind, bucket in sorted(stats.items()):
+            print(
+                f"  {kind:<14} kept {int(bucket['kept'])}/{int(bucket['attempts'])}  "
+                f"kept-rate {bucket['rate']:.2f}"
+            )
+        last = records[-1] if records else None
+        if last is not None:
+            print(f"last        : {last.get('status')} {last.get('title', '')}")
+        return 0
+
+    allow = tuple(getattr(args, "allow", None) or DEFAULT_ALLOW)
+    if getattr(args, "virtual_model", None) and not args.model:
+        print(
+            "Selfdev refused: --virtual-model needs --model to answer for it.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.command_line and getattr(args, "virtual_model", None):
+        print(
+            "Selfdev refused: choose one of --command and --virtual-model, not both.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.command_line and args.model:
+        print(
+            "Selfdev refused: choose one of --model and --command, not both.",
+            file=sys.stderr,
+        )
+        return 2
+    ask = None
+    proposer: Any
+    if args.command_line:
+        proposer = DelegateProposer(
+            shlex.split(args.command_line), root=root, timeout=args.timeout
+        )
+    elif args.model:
+        protocol = args.protocol or ("ollama" if args.base_url is None else "openai")
+        provider = OpenAICompatibleProvider(
+            args.base_url or "http://127.0.0.1:11434",
+            args.model,
+            api_key=os.environ.get("KOSIKA_MODEL_API_KEY") or None,
+            protocol=protocol,
+            timeout=args.model_timeout,
+            think=False,
+        )
+        # The same provider answers the decomposition question, with a short
+        # answer and no specialist sources: this is a lookup, not a patch.
+        ask = make_ask(provider, max_output_tokens=min(args.max_output_tokens, 800))
+        if getattr(args, "virtual_model", None):
+            from .virtual_model import VirtualModelError, VirtualModelProvider
+
+            try:
+                specialist = VirtualModelProvider(provider, args.virtual_model)
+            except VirtualModelError as exc:
+                print(f"Selfdev refused: {exc}", file=sys.stderr)
+                return 2
+            proposer = VirtualModelProposer(
+                specialist, max_output_tokens=args.max_output_tokens
+            )
+        else:
+            proposer = ModelProposer(provider, max_output_tokens=args.max_output_tokens)
+    elif args.dry_run:
+        proposer = SilentProposer()
+    else:
+        print(
+            "Selfdev needs a way to propose a change: --model for a model on this "
+            "computer, or --command for an agent already installed.\n"
+            "  kosika selfdev run --model qwen2.5-coder:7b\n"
+            '  kosika selfdev run --command "claude -p"\n'
+            "  kosika selfdev run --dry-run     (shows the next request, asks nothing)",
+            file=sys.stderr,
+        )
+        return 2
+
+    plan = None
+    if args.decompose:
+        if ask is None:
+            print(
+                "Selfdev refused: --decompose needs --model to answer for it.",
+                file=sys.stderr,
+            )
+            return 2
+        found = rank(
+            survey(root, folders=folders, max_findings=getattr(args, "limit", 200)),
+            ledger,
+            max_task_failures=args.max_task_failures,
+        )
+        kinds = tuple(getattr(args, "kind", None) or ())
+        if kinds:
+            found = [task for task in found if task.kind in kinds]
+        chosen = found[: args.decompose]
+        asked = decompose(root, chosen, ask, folders=folders)
+        plan = asked.kept
+        if args.format == "text":
+            print(
+                f"decomposed: {len(asked.kept)} of {len(chosen)} task(s) name "
+                f"code that exists; {len(asked.dropped)} belong to a person"
+            )
+            for task in asked.kept:
+                print("  keep  " + task.describe())
+                print("        " + task.detail.split(chr(10))[-1])
+            for task, why in asked.dropped:
+                print("  drop  " + task.title[:70])
+                print("        " + why[:110])
+        if not plan:
+            print("Nothing to attempt: no task named code that exists.")
+            return 0
+    engine = SelfDevEngine(
+        root,
+        proposer,
+        allow=allow,
+        gate_commands=tuple(args.gate or ()),
+        state_folder=state,
+        max_attempts=args.max_attempts,
+        max_task_failures=args.max_task_failures,
+        commit=args.commit,
+        dry_run=args.dry_run,
+        sleep_seconds=args.sleep,
+        gate_timeout=args.gate_timeout,
+        excerpt_chars=args.excerpt_chars,
+        kinds=tuple(getattr(args, "kind", None) or ()),
+        plan=plan,
+        log=print if args.format == "text" else None,
+    )
+    summary = engine.run(
+        cycles=None if args.until_hours else args.cycles,
+        until_hours=args.until_hours,
+        max_consecutive_failures=args.max_consecutive_failures,
+        folders=folders,
+    )
+    if args.format == "json":
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    print(
+        f"\nkept {summary['kept']}  reverted {summary['reverted']}  "
+        f"refused {summary['refused']}  in {summary['cycles']} attempt(s)\n"
+        f"stopped: {summary['stopped']}\n"
+        f"ledger : {ledger.path}"
+    )
+    return 0
 
 
 def _run_component_describe(args: argparse.Namespace) -> int:
@@ -2724,8 +3753,7 @@ def _db_command(args: argparse.Namespace) -> int:
         print(f"  table {table['name']} ({table['rows']} rows)")
         for column in table["columns"]:
             print(
-                f"    {column['name']:20} {column['declared']:12} "
-                f"{column['affinity']}"
+                f"    {column['name']:20} {column['declared']:12} {column['affinity']}"
             )
     if store is None:
         return 0
@@ -2738,19 +3766,55 @@ def _db_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def configure_console() -> None:
+    """Set how the streams the CLI prints through handle a character.
+
+    A console keeps its own encoding, since its code page is what the person
+    at it is reading. A stream that is not a console -- a page, a file, a
+    pipe -- is written as UTF-8, so a Greek alpha or a subscript survives
+    instead of becoming a question mark, and a character nothing can encode
+    is still shown as a stand-in rather than crashing the program.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream.isatty():
+                stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main() -> int:
     # Tracing, when RESPAN_API_KEY is set, begins before any model is asked
     # anything; without the key this does nothing at all (kosika/tracing.py).
     start_tracing()
-    # A console that cannot show a character (Windows' cp1252 and a test
-    # named with a typographic dash) shows a stand-in rather than crashing.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
-        except (AttributeError, ValueError):
-            pass
+    configure_console()
     parser = build_parser()
-    args = parser.parse_args()
+    from .engines import EngineError, delegate, describe, get, take_engine
+
+    try:
+        chosen, argv = take_engine(sys.argv[1:])
+    except EngineError as exc:
+        print(f"Not run: {exc}", file=sys.stderr)
+        return 2
+    if chosen is not None and chosen != "python":
+        # `--engine go`: the command as written, run by the engine built for
+        # it, with the flag taken out so every other argument is its own.
+        try:
+            return delegate(get(chosen), argv)
+        except EngineError as exc:
+            print(f"Not run: {exc}", file=sys.stderr)
+            return 2
+    args = parser.parse_args(argv)
+    from .agent import AgentLoopError, ApprovalRecord
+    from .checker import check
+    from .development import check_project, execute_development_json
+    from .durable import ApprovalPending, ExecutionSession, inspect_journal
+
+    if args.command == "engines":
+        print("\n".join(describe()))
+        return 0
     if args.command == "start":
         from .quickstart import default_folder, installed_models, start_plan
 
@@ -3255,7 +4319,184 @@ def main() -> int:
         except (SkillCatalogError, SkillRoutingError) as exc:
             print(f"Skill selection failed safely: {exc}", file=sys.stderr)
             return 2
+    if args.command == "train":
+        from .training import (
+            TrainingConfig,
+            build_training_set,
+            evaluate_lexical,
+            evaluate_ranker,
+            split_training_set,
+        )
+        from .training import train_ranker as train_ranker_model
+
+        try:
+            config = TrainingConfig(
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                learning_rate=args.learning_rate,
+                hidden=args.hidden,
+                feature_dim=args.feature_dim,
+                negative_ratio=args.negatives,
+                seed=args.seed,
+            )
+            training = build_training_set(args.profile, config)
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"Training failed safely: {exc}", file=sys.stderr)
+            return 2
+        if args.train_command == "eval":
+            if not 0.0 <= args.min_accuracy <= 1.0:
+                print("--min-accuracy must be from 0 to 1", file=sys.stderr)
+                return 2
+            try:
+                fit, held_out = split_training_set(
+                    training,
+                    args.holdout,
+                    config.seed,
+                    args.min_train_examples,
+                )
+                model = train_ranker_model(fit, config)
+                scored = evaluate_ranker(model, held_out.pairs)
+                lexical = evaluate_lexical(held_out.pairs)
+            except (OSError, TypeError, ValueError) as exc:
+                print(f"Evaluation failed safely: {exc}", file=sys.stderr)
+                return 2
+            passed = scored["accuracy"] >= args.min_accuracy
+            written = (
+                model.save(args.output) if passed and args.output is not None else None
+            )
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "gate": "pass" if passed else "fail",
+                            "threshold": args.min_accuracy,
+                            "min_train_examples": args.min_train_examples,
+                            "held_out_examples": len(
+                                {pair.example for pair in held_out.pairs}
+                            ),
+                            "trained_examples": len(
+                                {pair.example for pair in fit.pairs}
+                            ),
+                            "training_pairs": len(fit.pairs),
+                            "held_out": scored,
+                            "lexical": lexical,
+                            "lift": scored["accuracy"] - lexical["accuracy"],
+                            "model": model.summary() if written is not None else None,
+                            "written": str(written) if written is not None else None,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0 if passed else 1
+            print(
+                f"held out {len({pair.example for pair in held_out.pairs})} of "
+                f"{len({pair.example for pair in training.pairs})} verified examples"
+            )
+            print(
+                f"trained on {len(fit.pairs)} pairs "
+                f"({fit.positives} cited, {fit.negatives} uncited)"
+            )
+            print(
+                f"held-out accuracy {scored['accuracy']:.2f} over "
+                f"{int(scored['pairs'])} pairs "
+                f"(cited {scored['mean_positive']:.2f}, "
+                f"uncited {scored['mean_negative']:.2f})"
+            )
+            print(
+                f"lexical baseline {lexical['accuracy']:.2f} on the same pairs; "
+                f"trained lift {scored['accuracy'] - lexical['accuracy']:+.2f}"
+            )
+            if passed:
+                print(f"threshold {args.min_accuracy:.2f}: gate passes")
+            else:
+                print(
+                    f"threshold {args.min_accuracy:.2f}: gate fails "
+                    f"({scored['accuracy']:.2f} is below it)"
+                )
+            if written is not None:
+                print(f"wrote {written} (sha256 {model.identity()[:16]})")
+            elif passed:
+                print("nothing written: give --output to keep this checkpoint")
+            else:
+                print("nothing written: a checkpoint that misses the gate is not kept")
+            return 0 if passed else 1
+        try:
+            model = train_ranker_model(training, config)
+            written = model.save(args.output)
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"Training failed safely: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(model.summary(), indent=2, sort_keys=True))
+            return 0
+        pairs = int(model.metrics["pairs"])
+        positives = int(model.metrics["positives"])
+        negatives = int(model.metrics["negatives"])
+        print(
+            f"trained {model.name}: {pairs} pairs "
+            f"({positives} cited, {negatives} uncited)"
+        )
+        print(
+            f"  loss {model.metrics['initial_loss']:.4f} -> {model.metrics['loss']:.4f}"
+        )
+        print(
+            f"  accuracy {model.metrics['accuracy']:.2f} "
+            f"(cited {model.metrics['mean_positive']:.2f}, "
+            f"uncited {model.metrics['mean_negative']:.2f})"
+        )
+        print(f"wrote {written} (sha256 {model.identity()[:16]})")
+        print(f'use it by adding "ranker": {json.dumps(written.name)} to the profile')
+        return 0
     if args.command == "virtual-model":
+        if args.virtual_model_command == "serve":
+            return _virtual_serve(args)
+        if args.virtual_model_command == "usage":
+            return _virtual_usage(args)
+        if args.virtual_model_command == "eval":
+            from .virtual_eval import compare as compare_evals
+            from .virtual_eval import qualify as qualify_evals
+            from .virtual_eval import record_eval, render_text
+            from .virtual_eval import score as score_virtual_model
+
+            if args.min_right is not None and not 0.0 <= args.min_right <= 1.0:
+                print("--min-right must be from 0 to 1", file=sys.stderr)
+                return 2
+            try:
+                found = score_virtual_model(args.results, profile=args.profile)
+            except (OSError, TypeError, ValueError) as exc:
+                print(f"Evaluation not read: {exc}", file=sys.stderr)
+                return 2
+            ok, reasons = qualify_evals(
+                found,
+                min_right=args.min_right,
+                require_no_wrong=not args.allow_wrong,
+            )
+            changes: list[str] = []
+            if args.record:
+                try:
+                    previous = record_eval(args.state, found)
+                except (OSError, TypeError, ValueError) as exc:
+                    print(f"Evaluation not recorded: {exc}", file=sys.stderr)
+                    return 2
+                if previous is not None:
+                    changes = compare_evals(previous, found)
+            if args.json:
+                payload = found.as_dict()
+                payload["qualified"] = ok
+                payload["reasons"] = reasons
+                payload["changes"] = changes
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print(render_text(found, reasons=[] if ok else reasons))
+                if changes:
+                    print("changed since the last evaluation of this combination:")
+                    for change in changes:
+                        print(f"  {change}")
+                if args.record:
+                    print(f"recorded in {args.state.as_posix()}")
+                print("qualifies: yes" if ok else "qualifies: no")
+            return 0 if ok or not args.gate else 1
         from .virtual_model import (
             accept_verified_example,
             read_example_candidate,
@@ -3763,6 +5004,57 @@ def main() -> int:
         print(json.dumps(told, indent=2) if args.json else story_to_text(told))
         return 0
 
+    if args.command == "selfdev":
+        return _selfdev_command(args)
+    if args.command == "init":
+        from .project import ProjectError, init_project
+
+        try:
+            started = init_project(args.folder, force=args.force)
+        except (ProjectError, OSError, ValueError) as exc:
+            print(f"Not started: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "folder": str(started.folder),
+                        "project": started.project.name,
+                        "entry": started.project.entry,
+                        "workflow": started.workflow,
+                        "written": [path.name for path in started.written],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        print(f"Started a project in {started.folder}:")
+        for path in started.written:
+            print(f"  {path.name}")
+        print(f"Entry     {started.project.entry}")
+        print(f"Workflow  {started.workflow}")
+        print(f"Next:\n  kosika build {started.folder}")
+        return 0
+
+    if args.command == "build":
+        from .build import BuildError
+        from .build import build as build_project
+        from .build import to_text as build_to_text
+        from .pack import PackError
+        from .project import ProjectError
+
+        try:
+            built = build_project(args.folder, out=args.out, key_path=args.key)
+        except (BuildError, ProjectError, PackError, OSError, ValueError) as exc:
+            print(f"Build failed safely: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(built.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(build_to_text(built))
+        return 0
+
     if args.command == "pack":
         from .pack import PackError, check_pack, unpack, write_pack
         from .pack import to_text as pack_to_text
@@ -3773,12 +5065,21 @@ def main() -> int:
                 print(f"Wrote {args.out}")
                 print(f"Program  {made['program_hash']}")
                 return 0
+            if args.pack_command == "sign":
+                from .pack import DEFAULT_KEY, sign_pack
+
+                signed = sign_pack(args.pack, args.key or DEFAULT_KEY)
+                print(f"Signed {args.pack}")
+                print(f"Signer  {signed['signature']['public_key']}")
+                return 0
             if args.pack_command == "unpack":
                 pack_report = unpack(args.pack, args.directory)
                 print(pack_to_text(pack_report))
                 print(f"\nUnpacked into {args.directory}")
                 return 0
-            pack_report = check_pack(args.pack, run_tests=args.test)
+            pack_report = check_pack(
+                args.pack, run_tests=args.test, require_signature=args.require_signature
+            )
         except (PackError, ValueError, OSError) as exc:
             print(f"Pack rejected: {exc}", file=sys.stderr)
             return 2
@@ -3865,6 +5166,23 @@ def main() -> int:
             f"{len(scene['moves'])} move(s), {scene['seconds']:g} seconds. "
             "Open it in a browser."
         )
+        return 0
+
+    if args.command == "learn-calibrate":
+        from .recall_calibration import CalibrationError, calibrate, report_to_text
+
+        try:
+            measured = calibrate(args.pairs, meaning=_meaning(args))
+        except CalibrationError as exc:
+            print(f"Calibration rejected: {exc}", file=sys.stderr)
+            return 2
+        except (RuntimeError, OSError, ValueError) as exc:
+            print(f"Calibration failed: {exc}", file=sys.stderr)
+            return 2
+        if args.format == "json":
+            print(json.dumps(measured, indent=2, sort_keys=True))
+        else:
+            print(report_to_text(measured))
         return 0
 
     if args.command == "learn-eval":
@@ -4068,6 +5386,14 @@ def main() -> int:
     except (ValueError, OSError) as exc:
         print(f"Check failed: {exc}{_failure_line(args.source)}", file=sys.stderr)
         return 2
+    if getattr(args, "require_qualified", False):
+        # Before the first model is asked: what has actually been qualified.
+        from .qualified import asked_models, qualify
+
+        verdict = qualify(args.qualifications, asked_models(program, args.model))
+        if not verdict.allowed:
+            print(f"Not run: {verdict.as_text()}", file=sys.stderr)
+            return 2
     if args.command == "check":
         print(f"OK: {args.source}")
         return 0
@@ -4223,7 +5549,9 @@ def main() -> int:
         )
         system_bindings = {
             **system_bindings,
-            **bind_memory_tools(program, getattr(args, "memory", None), meaning=_meaning(args)),
+            **bind_memory_tools(
+                program, getattr(args, "memory", None), meaning=_meaning(args)
+            ),
         }
         # What the run records about the database it was given: the tables the
         # file has, so that a replay can put a recorded statement back to
@@ -4307,7 +5635,12 @@ def main() -> int:
                     args.trace,
                     skills=load_skill_notes(Path(args.source).parent / SKILLS_FOLDER),
                     # Learning steps learn where the program remembers.
-                    lessons=Lessons(args.memory) if args.memory else None,
+                    # A granted embedding model lets a lesson answer a
+                    # question put in other words; without one the words
+                    # alone are compared.
+                    lessons=Lessons(args.memory, _meaning(args))
+                    if args.memory
+                    else None,
                     mcp_commands=mcp_commands,
                     manifest=run_manifest,
                     inputs=inputs,
@@ -4395,7 +5728,8 @@ def main() -> int:
             f"({census['lesson_ratio']:.1%}); "
             f"{census['live_model']} from live model. "
             + (
-                "by how: " + ", ".join(f"{k}={v}" for k, v in sorted(census["how"].items()))
+                "by how: "
+                + ", ".join(f"{k}={v}" for k, v in sorted(census["how"].items()))
                 if census["how"]
                 else ""
             )

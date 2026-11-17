@@ -26,6 +26,7 @@ def execute_skill(skill_id: str, input_data: dict) -> dict:
 
 def run_search(initial: str, goal: str, strategy: str = "bfs") -> dict:
     """Run a search algorithm."""
+
     class SimpleSearchProblem(SearchProblem):
         def __init__(self, initial, goal):
             self.initial = initial
@@ -77,24 +78,30 @@ def query_graph(entity_id: str, relation_type: str = "related_to") -> dict:
         graph = kb.create_graph("default")
 
         # Add some test entities
-        graph.add_entity(Entity(
-            id="ai",
-            name="Artificial Intelligence",
-            entity_type=EntityType.CONCEPT,
-            description="AI field"
-        ))
-        graph.add_entity(Entity(
-            id="python",
-            name="Python",
-            entity_type=EntityType.CONCEPT,
-            description="Programming language"
-        ))
-        graph.add_entity(Entity(
-            id="kosika",
-            name="Kosika",
-            entity_type=EntityType.CONCEPT,
-            description="AI programming language"
-        ))
+        graph.add_entity(
+            Entity(
+                id="ai",
+                name="Artificial Intelligence",
+                entity_type=EntityType.CONCEPT,
+                description="AI field",
+            )
+        )
+        graph.add_entity(
+            Entity(
+                id="python",
+                name="Python",
+                entity_type=EntityType.CONCEPT,
+                description="Programming language",
+            )
+        )
+        graph.add_entity(
+            Entity(
+                id="kosika",
+                name="Kosika",
+                entity_type=EntityType.CONCEPT,
+                description="AI programming language",
+            )
+        )
 
     try:
         entity = graph.get_entity(entity_id)
@@ -112,13 +119,15 @@ def query_graph(entity_id: str, relation_type: str = "related_to") -> dict:
             "success": True,
             "entity": entity.name,
             "related_entities": related_entities,
-            "path": path if path else []
+            "path": path if path else [],
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-def add_agent_experience(agent_id: str, context: dict, action: str, result: dict, reward: float) -> dict:
+def add_agent_experience(
+    agent_id: str, context: dict, action: str, result: dict, reward: float
+) -> dict:
     """Add experience to a learning agent."""
     try:
         from .learning import LearningAgent
@@ -133,7 +142,7 @@ def add_agent_experience(agent_id: str, context: dict, action: str, result: dict
         return {
             "success": True,
             "patterns_learned": adaptation["patterns_learned"],
-            "experience_count": len(agent.experience_buffer.experiences)
+            "experience_count": len(agent.experience_buffer.experiences),
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -147,9 +156,6 @@ def get_agent_performance(agent_id: str) -> dict:
         agent = LearningAgent(agent_id)
         summary = agent.get_performance_summary()
 
-        return {
-            "success": True,
-            "performance": summary
-        }
+        return {"success": True, "performance": summary}
     except Exception as e:
         return {"success": False, "error": str(e)}

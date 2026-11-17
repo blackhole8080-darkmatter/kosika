@@ -8,6 +8,7 @@
 //	    [--model-timeout SECONDS]    run a workflow, asking a real model
 //	kosika-native replay TRACE.jsonl  check a run's trace, running nothing
 //	kosika-native answer FOLDER [ID] [yes|no]  answer a run started with --approve-in
+//	kosika-native hash FILE.kos     the program's identity, as `kosika pack` records it
 //	kosika-native capabilities      the conformance capabilities it reads
 //	kosika-native phone ...          phones as Kosika nodes (see phone.go)
 //
@@ -63,7 +64,13 @@ func loadTo(path string, refusals *os.File) *Program {
 		fmt.Fprintf(refusals, "Check failed: %s\n", refused)
 		os.Exit(2)
 	}
-	program = FillDefaults(LowerValues(lowered))
+	// `use_model ... with evidence`, after thinking steps are model calls.
+	evidenced, refused := LowerModelEvidence(lowered)
+	if refused != "" {
+		fmt.Fprintf(refusals, "Check failed: %s\n", refused)
+		os.Exit(2)
+	}
+	program = FillDefaults(LowerValues(evidenced))
 	// A program the checker refuses is not run, and says why, with exit
 	// code 2.
 	if refused := Check(program); refused != nil {
@@ -85,6 +92,12 @@ func main() {
 		}
 		return
 	}
+	if len(args) == 2 && args[0] == "hash" {
+		// The program's identity: of its sources, so the command line and
+		// this engine print the same one, and a pack names it too.
+		fmt.Println(load(args[1]).Identity)
+		return
+	}
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
 	}
@@ -94,11 +107,20 @@ func main() {
 	if len(args) >= 2 && args[0] == "answer" {
 		os.Exit(answerCommand(args[1:]))
 	}
+	if len(args) == 2 && args[0] == "keep" {
+		os.Exit(keepCommand(args[1:]))
+	}
 	if len(args) >= 2 && args[0] == "serve" {
 		os.Exit(serveCommand(args[1:]))
 	}
 	if len(args) == 2 && args[0] == "replay" {
 		os.Exit(replayCommand(args[1]))
+	}
+	if len(args) == 2 && args[0] == "check" {
+		// Would this program run? The same verdict and the same reason as
+		// `kosika check`, without the position the reference's diagnostics
+		// engine adds.
+		os.Exit(checkCommand(args[1]))
 	}
 	if len(args) == 3 && args[0] == "readable" {
 		// What the web tool reads from a saved page, as one JSON object:
@@ -123,7 +145,7 @@ func main() {
 		asJSON, args = true, []string{args[0], args[2]}
 	}
 	if len(args) != 2 {
-		fail("usage: kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options] | kosika-native serve FILE.kos [--port N] [run options] | kosika-native capabilities")
+		fail("usage: kosika-native check FILE.kos | kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options] | kosika-native serve FILE.kos [--port N] [run options] | kosika-native hash FILE.kos | kosika-native capabilities")
 	}
 	switch args[0] {
 	case "tokens":

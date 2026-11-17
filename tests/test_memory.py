@@ -144,9 +144,13 @@ class LanguageTests(unittest.TestCase):
             ).replace("record ", "record Ask { text: Text }\nrecord ", 1)
         )
         tools = {tool.name: tool for tool in program.tools}
-        self.assertEqual(sorted(tools), ["like_people", "recall_people", "remember_people"])
+        self.assertEqual(
+            sorted(tools), ["like_people", "recall_people", "remember_people"]
+        )
         self.assertEqual(tools["like_people"].operation, "like")
-        self.assertIn("like_people", next(a for a in program.agents if a.name == "memory").can)
+        self.assertIn(
+            "like_people", next(a for a in program.agents if a.name == "memory").can
+        )
 
     def test_only_the_declared_record_can_be_remembered(self) -> None:
         wrong = SOURCE.replace(

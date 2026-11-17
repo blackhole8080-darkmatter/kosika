@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 class AgentRole(Enum):
     """Roles for agents in a team."""
+
     COORDINATOR = "coordinator"  # Orchestrates other agents
     SPECIALIST = "specialist"  # Domain expert
     REVIEWER = "reviewer"  # Reviews and validates
@@ -35,6 +36,7 @@ class AgentRole(Enum):
 
 class TaskStatus(Enum):
     """Status of tasks in a workflow."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -45,6 +47,7 @@ class TaskStatus(Enum):
 
 class WorkflowState(Enum):
     """States of a workflow."""
+
     INITIALIZED = "initialized"
     RUNNING = "running"
     PAUSED = "paused"
@@ -56,6 +59,7 @@ class WorkflowState(Enum):
 @dataclass
 class Agent:
     """An agent in the system."""
+
     id: str
     name: str
     role: AgentRole
@@ -83,6 +87,7 @@ class Agent:
 @dataclass
 class Task:
     """A task in a workflow."""
+
     id: str
     name: str
     task_type: str
@@ -106,6 +111,7 @@ class Task:
 @dataclass
 class Workflow:
     """A workflow composed of tasks."""
+
     id: str
     name: str
     description: str
@@ -125,12 +131,18 @@ class Workflow:
     def get_ready_tasks(self) -> List[Task]:
         """Get tasks that are ready to execute."""
         completed = {t.id for t in self.tasks if t.status == TaskStatus.COMPLETED}
-        return [t for t in self.tasks if t.status == TaskStatus.PENDING and t.is_ready(completed)]
+        return [
+            t
+            for t in self.tasks
+            if t.status == TaskStatus.PENDING and t.is_ready(completed)
+        ]
 
     def is_complete(self) -> bool:
         """Check if workflow is complete."""
-        return all(t.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]
-                   for t in self.tasks)
+        return all(
+            t.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]
+            for t in self.tasks
+        )
 
 
 class AgentTeam:
@@ -169,12 +181,14 @@ class AgentTeam:
 
     def communicate(self, from_agent: str, to_agent: str, message: Dict[str, Any]):
         """Send a message from one agent to another."""
-        self.communication_log.append({
-            "from": from_agent,
-            "to": to_agent,
-            "message": message,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self.communication_log.append(
+            {
+                "from": from_agent,
+                "to": to_agent,
+                "message": message,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
 
 class WorkflowOrchestrator:
@@ -229,8 +243,10 @@ class WorkflowOrchestrator:
                 continue
 
             # Assign tasks to agents (respect parallelism limit)
-            running_count = len([t for t in workflow.tasks if t.status == TaskStatus.RUNNING])
-            tasks_to_start = ready_tasks[:max_parallel_tasks - running_count]
+            running_count = len(
+                [t for t in workflow.tasks if t.status == TaskStatus.RUNNING]
+            )
+            tasks_to_start = ready_tasks[: max_parallel_tasks - running_count]
 
             for task in tasks_to_start:
                 agent = team.assign_task(task)
@@ -280,7 +296,9 @@ class WorkflowOrchestrator:
             "state": workflow.state.value,
             "completed_tasks": len(completed_tasks),
             "failed_tasks": len(failed_tasks),
-            "duration": (workflow.completed_at - workflow.started_at).total_seconds() if workflow.completed_at and workflow.started_at else 0,
+            "duration": (workflow.completed_at - workflow.started_at).total_seconds()
+            if workflow.completed_at and workflow.started_at
+            else 0,
         }
 
         self.execution_history.append(result)
@@ -302,7 +320,9 @@ class ResourceScheduler:
 
     def __init__(self):
         self.resources: Dict[str, Dict[str, Any]] = {}
-        self.allocations: Dict[str, List[str]] = defaultdict(list)  # resource -> task_ids
+        self.allocations: Dict[str, List[str]] = defaultdict(
+            list
+        )  # resource -> task_ids
 
     def add_resource(self, resource_id: str, capacity: int, resource_type: str):
         """Add a resource."""
@@ -342,15 +362,19 @@ class CommunicationBus:
 
     def __init__(self):
         self.channels: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        self.subscriptions: Dict[str, Set[str]] = defaultdict(set)  # channel -> agent_ids
+        self.subscriptions: Dict[str, Set[str]] = defaultdict(
+            set
+        )  # channel -> agent_ids
 
     def publish(self, channel: str, message: Dict[str, Any], sender: str):
         """Publish a message to a channel."""
-        self.channels[channel].append({
-            "message": message,
-            "sender": sender,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self.channels[channel].append(
+            {
+                "message": message,
+                "sender": sender,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
     def subscribe(self, agent_id: str, channel: str):
         """Subscribe an agent to a channel."""
@@ -382,23 +406,27 @@ class ErrorRecovery:
         """Handle an error with appropriate recovery strategy."""
         error_type = type(error).__name__
 
-        self.error_log.append({
-            "error_type": error_type,
-            "error_message": str(error),
-            "context": context,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self.error_log.append(
+            {
+                "error_type": error_type,
+                "error_message": str(error),
+                "context": context,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
         if error_type in self.recovery_strategies:
             try:
                 return self.recovery_strategies[error_type](error, context)
             except Exception as recovery_error:
-                self.error_log.append({
-                    "error_type": "RecoveryFailed",
-                    "error_message": str(recovery_error),
-                    "context": {"original_error": error_type},
-                    "timestamp": datetime.now().isoformat(),
-                })
+                self.error_log.append(
+                    {
+                        "error_type": "RecoveryFailed",
+                        "error_message": str(recovery_error),
+                        "context": {"original_error": error_type},
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
                 return False
 
         return False

@@ -18,7 +18,7 @@ from typing import Any
 from .ast import AgentCall, ModelCall, Program, ToolCall, WorkflowCall
 from .modules import load_program
 from .parser import parse
-from .project_map import NOTE_FILE, _lines, _step_lines, _tool_item
+from .project_map import NOTE_FILE, _exported, _lines, _step_lines, _tool_item
 
 #: Declarations the language adds for itself, which nobody wrote.
 _OWN = ("memory:", "board:", "world:", "direct:")
@@ -66,10 +66,10 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
             f"({given}) gives {workflow.output_type}, {len(workflow.steps)} step(s)",
         )
     for model in program.models:
-        if model.provider is None and not model.verb:
+        if model.provider is None and not model.verb and ("model", model.name) in lines:
             add("model", model.name, f"given {model.input}, answers {model.output}")
     for tool in program.tools:
-        if tool.source.startswith(_OWN):
+        if tool.source.startswith(_OWN) or ("tool", tool.name) not in lines:
             continue
         group, item = _tool_item(tool, None)
         add(
@@ -78,9 +78,11 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
             item["does"] + (" (asks you first)" if group == "changes" else ""),
         )
     for memory in program.memories:
-        add("memory", memory.name, f"remembers {memory.record} values")
+        if ("memory", memory.name) in lines:
+            add("memory", memory.name, f"remembers {memory.record} values")
     for board in program.boards:
-        add("board", board.name, f"agents post {board.record} messages")
+        if ("board", board.name) in lines:
+            add("board", board.name, f"agents post {board.record} messages")
     for record in program.records:
         fields = ", ".join(f"{f.name}: {f.type_name}" for f in record.fields)
         if (("record", record.name)) in lines:
@@ -92,11 +94,13 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
         if (("choice", choice.name)) in lines:
             add("choice", choice.name, alternatives)
     for swarm in program.swarms:
-        add("swarm", swarm.name, "agents: " + ", ".join(swarm.agents))
+        if ("swarm", swarm.name) in lines:
+            add("swarm", swarm.name, "agents: " + ", ".join(swarm.agents))
     return items
 
 
 def _suggestions(program: Program, source: str, folder: Path) -> list[dict[str, Any]]:
+    exported = _exported(source)
     found: list[dict[str, Any]] = []
 
     def say(rule: str, text: str, line: int | None = None) -> None:
@@ -146,7 +150,11 @@ def _suggestions(program: Program, source: str, folder: Path) -> list[dict[str, 
             # An agent asked to choose for itself may use any tool it can.
             used_tools.update(agent.can)
     for tool in program.tools:
-        if not tool.source.startswith(_OWN) and tool.name not in used_tools:
+        if (
+            not tool.source.startswith(_OWN)
+            and tool.name not in used_tools
+            and ("tool", tool.name) in lines
+        ):
             say(
                 "unused-tool",
                 f"Tool {tool.name} is declared but no step uses it.",
@@ -170,6 +178,7 @@ def _suggestions(program: Program, source: str, folder: Path) -> list[dict[str, 
             and not model.verb
             and model.name not in used_models
             and not (model.default and asks_model)
+            and ("model", model.name) in lines
         ):
             say(
                 "unused-model",

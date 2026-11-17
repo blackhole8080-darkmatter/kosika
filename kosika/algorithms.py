@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 class SearchStrategy(Enum):
     """Search strategies for planning."""
+
     BFS = "bfs"  # Breadth-first search
     DFS = "dfs"  # Depth-first search
     A_STAR = "a_star"  # A* search
@@ -35,6 +36,7 @@ class SearchStrategy(Enum):
 @dataclass
 class State:
     """A state in a search problem."""
+
     data: Any
     cost: float = 0.0
     heuristic: float = 0.0
@@ -203,11 +205,19 @@ def _a_star_search(
             successor.cost = current.cost + problem.get_cost(current, action, successor)
             successor.heuristic = problem.get_heuristic(successor)
 
-            if successor.data not in visited or successor.cost < visited[successor.data]:
+            if (
+                successor.data not in visited
+                or successor.cost < visited[successor.data]
+            ):
                 visited[successor.data] = successor.cost
                 heapq.heappush(
                     heap,
-                    (successor.total_cost, id(successor), successor, path + [(current, action)]),
+                    (
+                        successor.total_cost,
+                        id(successor),
+                        successor,
+                        path + [(current, action)],
+                    ),
                 )
                 nodes_expanded += 1
 
@@ -245,7 +255,12 @@ def _greedy_search(
                 visited.add(successor.data)
                 heapq.heappush(
                     heap,
-                    (successor.heuristic, id(successor), successor, path + [(current, action)]),
+                    (
+                        successor.heuristic,
+                        id(successor),
+                        successor,
+                        path + [(current, action)],
+                    ),
                 )
                 nodes_expanded += 1
 
@@ -283,7 +298,9 @@ def _beam_search(
 
                 if successor.data not in visited:
                     visited.add(successor.data)
-                    next_beam.append((successor.heuristic, successor, path + [(current, action)]))
+                    next_beam.append(
+                        (successor.heuristic, successor, path + [(current, action)])
+                    )
                     nodes_expanded += 1
 
         # Keep only top-k states
@@ -345,6 +362,7 @@ def hierarchical_planning(
 @dataclass
 class OptimizationConfig:
     """Configuration for optimization algorithms."""
+
     learning_rate: float = 0.01
     max_iterations: int = 1000
     tolerance: float = 1e-6
@@ -417,7 +435,11 @@ def genetic_algorithm(
         selected = []
         for _ in range(config.population_size):
             tournament = random.sample(fitness, 3)
-            winner = min(tournament, key=lambda x: x[1]) if minimize else max(tournament, key=lambda x: x[1])
+            winner = (
+                min(tournament, key=lambda x: x[1])
+                if minimize
+                else max(tournament, key=lambda x: x[1])
+            )
             selected.append(winner[0])
 
         # Crossover
@@ -430,7 +452,12 @@ def genetic_algorithm(
                 child2 = parent2[:crossover_point] + parent1[crossover_point:]
                 offspring.extend([child1, child2])
             else:
-                offspring.extend([selected[i], selected[i + 1] if i + 1 < len(selected) else selected[i]])
+                offspring.extend(
+                    [
+                        selected[i],
+                        selected[i + 1] if i + 1 < len(selected) else selected[i],
+                    ]
+                )
 
         # Mutation
         for ind in offspring:
@@ -464,7 +491,9 @@ class ConstraintSolver:
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
 
-    def _backtracking_search(self, assignment: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _backtracking_search(
+        self, assignment: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """Backtracking search."""
         if len(assignment) == len(self.variables):
             return assignment

@@ -165,6 +165,22 @@ class StepMatchTests(unittest.TestCase):
         with self.assertRaises((CheckError, ParseError)):
             checked(SOURCE.replace('case _ { say("unclear") }', "case _ { say(5) }"))
 
+    def test_a_bad_argument_in_a_later_branch_reads_like_any_step(self) -> None:
+        """A later branch is checked as that call, so the same fault in the
+        step's own place is reported in the same words."""
+
+        in_branch = error_of(
+            SOURCE.replace('case _ { say("unclear") }', "case _ { say(5) }")
+        )
+        as_a_step = error_of(
+            SOURCE.replace(
+                "  said = match kind.text {",
+                "  said = say(5)\n  unused = match kind.text {",
+            )
+        )
+        self.assertEqual(in_branch, as_a_step)
+        self.assertIn("argument 'text' expects 'Text', got 'Number'", in_branch)
+
     def test_a_program_without_a_step_match_keeps_its_hash_shape(self) -> None:
         plain = parse(
             "record A { x: Text }\nfn f(a: A) -> A {\n  return a\n}\n"

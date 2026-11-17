@@ -127,7 +127,7 @@ class OllamaRequestTests(unittest.TestCase):
                 max_output_tokens=400,
                 temperature=0.2,
                 top_p=0.9,
-                stop=["END"],
+                stop=("END",),
             )
         )
 
@@ -207,6 +207,39 @@ class OllamaRequestTests(unittest.TestCase):
         provider.complete(ModelRequest(messages=()))
         self.assertEqual(capture.body["options"], {"num_ctx": 8192})
 
+    def test_a_granted_window_is_asked_for_instead_of_a_tier(self) -> None:
+        # A machine with little memory names the window it can hold; the
+        # server is asked for exactly that, not the smallest tier above it.
+        capture = Capture(ollama_reply())
+        provider = OpenAICompatibleProvider(
+            OLLAMA_HOST,
+            "qwen2.5:7b",
+            protocol="ollama",
+            transport=capture,
+            context=2048,
+        )
+        provider.complete(
+            ModelRequest(messages=(ChatMessage(role="user", content="Reply OK"),))
+        )
+        self.assertEqual(capture.body["options"]["num_ctx"], 2048)
+
+    def test_a_request_too_large_for_the_granted_window_is_refused(self) -> None:
+        # Ollama would drop the start of the conversation, which is where the
+        # instructions are; saying so lets the step answer with its `otherwise`.
+        capture = Capture(ollama_reply())
+        provider = OpenAICompatibleProvider(
+            OLLAMA_HOST,
+            "qwen2.5:7b",
+            protocol="ollama",
+            transport=capture,
+            context=2048,
+        )
+        with self.assertRaisesRegex(ModelProviderError, "2048"):
+            provider.complete(
+                ModelRequest(messages=(ChatMessage(role="user", content="x" * 12_000),))
+            )
+        self.assertEqual(capture.url, "")
+
     def test_tools_are_offered_to_the_model(self) -> None:
         capture = Capture(ollama_reply())
         provider = OpenAICompatibleProvider(
@@ -253,7 +286,26 @@ class OllamaRequestTests(unittest.TestCase):
             OLLAMA_HOST, "qwen3:1.7b", protocol="ollama", transport=capture
         )
         with self.assertRaisesRegex(ModelProviderError, "stop must contain"):
-            provider.complete(ModelRequest(messages=(), stop=["a", "b", "c", "d", "e"]))
+            provider.complete(ModelRequest(messages=(), stop=("a", "b", "c", "d", "e")))
+
+
+class ContextCapTests(unittest.TestCase):
+    def test_a_granted_window_needs_the_native_protocol(self) -> None:
+        # The OpenAI-shaped endpoint has no way to be told a window, so a cap
+        # granted there would silently do nothing.
+        with self.assertRaisesRegex(ValueError, "ollama"):
+            OpenAICompatibleProvider(OPENAI_HOST, "m", context=2048)
+
+    def test_a_granted_window_is_a_positive_whole_number(self) -> None:
+        for bad in (0, -1, 20.5, "2048"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    OpenAICompatibleProvider(
+                        OLLAMA_HOST,
+                        "m",
+                        protocol="ollama",
+                        context=bad,  # type: ignore[arg-type]  # a bad value on purpose
+                    )
 
 
 class OllamaResponseTests(unittest.TestCase):
@@ -305,7 +357,7 @@ class OllamaResponseTests(unittest.TestCase):
         self.assertEqual(response.finish_reason, "length")
 
     def test_malformed_replies_fail_closed(self) -> None:
-        cases = (
+        cases: tuple[tuple[object, str | None], ...] = (
             ([], "must be a JSON object"),
             ({}, "did not contain a message"),
             ({"message": []}, "did not contain a message"),
@@ -327,12 +379,12 @@ class RestartingServerTests(unittest.TestCase):
 
     def setUp(self) -> None:
         answered = set(model_module._ANSWERED)
-        self.addCleanup(
-            lambda: (
-                model_module._ANSWERED.clear()
-                or model_module._ANSWERED.update(answered)
-            )
-        )
+
+        def restore() -> None:
+            model_module._ANSWERED.clear()
+            model_module._ANSWERED.update(answered)
+
+        self.addCleanup(restore)
 
     def tries(
         self, url: str, failures: list[BaseException], *, answered_before: bool = True
@@ -387,8 +439,8 @@ class RestartingServerTests(unittest.TestCase):
                 "https://models.example.com/v1/chat",
                 code,
                 "busy",
-                None,
-                io.BytesIO(b""),  # type: ignore[arg-type]
+                None,  # type: ignore[arg-type]
+                io.BytesIO(b""),
             )
 
         slept, got = self.tries(

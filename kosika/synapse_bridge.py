@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .ast import Program, program_payload
+from .ast import Program
 from .checker import check
 from .events import (
     EVENT_BRIDGE_VERSION,
@@ -24,6 +24,7 @@ from .events import (
     validate_event,
     validate_events,
 )
+from .identity import program_identity
 from .runtime import run
 from .trace_replay import replay_events
 
@@ -284,7 +285,7 @@ def _check_event(
     error: BaseException | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "program_hash": _hash(program_payload(program)),
+        "program_hash": program_identity(program),
         "workflow": workflow_name,
     }
     if error is not None:

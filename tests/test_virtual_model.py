@@ -69,6 +69,29 @@ class VirtualModelTests(unittest.TestCase):
             self.assertIn("model calls and tool calls", sent.messages[0].content)
             self.assertIn("untrusted reference data", sent.messages[0].content)
 
+    def test_a_focused_file_is_read_even_when_its_words_do_not_match(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile = self.make_profile(root)
+            (root / "docs" / "other.md").write_text(
+                "Notes about weather and colours.\n", encoding="utf-8"
+            )
+            provider = ScriptedModelProvider([ModelResponse(content="ok")])
+            specialist = VirtualModelProvider(provider, profile)
+            specialist.complete(
+                ModelRequest(
+                    messages=(ChatMessage(role="user", content="model call budgets"),),
+                    focus="docs/other.md",
+                )
+            )
+            context = provider.requests[0].messages[0].content
+            self.assertIn("[docs/other.md:1;", context)
+            self.assertLess(
+                context.index("[docs/other.md:1;"),
+                context.index("[docs/guide.md:1;"),
+                "the file the task names is read before the ranked ones",
+            )
+
     def test_only_explicit_verified_examples_with_source_evidence_load(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

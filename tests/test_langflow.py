@@ -23,7 +23,9 @@ def _lower(headers: object) -> dict[str, str]:
 class StubLangflow:
     """A tiny stand-in for Langflow's flow and auto-login endpoints."""
 
-    def __init__(self, *, answer: str = '{"text": "hi", "confidence": 1}', status: int = 200) -> None:
+    def __init__(
+        self, *, answer: str = '{"text": "hi", "confidence": 1}', status: int = 200
+    ) -> None:
         self.answer = answer
         self.status = status
         self.requests: list[tuple[str, dict[str, str], dict]] = []
@@ -42,7 +44,9 @@ class StubLangflow:
             def do_POST(self) -> None:  # noqa: N802
                 length = int(self.headers.get("Content-Length", "0"))
                 raw = self.rfile.read(length)
-                stub.requests.append((self.path, _lower(self.headers), json.loads(raw or b"{}")))
+                stub.requests.append(
+                    (self.path, _lower(self.headers), json.loads(raw or b"{}"))
+                )
                 if stub.status != 200:
                     body = b'{"detail": "flow failed"}'
                     self.send_response(stub.status)
@@ -87,7 +91,9 @@ class StubLangflow:
 
 class AnswerTextTests(unittest.TestCase):
     def test_the_chat_output_text_is_read(self) -> None:
-        payload = {"outputs": [{"outputs": [{"results": {"message": {"text": "hello"}}}]}]}
+        payload = {
+            "outputs": [{"outputs": [{"results": {"message": {"text": "hello"}}}]}]
+        }
         self.assertEqual(langflow.answer_text(payload), "hello")
 
     def test_a_plain_text_result_is_read(self) -> None:
@@ -102,7 +108,9 @@ class AnswerTextTests(unittest.TestCase):
 class RunFlowTests(unittest.TestCase):
     def test_the_prompt_goes_to_the_named_flow_with_the_key(self) -> None:
         with StubLangflow(answer='{"a": 1}') as stub:
-            answer = langflow.run_flow("ask this", "my-flow", base_url=stub.url, api_key="secret")
+            answer = langflow.run_flow(
+                "ask this", "my-flow", base_url=stub.url, api_key="secret"
+            )
         self.assertEqual(answer, '{"a": 1}')
         path, headers, body = stub.requests[-1]
         self.assertEqual(path, "/api/v1/run/my-flow")
@@ -136,7 +144,10 @@ class MainTests(unittest.TestCase):
             out, err = io.StringIO(), io.StringIO()
             with patch.object(sys, "stdin", io.StringIO("ask")):
                 with patch.dict("os.environ", {"LANGFLOW_API_KEY": "k"}):
-                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    with (
+                        contextlib.redirect_stdout(out),
+                        contextlib.redirect_stderr(err),
+                    ):
                         code = langflow.main(["my-flow", "--url", stub.url])
         self.assertEqual(code, 0)
         self.assertEqual(out.getvalue().strip(), "answered")
@@ -147,7 +158,10 @@ class MainTests(unittest.TestCase):
             out, err = io.StringIO(), io.StringIO()
             with patch.object(sys, "stdin", io.StringIO("ask")):
                 with patch.dict("os.environ", {"LANGFLOW_API_KEY": "k"}):
-                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    with (
+                        contextlib.redirect_stdout(out),
+                        contextlib.redirect_stderr(err),
+                    ):
                         code = langflow.main(["my-flow", "--url", stub.url])
         self.assertEqual(code, 1)
         self.assertEqual(out.getvalue(), "")

@@ -462,7 +462,14 @@ func (p *Parser) parseStepCall() *StepCall {
 	if p.accept("use_model") {
 		name := p.identifier()
 		p.expect("(")
-		return &StepCall{Kind: "model", Name: name, Args: p.parseArguments(), Line: token.Line}
+		call := &StepCall{Kind: "model", Name: name, Args: p.parseArguments(), Line: token.Line}
+		// `with evidence`: the answer must quote the text this step passed.
+		// LowerModelEvidence makes it a call of a model that asks for it.
+		if p.accept("with") {
+			p.expect("evidence")
+			call.Evidence = true
+		}
+		return call
 	}
 	if p.accept("call") {
 		name := p.identifier()

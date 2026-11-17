@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import json
 import socket
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -71,6 +72,18 @@ def _server_restarting(exc: BaseException, url: str) -> bool:
     )
 
 
+def _think_from_env() -> bool | None:
+    """KOSIKA_MODEL_THINK: on or off asks a reasoning model for a trace or
+    for none; unset leaves the server's default. Read by both engines."""
+
+    value = os.environ.get("KOSIKA_MODEL_THINK", "").strip().lower()
+    if value in ("on", "true", "1"):
+        return True
+    if value in ("off", "false", "0"):
+        return False
+    return None
+
+
 class ModelProviderError(RuntimeError):
     """Raised when a model provider cannot produce a valid response."""
 
@@ -121,6 +134,13 @@ class ModelRequest:
     # parsed and checked by Kosika either way. Small models often ignore a
     # written instruction to answer in JSON, and obey this.
     json_object: bool = False
+    # The JSON Schema of the record asked for. Ollama is given it as the
+    # answer's format, so even a small model on a laptop's CPU cannot leave a
+    # field out; other providers are told it in words, as before.
+    schema: Any = None
+    # A file the answer is about, so a grounded profile reads it first rather
+    # than ranking it out. Providers that are not grounded ignore it.
+    focus: str | None = None
 
 
 @dataclass(frozen=True)
@@ -165,8 +185,12 @@ Transport = Callable[[urllib.request.Request, float], bytes]
 #: ``/chat/completions`` shape most gateways expose. ``ollama`` is Ollama's native
 #: ``/api/chat`` shape, which is the only one of the two that honours ``think``.
 MODEL_PROTOCOLS = ("openai", "ollama")
-#: How long Ollama is asked to keep a model loaded after it answers.
-OLLAMA_KEEP_ALIVE = "30m"
+#: How long Ollama is asked to keep a model loaded after it answers. A model
+#: that has been unloaded reads a whole profile's sources again before it can
+#: answer: measured here, 233 s on a cold cache against 49 s warm. A gateway
+#: serving other agents therefore wants hours, so KOSIKA_OLLAMA_KEEP_ALIVE sets
+#: it without editing the code.
+OLLAMA_KEEP_ALIVE = os.environ.get("KOSIKA_OLLAMA_KEEP_ALIVE", "30m").strip() or "30m"
 #: The context windows Ollama is asked for, smallest first. Ollama gives a
 #: model 4096 tokens unless told otherwise, and quietly drops the start of a
 #: conversation that does not fit, which is where an agent's instructions
@@ -175,10 +199,9 @@ OLLAMA_KEEP_ALIVE = "30m"
 OLLAMA_CONTEXTS = (8192, 16384, 32768)
 
 
-def ollama_context(request: ModelRequest) -> int:
-    """The context window a request to Ollama needs: its text, at about three
-    characters a token, its answer and a margin, rounded up to a size in
-    OLLAMA_CONTEXTS."""
+def ollama_tokens(request: ModelRequest) -> int:
+    """About how many tokens a request and its answer need: its text at
+    three characters a token, its answer, and a margin."""
 
     text = 0
     for message in request.messages:
@@ -188,7 +211,15 @@ def ollama_context(request: ModelRequest) -> int:
     for tool in request.tools:
         text += len(tool.name) + len(tool.description)
         text += len(json.dumps(tool.input_schema, sort_keys=True))
-    wanted = text // 3 + (request.max_output_tokens or 1024) + 512
+    return text // 3 + (request.max_output_tokens or 1024) + 512
+
+
+def ollama_context(request: ModelRequest) -> int:
+    """The context window a request to Ollama needs: its text, at about three
+    characters a token, its answer and a margin, rounded up to a size in
+    OLLAMA_CONTEXTS."""
+
+    wanted = ollama_tokens(request)
     return next(
         (size for size in OLLAMA_CONTEXTS if size >= wanted), OLLAMA_CONTEXTS[-1]
     )
@@ -219,6 +250,7 @@ class OpenAICompatibleProvider:
         transport: Transport | None = None,
         think: bool | None = None,
         protocol: str = "openai",
+        context: int | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("Model base URL cannot be empty")
@@ -232,6 +264,17 @@ class OpenAICompatibleProvider:
             raise ValueError(
                 f"Model protocol must be one of {', '.join(MODEL_PROTOCOLS)}"
             )
+        if context is not None:
+            if type(context) is not int or context <= 0:
+                raise ValueError(
+                    "Model context must be a positive whole number of tokens"
+                )
+            if protocol != "ollama":
+                raise ValueError(
+                    "Model context needs the ollama protocol: an OpenAI-shaped "
+                    "endpoint is given no way to be told a context window"
+                )
+        self.context = context
         self.protocol = protocol
         trimmed = base_url.rstrip("/")
         if protocol == "ollama":
@@ -259,7 +302,7 @@ class OpenAICompatibleProvider:
         #: consumes the output budget before any answer is produced. Set this
         #: to False when the caller needs a direct answer, for example a
         #: machine-readable patch. Left as None the server default applies.
-        self.think = think
+        self.think = think if think is not None else _think_from_env()
         #: Set by a host that wants to show an answer while it is written.
         #: When set, the reply is asked for as a stream and each piece of
         #: text is handed over as it arrives. The response returned at the
@@ -487,7 +530,19 @@ class OpenAICompatibleProvider:
             ):
                 raise ModelProviderError("max_output_tokens must be a positive integer")
             options["num_predict"] = request.max_output_tokens
-        options["num_ctx"] = min(ollama_context(request), self._context_limit)
+        if self.context is None:
+            options["num_ctx"] = min(ollama_context(request), self._context_limit)
+        else:
+            # A window named by the person running it is asked for exactly:
+            # no tiers, and no shrinking after a refusal to hold the prompt.
+            needed = ollama_tokens(request)
+            if needed > self.context:
+                raise ModelProviderError(
+                    f"the model needs about {needed} tokens, more than the "
+                    f"{self.context} it was given; run it with a larger "
+                    "--model-context"
+                )
+            options["num_ctx"] = self.context
 
         payload: dict[str, Any] = {
             "model": request.model or self.model,
@@ -506,7 +561,7 @@ class OpenAICompatibleProvider:
             # the server says so with an HTTP error.
             payload["tools"] = [self._tool_to_dict(tool) for tool in request.tools]
         if request.json_object:
-            payload["format"] = "json"
+            payload["format"] = request.schema if request.schema is not None else "json"
         if self.think is not None:
             payload["think"] = self.think
         while True:
@@ -583,6 +638,13 @@ class OpenAICompatibleProvider:
                 pause = busy.pop(0)
                 said = exc.headers.get("Retry-After") if exc.headers else None
                 if said and said.strip().isdigit():
+                    # A service that asks for more than two minutes is not
+                    # busy for the moment: an allowance for the day is used
+                    # up. Waiting would hold the run for minutes and fail
+                    # anyway, so it is said at once and the caller can ask
+                    # another model.
+                    if int(said.strip()) > 120:
+                        raise
                     pause = min(int(said.strip()), 120)
                 exc.close()
                 time.sleep(pause)

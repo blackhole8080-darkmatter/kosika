@@ -30,8 +30,16 @@ def note(**fields: str) -> dict[str, str]:
 
 class NotifyTests(unittest.TestCase):
     def test_only_one_plain_https_address_is_taken(self) -> None:
-        self.assertEqual(clean_address(" https://ntfy.sh/a-topic "), "https://ntfy.sh/a-topic")
-        for bad in ("http://ntfy.sh/a", "https://ntfy.sh/", "https://u:p@ntfy.sh/a", "https://ntfy.sh/a?x=1", "ntfy.sh/a"):
+        self.assertEqual(
+            clean_address(" https://ntfy.sh/a-topic "), "https://ntfy.sh/a-topic"
+        )
+        for bad in (
+            "http://ntfy.sh/a",
+            "https://ntfy.sh/",
+            "https://u:p@ntfy.sh/a",
+            "https://ntfy.sh/a?x=1",
+            "ntfy.sh/a",
+        ):
             with self.subTest(bad), self.assertRaises(NotifyError):
                 clean_address(bad)
 
@@ -98,7 +106,10 @@ class NotifyTests(unittest.TestCase):
     def test_the_tool_is_bound_only_when_an_address_is_named(self) -> None:
         program = parse(PROGRAM)
         self.assertNotIn("tell_me", bind_system_tools(program, folder=None))
-        self.assertIn("tell_me", bind_system_tools(program, folder=None, notify="https://ntfy.sh/mine"))
+        self.assertIn(
+            "tell_me",
+            bind_system_tools(program, folder=None, notify="https://ntfy.sh/mine"),
+        )
         with self.assertRaises(SystemToolError):
             bind_system_tools(program, folder=None, notify="http://ntfy.sh/mine")
 

@@ -82,13 +82,44 @@ def _lines(source: str) -> dict[tuple[str, str], int]:
     return found
 
 
+#: Words that start a line of a workflow's body but name no step.
+_NOT_A_STEP = frozenset(
+    {
+        "let",
+        "var",
+        "if",
+        "case",
+        "else",
+        "return",
+        "require",
+        "budget",
+        "parallel",
+        "for",
+        "match",
+        "call",
+        "expect",
+        "while",
+    }
+)
+
+
+def _exported(source: str) -> set[str]:
+    """The names a program offers to other files, from `export [...]`."""
+
+    found: set[str] = set()
+    for block in re.findall(r"export\s*\[([^\]]*)\]", source):
+        found.update(name.strip() for name in block.split(",") if name.strip())
+    return found
+
+
 def _step_lines(source: str, workflow: str) -> dict[str, int]:
     """Where each step of a workflow is written: name -> line."""
 
     found: dict[str, int] = {}
     inside = False
     start = re.compile(rf"^\s*workflow\s+{re.escape(workflow)}\b")
-    step = re.compile(r"^\s*([A-Za-z_]\w*)\s*=")
+    # A step may be given a type (`prev: Book = ...`), which is still its line.
+    step = re.compile(r"^\s*([A-Za-z_]\w*)\s*(?::\s*[^=\n]+?)?\s*=")
     for number, line in enumerate(source.splitlines(), 1):
         if start.match(line):
             inside = True
@@ -97,7 +128,7 @@ def _step_lines(source: str, workflow: str) -> dict[str, int]:
             if line.startswith("}"):
                 break
             match = step.match(line)
-            if match:
+            if match and match.group(1) not in _NOT_A_STEP:
                 found.setdefault(match.group(1), number)
     return found
 
@@ -257,6 +288,7 @@ def beginner_map(
             continue
         group, item = _tool_item(tool, lines.get(("tool", tool.name)))
         groups[group].append(item)
+
     def answers(model: ModelDecl) -> str:
         choice = next((c for c in program.choices if c.name == model.output), None)
         if choice is None:
@@ -294,7 +326,7 @@ def beginner_map(
     steps: list[dict[str, Any]] = []
     given: list[dict[str, Any]] = []
     gives: dict[str, Any] = {}
-    if entry is not None:
+    if entry is not None and ("workflow", entry.name) in lines:
         at = _step_lines(source, "main")
         steps = [_step(program, step, at.get(step.name)) for step in entry.steps]
         given = [

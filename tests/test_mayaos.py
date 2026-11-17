@@ -34,19 +34,34 @@ class LinuxTests(unittest.TestCase):
             return 0, ANSWER, ""
 
         found = wsl.status("Ubuntu", runner)
-        self.assertEqual(seen, [["wsl.exe", "-d", "Ubuntu", "--exec", "sh", "-c", wsl.STATUS_SCRIPT]])
+        self.assertEqual(
+            seen, [["wsl.exe", "-d", "Ubuntu", "--exec", "sh", "-c", wsl.STATUS_SCRIPT]]
+        )
         self.assertEqual(found["memory"], "629 of 7575 MB used")
         self.assertEqual(found["upgrades"], "149")
         self.assertEqual(found["top"], ["systemd 20.0%", "python3 3.1%"])
 
     def test_a_missing_line_reads_unknown_and_a_failure_is_said(self) -> None:
-        self.assertEqual(wsl.status("Ubuntu", lambda c, t: (0, "kernel=Linux\n", ""))["disk"], "unknown")
+        self.assertEqual(
+            wsl.status("Ubuntu", lambda c, t: (0, "kernel=Linux\n", ""))["disk"],
+            "unknown",
+        )
         with self.assertRaises(wsl.WslError):
-            wsl.status("Nowhere", lambda c, t: (1, "", "There is no distribution with the supplied name."))
+            wsl.status(
+                "Nowhere",
+                lambda c, t: (
+                    1,
+                    "",
+                    "There is no distribution with the supplied name.",
+                ),
+            )
 
     def test_wsl_names_come_back_from_its_utf16_listing(self) -> None:
         listing = "Ubuntu\r\nDebian\r\n".encode("utf-16-le")
-        self.assertEqual(wsl.distributions(lambda c, t: (0, wsl._text(listing), "")), ["Ubuntu", "Debian"])
+        self.assertEqual(
+            wsl.distributions(lambda c, t: (0, wsl._text(listing), "")),
+            ["Ubuntu", "Debian"],
+        )
 
 
 class MayaTests(unittest.TestCase):
@@ -57,7 +72,9 @@ class MayaTests(unittest.TestCase):
         self.maya = mayaos.Maya(linux=["Ubuntu"], settings=self.root / "mayaos.json")
 
     def test_only_a_named_distribution_is_read(self) -> None:
-        with mock.patch.object(wsl, "status", return_value={"distro": "Ubuntu"}) as status:
+        with mock.patch.object(
+            wsl, "status", return_value={"distro": "Ubuntu"}
+        ) as status:
             self.assertEqual(self.maya.linux_status("Ubuntu"), {"distro": "Ubuntu"})
             with self.assertRaises(mayaos.MayaError):
                 self.maya.linux_status("Debian")
@@ -71,7 +88,9 @@ class MayaTests(unittest.TestCase):
         ):
             self.maya.name_linux({"name": "Debian", "on": True})
             self.assertEqual(self.maya.named_linux(), ["Ubuntu", "Debian"])
-            self.assertEqual(json.loads((self.root / "mayaos.json").read_text())["linux"], ["Debian"])
+            self.assertEqual(
+                json.loads((self.root / "mayaos.json").read_text())["linux"], ["Debian"]
+            )
             self.maya.name_linux({"name": "Debian", "on": False})
             self.assertEqual(self.maya.named_linux(), ["Ubuntu"])
             with self.assertRaises(mayaos.MayaError):
@@ -98,16 +117,42 @@ class MindTests(unittest.TestCase):
     """Maya's mind is mayaos/maya.kos; the app only runs it."""
 
     def test_readings_are_shares_and_counts(self) -> None:
-        seen = mayaos.reading("Ubuntu", "linux", "629 of 7575 MB used", "4.2G of 1007G used (1%) on /", "149", True)
-        self.assertEqual(seen, {"system": "Ubuntu", "kind": "linux", "memory": 0.083, "disk": 0.0042, "updates": 149, "awake": True})
-        self.assertEqual(mayaos.reading("Debian", "linux", None, "unknown", "unknown", False)["disk"], -1)
+        seen = mayaos.reading(
+            "Ubuntu",
+            "linux",
+            "629 of 7575 MB used",
+            "4.2G of 1007G used (1%) on /",
+            "149",
+            True,
+        )
+        self.assertEqual(
+            seen,
+            {
+                "system": "Ubuntu",
+                "kind": "linux",
+                "memory": 0.083,
+                "disk": 0.0042,
+                "updates": 149,
+                "awake": True,
+            },
+        )
+        self.assertEqual(
+            mayaos.reading("Debian", "linux", None, "unknown", "unknown", False)[
+                "disk"
+            ],
+            -1,
+        )
 
     def test_maya_is_run_as_a_kosika_program_with_only_the_services_grant(self) -> None:
         seen: list[list[str]] = []
 
         def runner(command: list[str]) -> object:
             seen.append(command)
-            return mock.Mock(returncode=0, stdout="{'title': 'Hi', 'text': 'x', 'notices': [], 'suggest': [], 'open': ''}\nTrace: t", stderr="")
+            return mock.Mock(
+                returncode=0,
+                stdout="{'title': 'Hi', 'text': 'x', 'notices': [], 'suggest': [], 'open': ''}\nTrace: t",
+                stderr="",
+            )
 
         said = mayaos.think({"text": "home"}, Path("aios.services"), runner)
         self.assertEqual(said["title"], "Hi")
@@ -118,8 +163,17 @@ class MindTests(unittest.TestCase):
         self.assertNotIn("--allow-site", command)
 
     def test_what_maya_hands_over_is_answered_by_kosi(self) -> None:
-        maya = mayaos.Maya(linux=[], settings=Path(tempfile.gettempdir()) / "no-such-maya.json")
-        handed = {"title": "Kosi", "text": "I asked Kosi.", "notices": [], "suggest": [], "open": "", "hand": "what is 2 plus 2"}
+        maya = mayaos.Maya(
+            linux=[], settings=Path(tempfile.gettempdir()) / "no-such-maya.json"
+        )
+        handed = {
+            "title": "Kosi",
+            "text": "I asked Kosi.",
+            "notices": [],
+            "suggest": [],
+            "open": "",
+            "hand": "what is 2 plus 2",
+        }
         asked: list[str] = []
 
         def kosi(text: str) -> object:
@@ -133,12 +187,18 @@ class MindTests(unittest.TestCase):
         ):
             said = maya.ask({"text": "what is 2 plus 2"}, kosi=kosi)
         self.assertEqual(asked, ["what is 2 plus 2"])
-        self.assertEqual((said["text"], said["by"], said["suggest"]), ("4", "kosi", ["what time is it"]))
+        self.assertEqual(
+            (said["text"], said["by"], said["suggest"]),
+            ("4", "kosi", ["what time is it"]),
+        )
 
     def test_the_mind_passes_its_own_tests(self) -> None:
         from kosika.cli import main
 
-        with mock.patch("sys.argv", ["kosika", "test", str(mayaos.MIND)]), mock.patch("sys.stdout"):
+        with (
+            mock.patch("sys.argv", ["kosika", "test", str(mayaos.MIND)]),
+            mock.patch("sys.stdout"),
+        ):
             self.assertEqual(main(), 0)
 
 
@@ -148,8 +208,13 @@ class FindingEachOtherTests(unittest.TestCase):
             listening.bind(("127.0.0.1", 0))
             listening.listen()
             port = listening.getsockname()[1]
-            desktop_app.announce("studio", f"http://127.0.0.1:{port}/?token=t", Path(folder))
-            self.assertEqual(desktop_app.reachable("studio", Path(folder)), f"http://127.0.0.1:{port}/?token=t")
+            desktop_app.announce(
+                "studio", f"http://127.0.0.1:{port}/?token=t", Path(folder)
+            )
+            self.assertEqual(
+                desktop_app.reachable("studio", Path(folder)),
+                f"http://127.0.0.1:{port}/?token=t",
+            )
             self.assertEqual(desktop_app.reachable("mayaos", Path(folder)), "")
         with tempfile.TemporaryDirectory() as folder:
             desktop_app.announce("studio", "http://127.0.0.1:1/?token=t", Path(folder))
@@ -158,7 +223,9 @@ class FindingEachOtherTests(unittest.TestCase):
     def test_studio_opens_mayaos(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             app = App(Path(folder))
-            with mock.patch.object(mayaos, "open_app", return_value="started") as opened:
+            with mock.patch.object(
+                mayaos, "open_app", return_value="started"
+            ) as opened:
                 self.assertEqual(app.open_mayaos(), {"did": "started"})
             opened.assert_called_once_with("mayaos")
 

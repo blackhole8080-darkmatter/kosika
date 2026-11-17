@@ -244,11 +244,18 @@ def lower_memory(program: Program) -> Program:
             add_record(TEXT_RECORD, (Field("text", "Text"),))
             add_record(
                 match_record(memory.name),
-                (Field("key", "Text"), Field("value", memory.record), Field("score", "Number")),
+                (
+                    Field("key", "Text"),
+                    Field("value", memory.record),
+                    Field("score", "Number"),
+                ),
             )
             add_record(
                 like_record(memory.name),
-                (Field("matches", match_record(memory.name) + "[]"), Field("by", "Text")),
+                (
+                    Field("matches", match_record(memory.name) + "[]"),
+                    Field("by", "Text"),
+                ),
             )
             tools.append(
                 ToolDecl(
@@ -330,7 +337,11 @@ class MemoryStore:
             by = "words"
         return {
             "matches": [
-                {"key": entries[at][0], "value": entries[at][1], "score": round(score, 4)}
+                {
+                    "key": entries[at][0],
+                    "value": entries[at][1],
+                    "score": round(score, 4),
+                }
                 for score, at in ranked[:MAX_LIKE]
             ],
             "by": by,

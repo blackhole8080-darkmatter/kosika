@@ -198,8 +198,8 @@ class ProjectIndexTests(unittest.TestCase):
         page = studio.PAGE.read_text(encoding="utf-8")
         label = re.search(r"const KIND_LABEL = \{(.*?)\};\n", page)
         order = re.search(r"const KIND_ORDER = \[(.*?)\];\n", page)
-        self.assertIsNotNone(label)
-        self.assertIsNotNone(order)
+        assert label is not None
+        assert order is not None
         labels = set(re.findall(r"(\w+):", label.group(1)))
         ordered = set(re.findall(r'"(\w+)"', order.group(1)))
         # Every kind the index emits, including the ones only choice

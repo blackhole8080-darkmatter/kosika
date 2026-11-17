@@ -1,0 +1,134 @@
+"""No change to the AST may move a program's hash.
+
+`plan_identity` and `plan_hash` are folded into recorded approvals
+(`kosika/approval_ledger.py`), and a durable session raises `plan_mismatch`
+when the hash it bound no longer matches (`kosika/durable.py:135`). So a
+program whose payload shifts silently invalidates every approval made against
+it. `_ABSENT_DEFAULTS` (`kosika/ast.py`) exists to stop that happening when a
+field is added; this test is the enforcement.
+
+Both canonicalizations are hashed, because they differ and neither may be
+changed: `plan_identity` uses `ensure_ascii=False` with default separators
+(`kosika/virtual_model.py:169`), and `plan_hash` uses `separators=(",", ":")`
+(`kosika/agent.py:97`).
+
+Regenerate only with `python tests/test_hash_stability.py --write`, and only in
+a change that means to move hashes.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from kosika.ast import program_payload
+from kosika.modules import load_program
+
+ROOT = Path(__file__).resolve().parents[1]
+BASELINE = Path(__file__).resolve().parent / "hash_baseline.json"
+#: The folders scanned for programs. A folder that does not exist yields
+#: nothing, so the list can name a path before it is created.
+CORPUS = ("conformance", "examples", "kosika/std")
+
+
+def tracked_paths(root: Path = ROOT) -> set[str] | None:
+    """The repo-relative programs git tracks, or None where git cannot say.
+
+    The baseline is committed, so it can only speak for programs a clone has.
+    An untracked draft in one working tree is nobody else's program, and its
+    hash may legitimately move between edits that no commit records.
+    """
+
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", *CORPUS],
+            capture_output=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return {name for name in listed.stdout.decode("utf-8").split("\0") if name}
+
+
+def corpus_hashes(root: Path = ROOT) -> dict[str, list[str]]:
+    """Each loadable tracked program's two payload digests, by repo path.
+
+    A program that does not load is skipped: the suite holds refused programs
+    on purpose, and their refusal text is compared elsewhere
+    (`tests/test_conformance.py:199`). Files git does not track are skipped
+    too, for the reason `tracked_paths` gives.
+    """
+
+    tracked = tracked_paths(root)
+    hashes: dict[str, list[str]] = {}
+    for folder in CORPUS:
+        for path in sorted((root / folder).glob("**/*.kos")):
+            name = path.relative_to(root).as_posix()
+            if tracked is not None and name not in tracked:
+                continue
+            try:
+                program = load_program(path)
+            except (ValueError, TypeError):
+                continue
+            payload = program_payload(program)
+            identity = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            hashes[name] = [
+                hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+                hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            ]
+    return dict(sorted(hashes.items()))
+
+
+def test_program_hashes_have_not_moved() -> None:
+    recorded = json.loads(BASELINE.read_text(encoding="utf-8"))
+    current = corpus_hashes()
+    moved = sorted(
+        name
+        for name in set(recorded) | set(current)
+        if recorded.get(name) != current.get(name)
+    )
+    assert not moved, (
+        f"{len(moved)} program(s) changed payload hash, first: {moved[:5]}. "
+        "Adding an AST field must not change an existing program's hash: give "
+        "it the value a program without the feature has, and register that "
+        "value in _ABSENT_DEFAULTS (kosika/ast.py). Regenerate the baseline "
+        "only if this change means to invalidate recorded approvals."
+    )
+
+
+if __name__ == "__main__":
+    if "--write" in sys.argv:
+        hashes = corpus_hashes()
+        # Floor: the corpus holds 257 .kos files under CORPUS, 165 of which
+        # load. A plausible-looking count is the only proof the loader ran;
+        # without it a wholesale load_program failure would quietly write an
+        # empty baseline. A low N means the loader is failing, not that the
+        # corpus shrank.
+        if len(hashes) < 100:
+            raise SystemExit(
+                f"only {len(hashes)} programs loaded (measured: 165 loadable "
+                "of 257 .kos files). The loader is failing wholesale, not "
+                "the corpus being small. Refusing to write the baseline."
+            )
+        BASELINE.write_text(
+            json.dumps(hashes, indent=1, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        print(f"wrote {len(hashes)} program hashes to {BASELINE.name}")
+        raise SystemExit(0)
+
+    # Bare run: verify against the committed baseline, write nothing. Reuse
+    # the pytest comparison so the two paths cannot disagree.
+    recorded = json.loads(BASELINE.read_text(encoding="utf-8"))
+    try:
+        test_program_hashes_have_not_moved()
+    except AssertionError as exc:
+        print(exc)
+        raise SystemExit(1)
+    print(f"guard: {len(recorded)} program hashes match")
+    raise SystemExit(0)

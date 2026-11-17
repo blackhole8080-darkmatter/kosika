@@ -1,0 +1,6 @@
+PASS  a quote from the question passes
+PASS  case and extra spacing are forgiven
+PASS  a paraphrase is not a quote
+PASS  a quote that is not in the question refuses the answer
+PASS  an answer with no quote at all is refused
+5 passed, 0 failed

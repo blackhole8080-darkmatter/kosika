@@ -52,6 +52,9 @@ type modelRequest struct {
 	Model      string
 	Decl       *ModelDecl
 	JSONObject bool
+	// Schema is the record asked for. Ollama is given it as the answer's
+	// format, so even a small model on a laptop cannot leave out a field.
+	Schema Value
 }
 
 type modelResponse struct {
@@ -94,6 +97,9 @@ type httpProvider struct {
 	endpoint, model, protocol, apiKey string
 	timeout                           time.Duration
 	maxOutput                         int
+	// window is the context, in tokens, that the person running the program
+	// named; 0 when nobody did, and then the smallest tier that fits is used.
+	window int
 }
 
 // stopProvider ends the run: a model server that cannot answer is not a
@@ -104,7 +110,19 @@ func stopProvider(format string, args ...any) {
 
 const defaultLocalModelURL = "http://localhost:11434/v1"
 
-func newHTTPProvider(url, model, protocol string, seconds float64, maxOutput int) *httpProvider {
+// modelThink reads KOSIKA_MODEL_THINK: on or off, or unset for the server's
+// own default, as the reference engine reads it.
+func modelThink() (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("KOSIKA_MODEL_THINK"))) {
+	case "on", "true", "1":
+		return true, true
+	case "off", "false", "0":
+		return false, true
+	}
+	return false, false
+}
+
+func newHTTPProvider(url, model, protocol string, seconds float64, maxOutput, window int) *httpProvider {
 	trimmed := strings.TrimRight(url, "/")
 	endpoint := trimmed + "/chat/completions"
 	if strings.HasSuffix(trimmed, "/chat/completions") {
@@ -116,7 +134,7 @@ func newHTTPProvider(url, model, protocol string, seconds float64, maxOutput int
 			endpoint = trimmed
 		}
 	}
-	return &httpProvider{endpoint, model, protocol, os.Getenv("KOSIKA_MODEL_API_KEY"), time.Duration(seconds * float64(time.Second)), maxOutput}
+	return &httpProvider{endpoint, model, protocol, os.Getenv("KOSIKA_MODEL_API_KEY"), time.Duration(seconds * float64(time.Second)), maxOutput, window}
 }
 
 func (h *httpProvider) complete(request *modelRequest) *modelResponse {
@@ -142,6 +160,12 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		options = map[string]any{}
 		payload["stream"] = false
 		payload["keep_alive"] = "30m"
+		// KOSIKA_MODEL_THINK=off asks a reasoning model (qwen3, say) for its
+		// answer without a reasoning trace first: on a laptop's CPU the trace
+		// takes minutes. on asks for one; unset leaves the server's default.
+		if think, ok := modelThink(); ok {
+			payload["think"] = think
+		}
 	}
 	if decl := request.Decl; decl != nil {
 		if decl.Temperature != nil {
@@ -162,7 +186,18 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	}
 	if h.protocol == "ollama" {
 		options["num_predict"] = capped
-		options["num_ctx"] = ollamaContext(request, capped)
+		if h.window > 0 {
+			// A window named by the person running it is asked for exactly:
+			// no tiers, and a prompt it cannot hold is refused rather than
+			// cut short by the server.
+			needed := ollamaTokens(request, capped)
+			if needed > h.window {
+				stopProvider("the model needs about %d tokens, more than the %d it was given; run it with a larger --model-context", needed, h.window)
+			}
+			options["num_ctx"] = h.window
+		} else {
+			options["num_ctx"] = ollamaContext(request, capped)
+		}
 	} else {
 		options["max_tokens"] = capped
 	}
@@ -172,6 +207,9 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	if request.JSONObject && (h.protocol == "ollama" || len(request.Tools) == 0) {
 		if h.protocol == "ollama" {
 			payload["format"] = "json"
+			if request.Schema != nil {
+				payload["format"] = plainJSON(request.Schema)
+			}
 		} else {
 			payload["response_format"] = map[string]any{"type": "json_object"}
 		}
@@ -214,9 +252,21 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		pause := busy[0]
 		busy = busy[1:]
 		if said, err := strconv.Atoi(strings.TrimSpace(answer.Header.Get("Retry-After"))); err == nil && said >= 0 {
+			// More than two minutes is not busy for the moment: a day's
+			// allowance is used up, so it is said at once, as the
+			// reference engine does, for the caller to ask another model.
+			if said > 120 {
+				break
+			}
 			pause = time.Duration(min(said, 120)) * time.Second
 		}
 		time.Sleep(pause)
+	}
+	if answer.StatusCode == 400 && bytes.Contains(raw, []byte("json_validate_failed")) {
+		// The service was reached and the model answered, but its answer
+		// was not the JSON asked for: a bad answer, which the step's
+		// `retry` and `otherwise` handle, not a broken service.
+		runFail("The model's answer was not valid JSON (the service said: json_validate_failed)")
 	}
 	if answer.StatusCode >= 400 {
 		stopProvider("Model provider returned HTTP %d: %s", answer.StatusCode, raw)
@@ -599,9 +649,8 @@ func (message chatMessage) record() *Record {
 // are.
 var ollamaContexts = []int{8192, 16384, 32768}
 
-// ollamaContext is the smallest window that holds a request, at about three
-// characters a token, its answer and a margin.
-func ollamaContext(request *modelRequest, answer int) int {
+// ollamaTokens is about how many tokens a request and its answer need.
+func ollamaTokens(request *modelRequest, answer int) int {
 	text := 0
 	for _, message := range request.Messages {
 		text += len([]rune(message.Content))
@@ -616,7 +665,13 @@ func ollamaContext(request *modelRequest, answer int) int {
 	for _, tool := range request.Tools {
 		text += len([]rune(tool.Name)) + len([]rune(tool.Description)) + len([]rune(pyJSON(tool.Schema, true)))
 	}
-	wanted := text/3 + answer + 512
+	return text/3 + answer + 512
+}
+
+// ollamaContext is the smallest window that holds a request, at about three
+// characters a token, its answer and a margin.
+func ollamaContext(request *modelRequest, answer int) int {
+	wanted := ollamaTokens(request, answer)
 	for _, size := range ollamaContexts {
 		if size >= wanted {
 			return size

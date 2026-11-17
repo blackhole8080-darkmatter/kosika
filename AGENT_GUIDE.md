@@ -165,6 +165,61 @@ workflow main(question: Question) -> Answer {
 }
 ```
 
+A model step can be held to the same quote rule:
+
+```kosika
+workflow main(question: Question) -> Answer {
+  answer = use_model assistant(question.text) with evidence
+}
+```
+
+The model must then answer with its record plus `evidence`: a list of short
+exact quotes from the text the step passed. A quote that is not in that text is
+refused like any broken answer, so `retry N` can ask again and `otherwise` can
+recover. A model that answers with a choice cannot give evidence. As with a
+thinking step, this proves the words were in the input; it does not prove they
+support the conclusion.
+
+## Holding a run to a qualification
+
+`kosika run --require-qualified` asks nothing of a model the evaluation
+ledger has never qualified. It reads the models the run will actually ask
+(following a generated model to the one it was made from, and honouring
+`--model`), looks each one up in `.kosika/virtual-models.json` — or the file
+`--qualifications` names — and refuses before the first call when a model has
+no recorded evaluation, when its evaluation showed a wrong answer to a user,
+or when it failed to finish:
+
+```
+Not run: no recorded evaluation of assistant: run `kosika virtual-model eval`
+on it first, or drop --require-qualified
+```
+
+A program that asks no model has nothing to qualify and runs as before.
+Without the flag the ledger is not consulted, so this changes nothing until a
+run asks for it.
+
+## Engines
+
+Kosika is defined by `conformance/`, not by one interpreter: any program that
+prints what the suite says is a Kosika engine. Two are built here.
+
+- `python` — the reference engine, in this package. Every feature is here
+  first, and the tests hold it to that.
+- `go` — the native engine in `native/`, built with Go so Kosika runs on a
+  machine with no Python. It is faster and lags the reference; what it cannot
+  do yet it refuses by name.
+
+```
+kosika engines                  both engines, and whether each is built
+kosika run FILE --engine go     the same command, in the Go engine
+KOSIKA_ENGINE=go kosika test FILE
+```
+
+`--engine` is taken out of the arguments before the command is parsed, so
+every flag after it is the other engine's own. A command the Go engine does
+not have is refused, never quietly run in Python instead.
+
 ## Thinking steps
 
 For common model tasks, declare a model by name only and use a thinking step.

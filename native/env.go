@@ -349,7 +349,7 @@ func (e *environment) bindings(program *Program, maxOutput int) (map[string]mode
 				url = strings.TrimSuffix(url, "/v1")
 			}
 		}
-		providers[name] = newHTTPProvider(url, route.model, route.protocol, 60, maxOutput)
+		providers[name] = newHTTPProvider(url, route.model, route.protocol, 60, maxOutput, 0)
 		fmt.Fprintf(os.Stderr, "%s: model %s at %s\n", name, pyRepr(route.model), url)
 	}
 	return providers, ""
