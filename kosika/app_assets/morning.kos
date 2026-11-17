@@ -1,0 +1,140 @@
+// Kosi's morning plan, decided in Kosika with no model: what the swarm did
+// overnight, what waits for you, two papers from the research digest worth
+// your time, and one thing to study, each with a single action. Studio
+// shows it on Home; one tap does each thing, and "Looks good" approves the
+// plan (which starts the swarm when the plan says to).
+
+export [Paper, Overnight, MorningIn, Step, Plan, study_topics, topic_for, pick_papers, plan_for, morning]
+
+record Paper { title: Text field: Text url: Text }
+record Overnight { run: Text request: Text result: Text }
+
+record MorningIn {
+  day: Number        // the day of the year, so the study topic moves on each day
+  hour: Number
+  person: Text
+  overnight: Overnight[]
+  waiting: Number    // changes that passed and wait for a Keep
+  open: Number       // requests open on the swarm's lists
+  working: Number    // agents at work right now
+  papers: Paper[]    // today's research digest
+  interests: Text[]  // fields you care about most, first first
+}
+
+record Step { kind: Text title: Text detail: Text label: Text go: Text }
+record Plan { greeting: Text summary: Text steps: Step[] approve: Text }
+
+// What you are learning: one a day, in turn. Change the list here.
+fn study_topics() -> Text[] {
+  return ["writing Kosika: records, workflows and tests in .kos",
+          "discrete maths: proofs by induction",
+          "quantum computing: qubits, superposition and measurement",
+          "AI safety: specification gaming and how to spot it",
+          "discrete maths: graphs, paths and trees",
+          "quantum computing: entanglement and Bell states",
+          "AI safety: interpretability, reading what a model computes"]
+}
+
+fn topic_for(day: Number) -> Text {
+  let topics = study_topics()
+  return topics[day % topics.length()]
+}
+
+// The papers in the fields you care about first, then the rest; at most two.
+fn pick_papers(papers: Paper[], interests: Text[]) -> Paper[] {
+  var out: Paper[] = []
+  var taken: Text[] = []
+  for field in interests {
+    for p in papers {
+      if out.length() < 2 and p.field.lower() == field.lower() and not taken.contains(p.url) {
+        out = out.append(p)
+        taken = taken.append(p.url)
+      }
+    }
+  }
+  for p in papers {
+    if out.length() < 2 and not taken.contains(p.url) {
+      out = out.append(p)
+      taken = taken.append(p.url)
+    }
+  }
+  return out
+}
+
+fn plural(n: Number, one: Text, many: Text) -> Text {
+  if n == 1 { return "1 " + one }
+  return n.to_text() + " " + many
+}
+
+fn hello(hour: Number, person: Text) -> Text {
+  let part = if hour < 12 { "Good morning" } else { if hour < 18 { "Good afternoon" } else { "Good evening" } }
+  return if person.trim() == "" { part } else { part + ", " + person.trim() }
+}
+
+fn plan_for(m: MorningIn) -> Plan {
+  var steps: Step[] = []
+  let passed = (for o in m.overnight { if o.result == "passed" { 1 } else { 0 } }).sum()
+  if m.overnight.length() > 0 {
+    steps = steps.append({kind: "overnight", title: "While you were away",
+      detail: plural(m.overnight.length(), "run finished", "runs finished") + ", " + passed.to_text() + " passed their checks",
+      label: "See them", go: "home/coders"})
+  }
+  if m.waiting > 0 {
+    steps = steps.append({kind: "keep", title: "Keep or leave " + plural(m.waiting, "change", "changes"),
+      detail: "They passed their checks; nothing goes into Kosika until you keep it",
+      label: "Review", go: "coders"})
+  }
+  if m.open > 0 and m.working == 0 {
+    steps = steps.append({kind: "swarm", title: "Start the swarm",
+      detail: plural(m.open, "request is", "requests are") + " open on its lists",
+      label: "Start", go: "start"})
+  }
+  for p in pick_papers(m.papers, m.interests) {
+    steps = steps.append({kind: "paper", title: p.title, detail: p.field + " · from today's research digest",
+      label: "Read", go: p.url})
+  }
+  steps = steps.append({kind: "study", title: "Study: " + topic_for(m.day),
+    detail: "Twenty minutes, with hints rather than answers", label: "Start", go: "study"})
+  let summary = if m.working > 0 { plural(m.working, "agent is", "agents are") + " already at work." } else { if m.waiting > 0 { "A few things wait for you; the rest can run by itself." } else { "Nothing waits for you; here is a plan for the day." } }
+  let approve = if m.open > 0 and m.working == 0 { "Looks good: start the swarm" } else { "Looks good" }
+  return {greeting: hello(m.hour, m.person), summary: summary, steps: steps, approve: approve}
+}
+
+workflow morning(m: MorningIn) -> Plan {
+  plan = plan_for(m)
+}
+
+test "the study topic moves on each day and comes round again" {
+  expect topic_for(0) == study_topics()[0]
+  expect topic_for(1) != topic_for(0)
+  expect topic_for(study_topics().length()) == topic_for(0)
+}
+
+test "papers in your fields come first, two at most" {
+  papers: Paper[] = [{title: "Galaxies A", field: "Galaxies", url: "u1"}, {title: "ML B", field: "Machine learning", url: "u2"},
+                     {title: "ML C", field: "Machine learning", url: "u3"}, {title: "Q D", field: "Quantum physics", url: "u4"}]
+  expect (for p in pick_papers(papers, ["Machine learning"]) { p.title }) == ["ML B", "ML C"]
+  expect (for p in pick_papers(papers, ["Quantum physics"]) { p.title }) == ["Q D", "Galaxies A"]
+  expect pick_papers([], ["Machine learning"]).length() == 0
+}
+
+test "the plan says what happened, what waits, and what to do" {
+  m: MorningIn = {day: 3, hour: 8, person: "Aryan",
+    overnight: [{run: "r1", request: "a", result: "passed"}, {run: "r2", request: "b", result: "failed"}],
+    waiting: 2, open: 3, working: 0,
+    papers: [{title: "ML B", field: "Machine learning", url: "https://arxiv.org/abs/1"}], interests: ["Machine learning"]}
+  p = plan_for(m)
+  expect p.greeting == "Good morning, Aryan"
+  expect (for s in p.steps { s.kind }) == ["overnight", "keep", "swarm", "paper", "study"]
+  expect p.steps[0].detail == "2 runs finished, 1 passed their checks"
+  expect p.steps[3].go == "https://arxiv.org/abs/1"
+  expect p.approve == "Looks good: start the swarm"
+}
+
+test "a quiet morning still has something to learn" {
+  m: MorningIn = {day: 0, hour: 9, person: "", overnight: [], waiting: 0, open: 0, working: 0, papers: [], interests: []}
+  p = plan_for(m)
+  expect (for s in p.steps { s.kind }) == ["study"]
+  expect p.approve == "Looks good"
+  expect p.summary == "Nothing waits for you; here is a plan for the day."
+}

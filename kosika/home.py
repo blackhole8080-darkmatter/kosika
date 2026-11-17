@@ -129,7 +129,7 @@ def shown(facts: dict[str, Any]) -> dict[str, Any]:
         made = run(load_program(HOME_KOS), "home", Path(scratch) / "run.jsonl", inputs={"h": {
             "hour": facts["hour"], "person": facts["person"],
             "working": [{"name": w["name"], "colour": w["colour"], "doing": w["doing"]} for w in facts["working"]],
-            "waiting": len(facts["waiting"]), "open": facts["tasks"]["open"], "taken": facts["tasks"]["taken"],
+            "waiting": facts.get("waiting_total", len(facts["waiting"])), "open": facts["tasks"]["open"], "taken": facts["tasks"]["taken"],
             "finished": facts["done"]["finished"], "passed": facts["done"]["passed"]}})
     return made.get("shown", made) if isinstance(made, dict) else made
 
@@ -137,7 +137,8 @@ def shown(facts: dict[str, Any]) -> dict[str, Any]:
 def home(work: Path | None = None) -> dict[str, Any]:
     work = work or coders.work_folder()
     facts = {"hour": datetime.datetime.now().hour, "person": person(), "working": working(),
-             "waiting": waiting(work), "tasks": tasks(work), "done": finished_today(work)}
+             "waiting": waiting(work), "waiting_total": len(waiting(work, most=10_000)),
+             "tasks": tasks(work), "done": finished_today(work)}
     try:
         facts["look"] = shown(facts)
         facts["ok"] = True

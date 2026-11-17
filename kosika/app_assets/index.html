@@ -1141,6 +1141,20 @@ pre.diff .hunk { color: var(--faint); }
 .home-ask { display: flex; gap: 8px; margin: 0 0 18px; }
 .home-ask input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; }
 .home-ask input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plan { margin: 0 0 16px; border-top: 3px solid var(--accent) !important; }
+.plan.done { border-top-color: var(--ok) !important; }
+.plan-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.plan-head h3 { margin: 0 0 2px; }
+.plan-head .line { margin: 0; color: var(--soft); font-size: 13.5px; }
+.plan-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; }
+.plan-steps li { display: grid; grid-template-columns: 32px 1fr auto; gap: 12px; align-items: center; padding: 8px; border-radius: 10px; }
+.plan-steps li:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.plan-steps b { display: block; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-steps small { color: var(--soft); font-size: 12.5px; }
+.plan-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 15px; }
+.plan-icon[data-kind="keep"] { background: var(--ok-soft); color: var(--ok); }
+.plan-icon[data-kind="paper"], .plan-icon[data-kind="study"] { background: var(--think-soft); color: var(--think); }
+.plan-steps button { min-height: 30px; padding: 0 12px; font-size: 13px; }
 .home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
 .home-card { border-top: 3px solid var(--card-accent, var(--accent)); }
 .home-card h3 { margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
@@ -1832,13 +1846,52 @@ async function showHome(tab, quiet) {
     again();
     return;
   }
+  const plan = h("div", {class: "plan-slot"});
+  morningPlan(plan);
   main.replaceChildren(...[
     h("div", {class: "home-head"}, h("div", null, h("h1", null, look.greeting), h("p", null, look.line))),
     strip,
     h("div", {class: "home-ask"}, ask, h("button", {onclick: send}, "Ask Kosi")),
+    plan,
     view.ok ? null : h("div", {class: "banner bad"}, view.error || "home.kos could not be run"),
     h("div", {class: "home-grid"}, cards)].filter(Boolean));
   again();
+}
+
+// Kosi's plan for the day, written by app_assets/morning.kos: one action
+// for each thing, and "Looks good" to approve the plan once a day.
+async function morningPlan(slot) {
+  let plan;
+  try { plan = await api("/api/morning"); } catch (error) { return; }
+  if (!plan.steps || !plan.steps.length) return;
+  async function act(step, button) {
+    if (/^https?:\/\//.test(step.go)) { window.open(step.go, "_blank", "noopener"); return; }
+    if (step.go === "start") {
+      button.disabled = true;
+      try { const said = await api("/api/coders/start", {method: "POST", body: JSON.stringify({size: 3})}); button.textContent = said.started + " started"; }
+      catch (error) { button.disabled = false; alert(error.message); }
+      return;
+    }
+    const [view, id] = step.go.split("/");
+    go(view, id || "");
+  }
+  async function approve(button) {
+    button.disabled = true;
+    try { await api("/api/morning/approve", {method: "POST", body: JSON.stringify({by: "studio"})}); morningPlan(slot); }
+    catch (error) { button.disabled = false; alert(error.message); }
+  }
+  const icons = {overnight: "\u263E", keep: "\u2713", swarm: "\u25B6", paper: "\u2197", study: "\u270E"};
+  const done = plan.approved;
+  slot.replaceChildren(h("section", {class: "card plan" + (done ? " done" : "")},
+    h("div", {class: "plan-head"},
+      h("div", null, h("h3", null, "Kosi\u2019s plan for today"), h("p", {class: "line"}, plan.summary)),
+      done ? h("span", {class: "chip ok"}, "Approved at " + String(done.at).slice(11, 16))
+           : h("button", {onclick: event => approve(event.currentTarget)}, plan.approve)),
+    done ? null : h("ol", {class: "plan-steps"}, plan.steps.map(step => {
+      const button = h("button", {class: "ghost", onclick: event => act(step, event.currentTarget)}, step.label);
+      return h("li", null, h("span", {class: "plan-icon", "data-kind": step.kind}, icons[step.kind] || "\u2022"),
+        h("div", null, h("b", null, step.title), h("small", null, step.detail)), button);
+    }))));
 }
 
 // The edge of Studio glows in the colours of the agents at work, as the

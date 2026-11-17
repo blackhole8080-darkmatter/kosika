@@ -2286,6 +2286,20 @@ class App:
 
         return home.home()
 
+    def morning(self) -> dict[str, Any]:
+        """Kosi's plan for the day, as app_assets/morning.kos writes it."""
+
+        from . import morning
+
+        return morning.plan()
+
+    def approve_morning(self, body: dict[str, Any]) -> dict[str, Any]:
+        """"Looks good" on the day's plan."""
+
+        from . import morning
+
+        return morning.approve(body)
+
     def coders(self) -> dict[str, Any]:
         """The coder swarm: the latest day's runs, who is on what and how
         each ended, and the to-do list the coders take requests from."""
@@ -2763,6 +2777,10 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.pause_service(self._body()))
                 elif method == "GET" and url.path == "/api/home":
                     self._json(200, app.home())
+                elif method == "GET" and url.path == "/api/morning":
+                    self._json(200, app.morning())
+                elif method == "POST" and url.path == "/api/morning/approve":
+                    self._json(200, app.approve_morning(self._body()))
                 elif method == "GET" and url.path == "/api/coders":
                     self._json(200, app.coders())
                 elif method == "POST" and url.path == "/api/coders/request":
