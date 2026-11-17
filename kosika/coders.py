@@ -283,6 +283,19 @@ def _git(args: list[str], cwd: Path) -> str:
     return done.stdout
 
 
+#: Where studio lives, for a copy of Kosika that is not a git checkout, such
+#: as the installed app's. KOSIKA_ORIGIN points somewhere else.
+ORIGIN = "https://github.com/blackhole8080-darkmatter/kosika"
+
+
+def _origin(repo: Path) -> str:
+    """The remote a kept run's branch is pushed to: the checkout's origin,
+    or ORIGIN when the code is not a git checkout (the installed app)."""
+    if (repo / ".git").exists():
+        return _git(["remote", "get-url", "origin"], repo).strip()
+    return os.environ.get("KOSIKA_ORIGIN") or ORIGIN
+
+
 def keep(
     name: str, work: Path | None = None, repo: Path | None = None
 ) -> dict[str, Any]:
@@ -300,7 +313,7 @@ def keep(
         return {"run": name, "url": detail["kept"]}
     if not detail["patch"].strip():
         raise ValueError("This run left no change to keep")
-    origin = _git(["remote", "get-url", "origin"], repo or KOSIKA_HOME).strip()
+    origin = _origin(repo or KOSIKA_HOME)
     place = work / "branches" / name
     if place.exists():
         import shutil
