@@ -56,7 +56,7 @@ fn pl_num(v: Number) -> Text {
 fn pl_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
 
 fn pl_tone(tone: Text) -> Text {
-  if tone == "amber" { return "#f5b942" }
+  if tone == "amber" or tone == "tracer" { return "#f5b942" }
   if tone == "indigo" { return "#8b8cff" }
   return "#f4f1ea"
 }
@@ -264,7 +264,7 @@ fn pl_formula(text: Text) -> Text {
     if k > 0 { t = t.slice(0, k) }
   }
   var words = t.trim().words()
-  let lead = ["plot", "graph", "draw", "show", "sketch", "me", "a", "the", "of", "function", "complex", "real", "3d", "2d", "surface", "curve", "map", "mapping", "conformal", "landscape", "modulus", "how", "behaves", "visualise", "visualize", "please", "f(x)", "f(z)", "f(x,y)", "taylor", "maclaurin", "series", "power", "polynomial", "polynomials", "approximation", "expansion", "expand", "integral", "integrate", "definite", "area", "under", "polar", "rose", "spiral", "cardioid", "r"]
+  let lead = ["plot", "graph", "draw", "show", "sketch", "me", "a", "the", "of", "function", "complex", "real", "3d", "2d", "surface", "curve", "map", "mapping", "conformal", "landscape", "modulus", "how", "behaves", "visualise", "visualize", "please", "f(x)", "f(z)", "f(x,y)", "taylor", "maclaurin", "series", "power", "polynomial", "polynomials", "approximation", "expansion", "expand", "integral", "integrate", "definite", "area", "under", "polar", "rose", "spiral", "cardioid", "r", "implicit"]
   while words.length() > 1 and lead.contains(words[0].lower()) { words = words.slice(1, words.length()) }
   var out = words.join(" ").trim()
   while out.ends_with(".") or out.ends_with("?") or out.ends_with("!") or out.ends_with(",") { out = out.slice(0, out.length() - 1) }
@@ -651,17 +651,61 @@ fn pl_project_all(flat: Number[], view: PlView) -> Number[] {
 fn pl_scene_svg(scene: PlScene, view: PlView, label: Text) -> Text {
   var items: PlItem[] = []
   var flat: Number[] = []
-  for q in scene.quads { flat = flat.concat(q) }
+  var styles: Number[] = []
+  var lights: Number[] = []
+  for q in scene.quads {
+    flat = flat.concat(q.slice(0, 12))
+    styles = styles.append(if q.length() > 12 { q[12] } else { 0 })
+    lights = lights.append(if q.length() > 13 { q[13] } else { 0 })
+  }
   let p = pl_project_all(flat, view)
+  let s = view.width * 0.23
   var k = 0
   while k + 11 < p.length() {
     let depth = (p[k + 2] + p[k + 5] + p[k + 8] + p[k + 11]) / 4
-    let o = (0.95 - (depth + 1.4) * 0.22).max(0.28).min(0.95).to_fixed(2)
+    let o = (0.95 - (depth + 1.4) * 0.22).max(0.28).min(0.95)
     let pts = p[k].to_fixed(1) + "," + p[k + 1].to_fixed(1) + " " + p[k + 3].to_fixed(1) + "," + p[k + 4].to_fixed(1) + " " + p[k + 6].to_fixed(1) + "," + p[k + 7].to_fixed(1) + " " + p[k + 9].to_fixed(1) + "," + p[k + 10].to_fixed(1)
-    items = items.append({key: 0 - depth, svg: f"<polygon points=\"{pts}\" fill=\"#07080d\" stroke=\"#f4f1ea\" stroke-opacity=\"{o}\" stroke-width=\".8\" stroke-linejoin=\"round\"/>"})
+    let style = styles[(k / 12).floor()]
+    let back = style == 3 and ((p[k + 3] - p[k]) * (p[k + 7] - p[k + 1]) - (p[k + 4] - p[k + 1]) * (p[k + 6] - p[k])) > 0
+    if style == 0 {
+      items = items.append({key: 0 - depth, svg: f"<polygon points=\"{pts}\" fill=\"#07080d\" stroke=\"#f4f1ea\" stroke-opacity=\"{o.to_fixed(2)}\" stroke-width=\".8\" stroke-linejoin=\"round\"/>"})
+    } else if not back {
+      // Shaded by how squarely the face looks at the eye: the normal is
+      // the cross of the two diagonals, in screen units and depth.
+      let ax = (p[k + 6] - p[k]) / s
+      let ay = (p[k + 1] - p[k + 7]) / s
+      let az = p[k + 8] - p[k + 2]
+      let bx = (p[k + 9] - p[k + 3]) / s
+      let by = (p[k + 4] - p[k + 10]) / s
+      let bz = p[k + 11] - p[k + 5]
+      let nx = ay * bz - az * by
+      let ny = az * bx - ax * bz
+      let nz = ax * by - ay * bx
+      let nl = (nx * nx + ny * ny + nz * nz).sqrt()
+      let facing = if nl > 0.000000001 { nz.abs() / nl } else { 0.5 }
+      // A flat solid (style 3) brings its own light, worked out from the
+      // face's true normal, so every piece of one face shades the same.
+      let lt = if style == 3 { lights[(k / 12).floor()] } else { (0.05 + 0.36 * facing * facing) * (o + 0.25) }
+      let fill = f"rgb({(7 + 237 * lt).to_fixed(0)},{(8 + 233 * lt).to_fixed(0)},{(13 + 221 * lt).to_fixed(0)})"
+      let edge = if style == 1 { f"stroke=\"#f4f1ea\" stroke-opacity=\"{(o * 0.55).to_fixed(2)}\" stroke-width=\".6\"" } else { f"stroke=\"{fill}\" stroke-width=\".7\"" }
+      // A solid's piece also draws its one true edge, the second to the third corner, in white.
+      let rim = if style == 3 { f"<line x1=\"{p[k + 3].to_fixed(1)}\" y1=\"{p[k + 4].to_fixed(1)}\" x2=\"{p[k + 6].to_fixed(1)}\" y2=\"{p[k + 7].to_fixed(1)}\" stroke=\"#f4f1ea\" stroke-width=\"1.6\" stroke-linecap=\"round\"/>" } else { "" }
+      items = items.append({key: 0 - depth, svg: f"<polygon points=\"{pts}\" fill=\"{fill}\" {edge} stroke-linejoin=\"round\"/>" + rim})
+    }
     k += 12
   }
-  for line in scene.lines {
+  var moving: Text[] = []
+  for line in scene.lines where line.tone == "tracer" {
+    let q = pl_project_all(line.pts, view)
+    var d: Text[] = []
+    var j = 0
+    while j + 2 < q.length() {
+      d = d.append((if j == 0 { "M" } else { "L" }) + q[j].to_fixed(1) + " " + q[j + 1].to_fixed(1))
+      j += 3
+    }
+    moving = moving.append(pl_tracer(d.join(""), 12, false))
+  }
+  for line in scene.lines where line.tone != "tracer" {
     let dash = if line.dash { " stroke-dasharray=\"4 4\"" } else { "" }
     let colour = pl_tone(line.tone)
     let q = pl_project_all(line.pts, view)
@@ -675,7 +719,7 @@ fn pl_scene_svg(scene: PlScene, view: PlView, label: Text) -> Text {
   }
   let drawn = (for it in items.sort_by("key") { it.svg }).join("")
   let words = (for l in scene.labels { pl_label_svg(l, view) }).join("")
-  return pl_frame_svg(view.width, view.height, drawn + words, label)
+  return pl_frame_svg(view.width, view.height, drawn + words + moving.join(""), label)
 }
 
 fn pl_label_svg(l: PlLabel, view: PlView) -> Text {
@@ -686,15 +730,20 @@ fn pl_label_svg(l: PlLabel, view: PlView) -> Text {
 
 // The same scene, live: drag to turn it, scroll or pinch to come closer.
 // The browser projects it with the same formula pl_project uses.
-fn pl_scene_live(scene: PlScene, view: PlView) -> Text {
+fn pl_scene_live(scene: PlScene, view: PlView) -> Text { return pl_scene_live_with(scene, view, [], false) }
+
+// The live view, with moments to play in a loop (each a list of faces that
+// takes the place of the scene's own) and a slow turn from the start.
+fn pl_scene_live_with(scene: PlScene, view: PlView, moments: Number[][][], spin: Bool) -> Text {
   let quads = "[" + (for q in scene.quads { "[" + (for v in q { (v).to_fixed(3) }).join(",") + "]" }).join(",") + "]"
-  let lines = "[" + (for l in scene.lines { "{p:[" + (for v in l.pts { (v).to_fixed(3) }).join(",") + "],c:'" + pl_tone(l.tone) + "',w:" + l.width.to_text() + ",d:" + (if l.dash { "1" } else { "0" }) + ",f:" + (if l.tone == "white" { "1" } else { "0" }) + "}" }).join(",") + "]"
+  let frames = "[" + (for m in moments { "[" + (for q in m { "[" + (for v in q { (v).to_fixed(3) }).join(",") + "]" }).join(",") + "]" }).join(",") + "]"
+  let lines = "[" + (for l in scene.lines { "{p:[" + (for v in l.pts { (v).to_fixed(3) }).join(",") + "],c:'" + pl_tone(l.tone) + "',w:" + l.width.to_text() + ",d:" + (if l.dash { "1" } else { "0" }) + ",f:" + (if l.tone == "white" { "1" } else { "0" }) + ",t:" + (if l.tone == "tracer" { "1" } else { "0" }) + "}" }).join(",") + "]"
   let labels = "[" + (for l in scene.labels { "[" + (l.x).to_fixed(3) + "," + (l.y).to_fixed(3) + "," + (l.z).to_fixed(3) + ",'" + l.text.replace("'", "&#39;") + "','" + pl_tone(l.tone) + "']" }).join(",") + "]"
   let size = "W=" + view.width.to_text() + ",H=" + view.height.to_text()
   let home = "{yaw:" + view.yaw.to_text() + ",pitch:" + view.pitch.to_text() + ",zoom:1}"
   let ctl = "<div class='pl-ctl'><span>Drag to turn &#183; scroll or pinch to zoom</span><button type='button' data-spin>Turn</button><button type='button' data-reset>Reset</button></div>"
   let html = "<div class='pl-live'><canvas width='" + view.width.to_text() + "' height='" + view.height.to_text() + "' tabindex='0' aria-label='Live 3D drawing. Drag to turn, scroll to zoom.'></canvas>" + ctl + "</div>"
-  let js = "<script>(()=>{const root=document.currentScript.previousElementSibling,cv=root.querySelector('canvas'),g=cv.getContext('2d');if(!g)return;const Q=" + quads + ",L=" + lines + ",T=" + labels + "," + size + ",BG='" + "#07080d" + "',INK='" + "#f4f1ea" + "',home=" + home + ";let cam={...home},drag=null,spin=false,last=0,pinch=0;const sb=root.querySelector('[data-spin]');function P(x,y,z){const a=cam.yaw*Math.PI/180,p=cam.pitch*Math.PI/180,x1=x*Math.cos(a)-y*Math.sin(a),y1=x*Math.sin(a)+y*Math.cos(a),up=z*Math.cos(p)+y1*Math.sin(p),d=y1*Math.cos(p)-z*Math.sin(p),f=4/(4+d),s=W*.23*cam.zoom;return [W/2+x1*s*f,H*.5-up*s*f,d]}function fade(d){return Math.max(.28,Math.min(.95,.95-(d+1.4)*.22))}function rgba(c,o){return 'rgba('+parseInt(c.slice(1,3),16)+','+parseInt(c.slice(3,5),16)+','+parseInt(c.slice(5,7),16)+','+o+')'}function draw(){const box=cv.getBoundingClientRect(),r=window.devicePixelRatio||1,w=Math.max(1,Math.round(box.width*r)),h=Math.max(1,Math.round(box.height*r));if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}g.setTransform(w/W,0,0,h/H,0,0);g.fillStyle=BG;g.fillRect(0,0,W,H);const items=[];for(const q of Q){const a=P(q[0],q[1],q[2]),b=P(q[3],q[4],q[5]),c=P(q[6],q[7],q[8]),d=P(q[9],q[10],q[11]);items.push({k:(a[2]+b[2]+c[2]+d[2])/4,q:[a,b,c,d]})}for(const l of L){for(let i=0;i+5<l.p.length;i+=3){const a=P(l.p[i],l.p[i+1],l.p[i+2]),b=P(l.p[i+3],l.p[i+4],l.p[i+5]);items.push({k:(a[2]+b[2])/2-.03,s:[a,b],l})}}items.sort((m,n)=>n.k-m.k);g.lineJoin='round';g.lineCap='round';for(const it of items){if(it.q){g.beginPath();g.moveTo(it.q[0][0],it.q[0][1]);for(let j=1;j<4;j++)g.lineTo(it.q[j][0],it.q[j][1]);g.closePath();g.fillStyle=BG;g.fill();g.strokeStyle=rgba(INK,fade(it.k));g.lineWidth=.8;g.setLineDash([]);g.stroke()}else{const l=it.l;g.beginPath();g.moveTo(it.s[0][0],it.s[0][1]);g.lineTo(it.s[1][0],it.s[1][1]);g.strokeStyle=l.f?rgba(l.c,fade(it.k)):l.c;g.lineWidth=l.w;g.setLineDash(l.d?[4,4]:[]);g.stroke()}}g.setLineDash([]);g.textAlign='center';for(const t of T){const p=P(t[0],t[1],t[2]);g.fillStyle=t[4];g.font=t[3].length<=2?'italic 16px Georgia,serif':'12px system-ui,sans-serif';g.fillText(t[3].replace('&#39;',\"'\"),p[0],p[1])}}function tick(now){if(!spin)return;if(last)cam.yaw+=(now-last)*.015;last=now;draw();requestAnimationFrame(tick)}cv.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId);spin=false;sb.textContent='Turn'});cv.addEventListener('pointermove',e=>{if(!drag)return;cam.yaw+=(e.clientX-drag[0])*.5;cam.pitch=Math.max(-10,Math.min(89,cam.pitch+(e.clientY-drag[1])*.4));drag=[e.clientX,e.clientY];draw()});cv.addEventListener('pointerup',()=>drag=null);cv.addEventListener('pointercancel',()=>drag=null);cv.addEventListener('wheel',e=>{e.preventDefault();cam.zoom=Math.max(.5,Math.min(2.6,cam.zoom*(e.deltaY>0?.92:1.08)));draw()},{passive:false});cv.addEventListener('touchmove',e=>{if(e.touches.length!==2)return;const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinch)cam.zoom=Math.max(.5,Math.min(2.6,cam.zoom*d/pinch));pinch=d;draw()},{passive:true});cv.addEventListener('touchend',()=>pinch=0);cv.addEventListener('keydown',e=>{const k=e.key;if(k==='ArrowLeft')cam.yaw-=5;else if(k==='ArrowRight')cam.yaw+=5;else if(k==='ArrowUp')cam.pitch=Math.min(89,cam.pitch+5);else if(k==='ArrowDown')cam.pitch=Math.max(-10,cam.pitch-5);else return;e.preventDefault();draw()});sb.addEventListener('click',()=>{spin=!spin;sb.textContent=spin?'Stop':'Turn';last=0;if(spin)requestAnimationFrame(tick)});root.querySelector('[data-reset]').addEventListener('click',()=>{cam={...home};draw()});window.addEventListener('resize',draw);draw()})();</script>"
+  let js = "<script>(()=>{const root=document.currentScript.previousElementSibling,cv=root.querySelector('canvas'),g=cv.getContext('2d');if(!g)return;let Q=" + quads + ";const F=" + frames + ",AUTO=" + (if spin { "true" } else { "false" }) + ",L=" + lines + ",T=" + labels + "," + size + ",BG='" + "#07080d" + "',INK='" + "#f4f1ea" + "',home=" + home + ",CALM=matchMedia('(prefers-reduced-motion: reduce)').matches,MOV=!CALM&&(F.length>1||L.some(l=>l.t));let cam={...home},drag=null,spin=false,last=0,pinch=0,clock=0;const sb=root.querySelector('[data-spin]');function P(x,y,z){const a=cam.yaw*Math.PI/180,p=cam.pitch*Math.PI/180,x1=x*Math.cos(a)-y*Math.sin(a),y1=x*Math.sin(a)+y*Math.cos(a),up=z*Math.cos(p)+y1*Math.sin(p),d=y1*Math.cos(p)-z*Math.sin(p),f=4/(4+d),s=W*.23*cam.zoom;return [W/2+x1*s*f,H*.5-up*s*f,d]}function fade(d){return Math.max(.28,Math.min(.95,.95-(d+1.4)*.22))}function rgba(c,o){return 'rgba('+parseInt(c.slice(1,3),16)+','+parseInt(c.slice(3,5),16)+','+parseInt(c.slice(5,7),16)+','+o+')'}function draw(){const box=cv.getBoundingClientRect(),r=window.devicePixelRatio||1,w=Math.max(1,Math.round(box.width*r)),h=Math.max(1,Math.round(box.height*r));if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}g.setTransform(w/W,0,0,h/H,0,0);g.fillStyle=BG;g.fillRect(0,0,W,H);const items=[];for(const q of Q){const a=P(q[0],q[1],q[2]),b=P(q[3],q[4],q[5]),c=P(q[6],q[7],q[8]),d=P(q[9],q[10],q[11]);if(q[12]===3&&(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])>0)continue;items.push({k:(a[2]+b[2]+c[2]+d[2])/4,q:[a,b,c,d],m:q[12]||0,L:q[13]||0})}for(const l of L){if(l.t)continue;for(let i=0;i+5<l.p.length;i+=3){const a=P(l.p[i],l.p[i+1],l.p[i+2]),b=P(l.p[i+3],l.p[i+4],l.p[i+5]);items.push({k:(a[2]+b[2])/2-.03,s:[a,b],l})}}items.sort((m,n)=>n.k-m.k);g.lineJoin='round';g.lineCap='round';for(const it of items){if(it.q){g.beginPath();g.moveTo(it.q[0][0],it.q[0][1]);for(let j=1;j<4;j++)g.lineTo(it.q[j][0],it.q[j][1]);g.closePath();g.setLineDash([]);if(it.m){const q=it.q,s=W*.23*cam.zoom,ax=(q[2][0]-q[0][0])/s,ay=(q[0][1]-q[2][1])/s,az=q[2][2]-q[0][2],bx=(q[3][0]-q[1][0])/s,by=(q[1][1]-q[3][1])/s,bz=q[3][2]-q[1][2],nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx,nl=Math.hypot(nx,ny,nz),fa=nl>1e-9?Math.abs(nz)/nl:.5,o=fade(it.k),lt=it.m===3?it.L:(.05+.36*fa*fa)*(o+.25),col='rgb('+Math.round(7+237*lt)+','+Math.round(8+233*lt)+','+Math.round(13+221*lt)+')';g.fillStyle=col;g.fill();if(it.m===1){g.strokeStyle=rgba(INK,o*.55);g.lineWidth=.6}else{g.strokeStyle=col;g.lineWidth=.7}g.stroke();if(it.m===3){g.beginPath();g.moveTo(it.q[1][0],it.q[1][1]);g.lineTo(it.q[2][0],it.q[2][1]);g.strokeStyle=INK;g.lineWidth=1.6;g.stroke()}}else{g.fillStyle=BG;g.fill();g.strokeStyle=rgba(INK,fade(it.k));g.lineWidth=.8;g.stroke()}}else{const l=it.l;g.beginPath();g.moveTo(it.s[0][0],it.s[0][1]);g.lineTo(it.s[1][0],it.s[1][1]);g.strokeStyle=l.f?rgba(l.c,fade(it.k)):l.c;g.lineWidth=l.w;g.setLineDash(l.d?[4,4]:[]);g.stroke()}}g.setLineDash([]);for(const l of L){if(!l.t)continue;const n=Math.floor(l.p.length/3);if(!n)continue;const i=Math.floor(clock/45)%n,p=P(l.p[i*3],l.p[i*3+1],l.p[i*3+2]);g.beginPath();g.arc(p[0],p[1],9,0,7);g.fillStyle='rgba(245,185,66,.2)';g.fill();g.beginPath();g.arc(p[0],p[1],4.2,0,7);g.fillStyle='#f5b942';g.fill()}g.textAlign='center';for(const t of T){const p=P(t[0],t[1],t[2]);g.fillStyle=t[4];g.font=t[3].length<=2?'italic 16px Georgia,serif':'12px system-ui,sans-serif';g.fillText(t[3].replace('&#39;',\"'\"),p[0],p[1])}}function tick(now){if(!spin&&!MOV){last=0;return}if(spin&&last)cam.yaw+=(now-last)*.015;last=now;clock=now;if(F.length>1)Q=F[Math.floor(now/110)%F.length];draw();requestAnimationFrame(tick)}cv.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId);spin=false;sb.textContent='Turn'});cv.addEventListener('pointermove',e=>{if(!drag)return;cam.yaw+=(e.clientX-drag[0])*.5;cam.pitch=Math.max(-10,Math.min(89,cam.pitch+(e.clientY-drag[1])*.4));drag=[e.clientX,e.clientY];draw()});cv.addEventListener('pointerup',()=>drag=null);cv.addEventListener('pointercancel',()=>drag=null);cv.addEventListener('wheel',e=>{e.preventDefault();cam.zoom=Math.max(.5,Math.min(2.6,cam.zoom*(e.deltaY>0?.92:1.08)));draw()},{passive:false});cv.addEventListener('touchmove',e=>{if(e.touches.length!==2)return;const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinch)cam.zoom=Math.max(.5,Math.min(2.6,cam.zoom*d/pinch));pinch=d;draw()},{passive:true});cv.addEventListener('touchend',()=>pinch=0);cv.addEventListener('keydown',e=>{const k=e.key;if(k==='ArrowLeft')cam.yaw-=5;else if(k==='ArrowRight')cam.yaw+=5;else if(k==='ArrowUp')cam.pitch=Math.min(89,cam.pitch+5);else if(k==='ArrowDown')cam.pitch=Math.max(-10,cam.pitch-5);else return;e.preventDefault();draw()});sb.addEventListener('click',()=>{spin=!spin;sb.textContent=spin?'Stop':'Turn';last=0;if(spin&&!MOV)requestAnimationFrame(tick)});root.querySelector('[data-reset]').addEventListener('click',()=>{cam={...home};draw()});window.addEventListener('resize',draw);if(AUTO&&!CALM){spin=true;sb.textContent='Stop'}draw();if(spin||MOV)requestAnimationFrame(tick)})();</script>"
   return html + js
 }
 
@@ -1599,8 +1648,626 @@ fn pl_catalogue() -> PlEntry[] {
     {kind: "field", ask: "vector field F = (-y, x)", draws: "a 2D vector field with flow lines", call: "pl_flow(p_formula, q_formula, span, false)"},
     {kind: "spacetime", ask: "space-time with the light cone", draws: "a 3D light cone with world lines, beside a Minkowski diagram", call: "pl_spacetime(v)"},
     {kind: "twins", ask: "twin paradox", draws: "the twin paradox on a Minkowski diagram, with each twin's years", call: "pl_twins(v, distance)"},
-    {kind: "well", ask: "space-time curved by a mass", draws: "a rubber-sheet picture of curved space-time with an orbit", call: "pl_well(mass)"}
+    {kind: "well", ask: "space-time curved by a mass", draws: "a rubber-sheet picture of curved space-time with an orbit", call: "pl_well(mass)"},
+    {kind: "shape", ask: "draw a klein bottle", draws: "a named 3D shape, or any surface x, y, z in u and v, shaded and turning", call: "pl_named(name) or pl_shape(x, y, z, u0, u1, v0, v1, title, about)"},
+    {kind: "knot", ask: "trefoil knot", draws: "a knot or space curve as a tube that does not twist, with a point running along it", call: "pl_knot(text) or pl_tube(x, y, z, t0, t1, radius, title)"},
+    {kind: "implicit", ask: "gyroid", draws: "the surface where F(x, y, z) = 0, found by marching tetrahedra", call: "pl_implicit(equation, span)"},
+    {kind: "revolve", ask: "solid of revolution of y = sin(x) from 0 to pi", draws: "a curve turned about the x axis, with its volume by Simpson's rule", call: "pl_revolve(formula, a, b)"},
+    {kind: "solid", ask: "dodecahedron", draws: "a Platonic solid, with Euler's V - E + F = 2", call: "pl_solid(name)"},
+    {kind: "wave", ask: "animate z = sin(x - t)*cos(y)", draws: "a surface that moves in time t, played as a loop", call: "pl_wave(formula, span)"}
   ]
+}
+
+// ---------------------------------------------------------------- 3D shapes
+//
+// Any shape Kosika can write as formulas: a surface traced by two
+// parameters (u, v), a surface where F(x, y, z) = 0, a curve turned about
+// an axis, a tube round a knot, and the five Platonic solids. Each is cut
+// into small faces that are shaded by how squarely they face the eye and
+// drawn far to near, so the lines behind are hidden.
+
+// A shaded face: the twelve corner numbers, then its style. Style 1 keeps
+// the white grid lines of a surface; style 2 is smooth, for meshes cut
+// into triangles, where only the true edges are drawn as lines.
+
+// A floor of faint lines under a shape, so it stands somewhere.
+fn pl_floor(h: Number) -> PlScene {
+  var lines: PlLine[] = []
+  for k in 0 until 9 {
+    let c = -1.2 + 2.4 * k / 8
+    lines = lines.append({pts: [c, -1.2, 0 - h, c, 1.2, 0 - h], tone: "white", width: 0.35, dash: false})
+    lines = lines.append({pts: [-1.2, c, 0 - h, 1.2, c, 0 - h], tone: "white", width: 0.35, dash: false})
+  }
+  return {quads: [], lines: lines, labels: []}
+}
+
+// Points (x, y, z, ...) moved and scaled so the shape fits a ball of
+// radius one about the centre of its box.
+fn pl_fit(flat: Number[]) -> Number[] {
+  if flat.length() < 3 { return flat }
+  var lo = [flat[0], flat[1], flat[2]]
+  var hi = [flat[0], flat[1], flat[2]]
+  var k = 0
+  while k + 2 < flat.length() {
+    lo = [lo[0].min(flat[k]), lo[1].min(flat[k + 1]), lo[2].min(flat[k + 2])]
+    hi = [hi[0].max(flat[k]), hi[1].max(flat[k + 1]), hi[2].max(flat[k + 2])]
+    k += 3
+  }
+  let c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
+  let half = ((hi[0] - lo[0]).max(hi[1] - lo[1]).max(hi[2] - lo[2]) / 2).max(0.000001)
+  var out: Number[] = []
+  var j = 0
+  while j + 2 < flat.length() {
+    out = out.concat([(flat[j] - c[0]) / half, (flat[j + 1] - c[1]) / half, (flat[j + 2] - c[2]) / half])
+    j += 3
+  }
+  return out
+}
+
+// A surface traced by (x(u, v), y(u, v), z(u, v)): Kosika computes every
+// point of an nu by nv grid and joins neighbours into shaded faces.
+fn pl_param_scene(ex: Text[], ey: Text[], ez: Text[], u0: Number, u1: Number, v0: Number, v1: Number, nu: Number, nv: Number) -> PlScene {
+  var flat: Number[] = []
+  var ok: Bool[] = []
+  for i in 0 until nu + 1 {
+    let u = u0 + (u1 - u0) * i / nu
+    for j in 0 until nv + 1 {
+      let v = v0 + (v1 - v0) * j / nv
+      let a = pl_eval(ex, ["u", "v"], [u, v], [0, 0])
+      let b = pl_eval(ey, ["u", "v"], [u, v], [0, 0])
+      let c = pl_eval(ez, ["u", "v"], [u, v], [0, 0])
+      let good = a.ok and b.ok and c.ok and a.im.abs() < 0.000001 and b.im.abs() < 0.000001 and c.im.abs() < 0.000001
+      flat = flat.concat(if good { [a.re, b.re, c.re] } else { [0, 0, 0] })
+      ok = ok.append(good)
+    }
+  }
+  let kept = for k in 0 until ok.length() where ok[k] { k }
+  let fitted = pl_fit(pl_flat(for k in kept { [flat[3 * k], flat[3 * k + 1], flat[3 * k + 2]] }))
+  // Put the fitted points back in their grid places.
+  var p: Number[] = []
+  var m = 0
+  for k in 0 until ok.length() {
+    if ok[k] {
+      p = p.concat([fitted[3 * m], fitted[3 * m + 1], fitted[3 * m + 2]])
+      m += 1
+    } else {
+      p = p.concat([0, 0, 0])
+    }
+  }
+  var quads: Number[][] = []
+  let w = nv + 1
+  for i in 0 until nu {
+    for j in 0 until nv {
+      let a = i * w + j
+      let b = (i + 1) * w + j
+      let c = (i + 1) * w + j + 1
+      let d = i * w + j + 1
+      if ok[a] and ok[b] and ok[c] and ok[d] {
+        quads = quads.append([p[3 * a], p[3 * a + 1], p[3 * a + 2], p[3 * b], p[3 * b + 1], p[3 * b + 2], p[3 * c], p[3 * c + 1], p[3 * c + 2], p[3 * d], p[3 * d + 1], p[3 * d + 2], 1])
+      }
+    }
+  }
+  return {quads: quads, lines: [], labels: []}
+}
+
+// A named shape: what to call it, the words that ask for it, and its
+// formulas in u and v with their ranges.
+record PlShape { name: Text words: Text[] x: Text y: Text z: Text u0: Number u1: Number v0: Number v1: Number nu: Number nv: Number about: Text }
+
+fn pl_shapes() -> PlShape[] {
+  let tau = 6.283185307179586
+  let pi = 3.141592653589793
+  return [
+    {name: "sphere", words: ["sphere"], x: "cos(u)*sin(v)", y: "sin(u)*sin(v)", z: "cos(v)", u0: 0, u1: tau, v0: 0, v1: pi, nu: 36, nv: 18, about: "Every point at distance 1 from the centre: u goes round like longitude, v from pole to pole like latitude."},
+    {name: "torus", words: ["torus", "donut", "doughnut"], x: "(2 + cos(v))*cos(u)", y: "(2 + cos(v))*sin(u)", z: "sin(v)", u0: 0, u1: tau, v0: 0, v1: tau, nu: 48, nv: 20, about: "A circle of radius 1 swept round a circle of radius 2: u runs round the big circle, v round the tube."},
+    {name: "Möbius strip", words: ["mobius", "möbius", "moebius"], x: "(1 + v/2*cos(u/2))*cos(u)", y: "(1 + v/2*cos(u/2))*sin(u)", z: "v/2*sin(u/2)", u0: 0, u1: tau, v0: -1, v1: 1, nu: 60, nv: 8, about: "A strip that turns half over as it goes round once, so it has only one side and one edge."},
+    {name: "Klein bottle", words: ["klein"], x: "(2 + cos(u/2)*sin(v) - sin(u/2)*sin(2*v))*cos(u)", y: "(2 + cos(u/2)*sin(v) - sin(u/2)*sin(2*v))*sin(u)", z: "sin(u/2)*sin(v) + cos(u/2)*sin(2*v)", u0: 0, u1: tau, v0: 0, v1: tau, nu: 60, nv: 24, about: "The figure-8 Klein bottle: a surface with no inside or outside. In three dimensions it must pass through itself."},
+    {name: "seashell", words: ["seashell", "sea shell surface", "shell surface"], x: "2*(1 - exp(u/(6*pi)))*cos(u)*cos(v/2)^2", y: "2*(exp(u/(6*pi)) - 1)*sin(u)*cos(v/2)^2", z: "1 - exp(u/(3*pi)) - sin(v) + exp(u/(6*pi))*sin(v)", u0: 0, u1: 6 * pi, v0: 0, v1: tau, nu: 72, nv: 16, about: "A tube that grows as it winds: each turn is the last one scaled by the same factor, the way a shell grows."},
+    {name: "helicoid", words: ["helicoid", "spiral staircase", "spiral surface"], x: "v*cos(u)", y: "v*sin(u)", z: "u/4", u0: 0, u1: 2 * tau, v0: -1, v1: 1, nu: 64, nv: 10, about: "A line turning as it climbs, like a spiral staircase. It is a minimal surface, the shape a soap film takes."},
+    {name: "catenoid", words: ["catenoid", "soap film"], x: "(exp(v) + exp(-v))/2*cos(u)", y: "(exp(v) + exp(-v))/2*sin(u)", z: "v", u0: 0, u1: tau, v0: -1.2, v1: 1.2, nu: 40, nv: 16, about: "A hanging chain (a catenary) turned about an axis: the soap film stretched between two rings."},
+    {name: "Enneper surface", words: ["enneper"], x: "u - u^3/3 + u*v^2", y: "v - v^3/3 + v*u^2", z: "u^2 - v^2", u0: -1.6, u1: 1.6, v0: -1.6, v1: 1.6, nu: 28, nv: 28, about: "A minimal surface that folds back through itself as it spreads."},
+    {name: "Dini's surface", words: ["dini"], x: "cos(u)*sin(v)", y: "sin(u)*sin(v)", z: "cos(v) + ln(tan(v/2)) + 0.2*u", u0: 0, u1: 2 * tau, v0: 0.12, v1: 2, nu: 72, nv: 14, about: "A twisted pseudosphere: a surface of constant negative curvature, wound into a spiral horn."},
+    {name: "hyperboloid", words: ["hyperboloid", "cooling tower"], x: "(1 + v^2)^0.5*cos(u)", y: "(1 + v^2)^0.5*sin(u)", z: "v", u0: 0, u1: tau, v0: -1.6, v1: 1.6, nu: 40, nv: 16, about: "A hyperboloid of one sheet, x² + y² − z² = 1: curved, yet made entirely of straight lines."}
+  ]
+}
+
+fn pl_shape_named(text: Text) -> Text {
+  let t = " " + text.lower() + " "
+  for s in pl_shapes() { if pl_has(t, s.words) { return s.name } }
+  return ""
+}
+
+// A surface in u and v, drawn shaded in 3D, live to turn.
+fn pl_shape(xt: Text, yt: Text, zt: Text, u0: Number, u1: Number, v0: Number, v1: Number, title: Text, about: Text) -> PlFigure {
+  let ex = parse(xt)
+  let ey = parse(yt)
+  let ez = parse(zt)
+  for p in [ex, ey, ez] { if not pl_unread(p).is_empty() { return pl_failed("shape", xt + ", " + yt + ", " + zt, pl_unread(p)) } }
+  var problems: Text[] = []
+  let unknown = pl_unknown(ex.expr.concat(ey.expr).concat(ez.expr), ["u", "v"])
+  if not unknown.is_empty() { problems = problems.append("a surface is written in u and v; these formulas also have " + unknown.join(", ")) }
+  var nu = 40
+  var nv = 20
+  for s in pl_shapes() {
+    if s.name == title {
+      nu = s.nu
+      nv = s.nv
+    }
+  }
+  let body = pl_param_scene(ex.expr, ey.expr, ez.expr, u0, u1, v0, v1, nu, nv)
+  if body.quads.is_empty() { problems = problems.append("Kosika could not compute the surface anywhere") }
+  let scene = pl_merge(pl_floor(1.15), body)
+  let view: PlView = {yaw: 35, pitch: 24, width: 960, height: 640}
+  let name = if title.is_empty() { "a surface in u and v" } else { title }
+  let notation = "<math display=\"block\"><mi mathvariant=\"bold\">r</mi><mo stretchy=\"false\">(</mo><mi>u</mi><mo>,</mo><mi>v</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mo>(</mo>" + to_mathml(ex.expr) + "<mo>,</mo>" + to_mathml(ey.expr) + "<mo>,</mo>" + to_mathml(ez.expr) + "<mo>)</mo></math>" + f"<math display=\"block\"><mi>u</mi><mo>&#8712;</mo><mo stretchy=\"false\">[</mo><mn>{pl_num(u0)}</mn><mo>,</mo><mn>{pl_num(u1)}</mn><mo stretchy=\"false\">]</mo><mo>,</mo><mspace width=\"1em\"/><mi>v</mi><mo>&#8712;</mo><mo stretchy=\"false\">[</mo><mn>{pl_num(v0)}</mn><mo>,</mo><mn>{pl_num(v1)}</mn><mo stretchy=\"false\">]</mo></math>"
+  var notes: Text[] = []
+  if not about.is_empty() { notes = notes.append(about) }
+  notes = notes.append(f"Kosika computed {(nu + 1) * (nv + 1)} points of the surface and joined them into {body.quads.length()} faces, each shaded by how squarely it faces you.")
+  let fig: PlFigure = {kind: "shape", title: name, formula: pl_words(ex.expr) + ", " + pl_words(ey.expr) + ", " + pl_words(ez.expr), notation: notation, svg: pl_scene_svg(scene, view, name), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; a shape in 3D")
+}
+
+fn pl_named(name: Text) -> PlFigure {
+  for s in pl_shapes() {
+    if s.name == name { return pl_shape(s.x, s.y, s.z, s.u0, s.u1, s.v0, s.v1, s.name, s.about) }
+  }
+  return pl_failed("shape", name, "Kosika does not know a shape called " + name)
+}
+
+// ---------------------------------------------------------------- a tube round a curve
+
+// A tube of the given radius round a curve in space, such as a knot: the
+// curve is computed, a ring is set square to it at each point, and each
+// ring is turned as little as possible from the last so the tube does not
+// twist. An amber point runs along it.
+fn pl_tube(xt: Text, yt: Text, zt: Text, t0: Number, t1: Number, radius: Number, title: Text) -> PlFigure {
+  let ex = parse(xt)
+  let ey = parse(yt)
+  let ez = parse(zt)
+  for p in [ex, ey, ez] { if not pl_unread(p).is_empty() { return pl_failed("tube", xt + ", " + yt + ", " + zt, pl_unread(p)) } }
+  var problems: Text[] = []
+  let n = 220
+  var raw: Number[] = []
+  for k in 0 until n + 1 {
+    let t = t0 + (t1 - t0) * k / n
+    let a = pl_eval(ex.expr, ["t"], [t], [0])
+    let b = pl_eval(ey.expr, ["t"], [t], [0])
+    let c = pl_eval(ez.expr, ["t"], [t], [0])
+    if a.ok and b.ok and c.ok { raw = raw.concat([a.re, b.re, c.re]) }
+  }
+  let count = (raw.length() / 3).floor()
+  if count < 4 { return pl_failed("tube", xt + ", " + yt + ", " + zt, "Kosika could not compute enough of the curve") }
+  let c = pl_fit(raw)
+  let pts = for k in 0 until count { [c[3 * k] * 0.9, c[3 * k + 1] * 0.9, c[3 * k + 2] * 0.9] }
+  let closed = ((pts[0][0] - pts[count - 1][0]).abs() + (pts[0][1] - pts[count - 1][1]).abs() + (pts[0][2] - pts[count - 1][2]).abs()) < 0.01
+  let r = if radius > 0 { radius } else { 0.08 }
+  let m = 14
+  var rings: Number[][] = []
+  var nrm = [0, 0, 1]
+  for k in 0 until count {
+    let a = if k == 0 { if closed { pts[count - 2] } else { pts[0] } } else { pts[k - 1] }
+    let b = if k == count - 1 { if closed { pts[1] } else { pts[count - 1] } } else { pts[k + 1] }
+    var tx = b[0] - a[0]
+    var ty = b[1] - a[1]
+    var tz = b[2] - a[2]
+    let tl = (tx * tx + ty * ty + tz * tz).sqrt().max(0.000001)
+    tx = tx / tl
+    ty = ty / tl
+    tz = tz / tl
+    // Keep the last normal, less its part along the new tangent.
+    var nx = nrm[0]
+    var ny = nrm[1]
+    var nz = nrm[2]
+    let dot = nx * tx + ny * ty + nz * tz
+    nx = nx - dot * tx
+    ny = ny - dot * ty
+    nz = nz - dot * tz
+    var nl = (nx * nx + ny * ny + nz * nz).sqrt()
+    if nl < 0.001 {
+      nx = 0 - ty
+      ny = tx
+      nz = 0
+      nl = (nx * nx + ny * ny).sqrt().max(0.000001)
+    }
+    nx = nx / nl
+    ny = ny / nl
+    nz = nz / nl
+    nrm = [nx, ny, nz]
+    let bx = ty * nz - tz * ny
+    let by = tz * nx - tx * nz
+    let bz = tx * ny - ty * nx
+    var ring: Number[] = []
+    for j in 0 until m {
+      let ang = 360 * j / m
+      let ca = ang.cos()
+      let sa = ang.sin()
+      ring = ring.concat([pts[k][0] + r * (ca * nx + sa * bx), pts[k][1] + r * (ca * ny + sa * by), pts[k][2] + r * (ca * nz + sa * bz)])
+    }
+    rings = rings.append(ring)
+  }
+  var quads: Number[][] = []
+  for k in 0 until count - 1 {
+    let p = rings[k]
+    let q = rings[k + 1]
+    for j in 0 until m {
+      let j2 = (j + 1) % m
+      quads = quads.append([p[3 * j], p[3 * j + 1], p[3 * j + 2], q[3 * j], q[3 * j + 1], q[3 * j + 2], q[3 * j2], q[3 * j2 + 1], q[3 * j2 + 2], p[3 * j2], p[3 * j2 + 1], p[3 * j2 + 2], 1])
+    }
+  }
+  let trail: PlLine = {pts: pl_flat(for k in 0 until count { [rings[k][0], rings[k][1], rings[k][2]] }), tone: "tracer", width: 0.1, dash: false}
+  let scene = pl_merge(pl_floor(1.15), {quads: quads, lines: [trail], labels: []})
+  let view: PlView = {yaw: 30, pitch: 30, width: 960, height: 640}
+  let name = if title.is_empty() { "a tube round a curve" } else { title }
+  let notation = "<math display=\"block\"><mi mathvariant=\"bold\">r</mi><mo stretchy=\"false\">(</mo><mi>t</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mo>(</mo>" + to_mathml(ex.expr) + "<mo>,</mo>" + to_mathml(ey.expr) + "<mo>,</mo>" + to_mathml(ez.expr) + "<mo>)</mo></math>"
+  let notes: Text[] = [f"Kosika computed {count} points of the curve, set a ring of {m} points square to it at each, and turned each ring as little as possible from the last, so the tube does not twist.", "The amber point runs along the tube's surface, following the curve."]
+  let fig: PlFigure = {kind: "tube", title: name, formula: pl_words(ex.expr) + ", " + pl_words(ey.expr) + ", " + pl_words(ez.expr), notation: notation, svg: pl_scene_svg(scene, view, name), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; a knot in 3D")
+}
+
+record PlKnot { name: Text words: Text[] x: Text y: Text z: Text }
+
+fn pl_knots() -> PlKnot[] {
+  return [
+    {name: "trefoil knot", words: ["trefoil"], x: "sin(t) + 2*sin(2*t)", y: "cos(t) - 2*cos(2*t)", z: "-sin(3*t)"},
+    {name: "figure-eight knot", words: ["figure-eight knot", "figure eight knot", "figure-8 knot", "figure 8 knot"], x: "(2 + cos(2*t))*cos(3*t)", y: "(2 + cos(2*t))*sin(3*t)", z: "sin(4*t)"},
+    {name: "(2, 5) torus knot", words: ["torus knot", "cinquefoil"], x: "(2 + cos(5*t))*cos(2*t)", y: "(2 + cos(5*t))*sin(2*t)", z: "sin(5*t)"},
+    {name: "helix", words: ["helix"], x: "cos(t)", y: "sin(t)", z: "t/6"}
+  ]
+}
+
+fn pl_knot(text: Text) -> PlFigure {
+  let t = " " + text.lower() + " "
+  for k in pl_knots() {
+    if pl_has(t, k.words) {
+      let turns = if k.name == "helix" { 6 * 6.283185307179586 } else { 6.283185307179586 }
+      return pl_tube(k.x, k.y, k.z, 0, turns, if k.name == "helix" { 0.06 } else { 0.08 }, k.name)
+    }
+  }
+  let k = pl_knots()[0]
+  return pl_tube(k.x, k.y, k.z, 0, 6.283185307179586, 0.08, k.name)
+}
+
+// ---------------------------------------------------------------- a surface F(x, y, z) = 0
+
+// Where F changes sign, there is the surface. Kosika computes F at every
+// corner of a grid of small cubes, cuts each cube into six tetrahedra, and
+// in each one finds where F is zero along the edges (marching tetrahedra).
+fn pl_implicit(text: Text, span: Number) -> PlFigure {
+  let parsed = parse(pl_equation(text))
+  if not pl_unread(parsed).is_empty() { return pl_failed("implicit", pl_equation(text), pl_unread(parsed)) }
+  var problems: Text[] = []
+  let unknown = pl_unknown(parsed.expr, ["x", "y", "z"])
+  if not unknown.is_empty() { problems = problems.append("an implicit surface is written in x, y and z; this one also has " + unknown.join(", ")) }
+  let s = if span > 0 { span } else { 1.6 }
+  let n = 16
+  let w = n + 1
+  var vals: Number[] = []
+  for i in 0 until w {
+    for j in 0 until w {
+      for k in 0 until w {
+        let c = pl_eval(parsed.expr, ["x", "y", "z"], [0 - s + 2 * s * i / n, 0 - s + 2 * s * j / n, 0 - s + 2 * s * k / n], [0, 0, 0])
+        vals = vals.append(if c.ok and c.im.abs() < 0.000001 { c.re } else { 1000000 })
+      }
+    }
+  }
+  // The six tetrahedra of a cube, as corner numbers; corner c is at
+  // (c % 2, (c / 2) % 2, c / 4) after the usual binary order.
+  let tets = [[0, 1, 3, 7], [0, 3, 2, 7], [0, 2, 6, 7], [0, 6, 4, 7], [0, 4, 5, 7], [0, 5, 1, 7]]
+  var quads: Number[][] = []
+  for i in 0 until n {
+    for j in 0 until n {
+      for k in 0 until n {
+        let base = (i * w + j) * w + k
+        let cv = [vals[base], vals[base + w * w], vals[base + w], vals[base + w * w + w], vals[base + 1], vals[base + w * w + 1], vals[base + w + 1], vals[base + w * w + w + 1]]
+        var below = 0
+        for v in cv { if v < 0 { below += 1 } }
+        if below > 0 and below < 8 {
+          let cp = for c in 0 until 8 { [(i + c % 2) / n * 1.6 - 0.8, (j + ((c - c % 2) / 2) % 2) / n * 1.6 - 0.8, (k + (c - c % 4) / 4) / n * 1.6 - 0.8] }
+          for tet in tets {
+            let ins = for a in tet where cv[a] < 0 { a }
+            let outs = for a in tet where cv[a] >= 0 { a }
+            var pairs: Number[] = []
+            if ins.length() == 1 { pairs = [ins[0], outs[0], ins[0], outs[1], ins[0], outs[2]] }
+            if ins.length() == 3 { pairs = [outs[0], ins[0], outs[0], ins[1], outs[0], ins[2]] }
+            if ins.length() == 2 { pairs = [ins[0], outs[0], ins[0], outs[1], ins[1], outs[1], ins[1], outs[0]] }
+            if not pairs.is_empty() {
+              var face: Number[] = []
+              var e = 0
+              while e + 1 < pairs.length() {
+                let a = pairs[e]
+                let b = pairs[e + 1]
+                let f = cv[a] / (cv[a] - cv[b])
+                face = face.concat([cp[a][0] + f * (cp[b][0] - cp[a][0]), cp[a][1] + f * (cp[b][1] - cp[a][1]), cp[a][2] + f * (cp[b][2] - cp[a][2])])
+                e += 2
+              }
+              if face.length() == 9 { face = face.concat(face.slice(6, 9)) }
+              quads = quads.append(face.append(2))
+            }
+          }
+        }
+      }
+    }
+  }
+  if quads.is_empty() { problems = problems.append(f"F is not zero anywhere in the box from -{pl_num(s)} to {pl_num(s)}") }
+  let scene = pl_merge(pl_floor(1.15), {quads: quads, lines: [], labels: []})
+  let view: PlView = {yaw: 35, pitch: 24, width: 960, height: 640}
+  let title = pl_words(parsed.expr) + " = 0"
+  let notation = "<math display=\"block\">" + to_mathml(parsed.expr).replace("<math display=\"block\">", "").replace("</math>", "") + "<mo>=</mo><mn>0</mn></math>" + f"<math display=\"block\"><mi>x</mi><mo>,</mo><mi>y</mi><mo>,</mo><mi>z</mi><mo>&#8712;</mo><mo stretchy=\"false\">[</mo><mo>&#8722;</mo><mn>{pl_num(s)}</mn><mo>,</mo><mn>{pl_num(s)}</mn><mo stretchy=\"false\">]</mo></math>"
+  let notes: Text[] = [f"Kosika computed F at {w * w * w} points, the corners of {n * n * n} small cubes, and cut each cube that the surface passes through into six tetrahedra.", f"In each tetrahedron it found where F is zero along the edges, by straight-line interpolation, which gave {quads.length()} small faces."]
+  let fig: PlFigure = {kind: "implicit", title: title, formula: pl_words(parsed.expr), notation: notation, svg: pl_scene_svg(scene, view, "implicit surface " + title), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; a surface F(x, y, z) = 0")
+}
+
+// An equation as one formula equal to zero: "x^2 + y^2 + z^2 = 1" is read
+// as x^2 + y^2 + z^2 - (1).
+fn pl_equation(text: Text) -> Text {
+  let parts = text.split("=")
+  if parts.length() < 2 { return pl_formula(text) }
+  let left = pl_formula(parts[0])
+  let right = pl_formula(parts[parts.length() - 1])
+  let low = left.lower()
+  if low.ends_with("f(x,y,z)") or low.ends_with("f(x, y, z)") or low.ends_with("surface") or left.is_empty() { return right }
+  if right.trim() == "0" { return left }
+  return "(" + left + ") - (" + right + ")"
+}
+
+record PlBlob { name: Text words: Text[] f: Text span: Number }
+
+fn pl_blobs() -> PlBlob[] {
+  return [
+    {name: "gyroid", words: ["gyroid"], f: "sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)", span: 3.141592653589793},
+    {name: "two spheres melting together", words: ["metaball", "melting spheres", "merging spheres", "spheres melting", "spheres merging", "melting together", "blob surface"], f: "1/((x - 0.6)^2 + y^2 + z^2) + 1/((x + 0.6)^2 + y^2 + z^2) - 2.4", span: 1.6},
+    {name: "Schwarz P surface", words: ["schwarz"], f: "cos(x) + cos(y) + cos(z)", span: 3.141592653589793},
+    {name: "Chmutov surface", words: ["chmutov", "cube with holes"], f: "x^4 + y^4 + z^4 - (x^2 + y^2 + z^2) + 0.3", span: 1.3}
+  ]
+}
+
+// ---------------------------------------------------------------- a solid of revolution
+
+// The curve y = f(x) for x from a to b, turned about the x axis (drawn
+// standing up), with its volume by Simpson's rule: V = π ∫ f(x)² dx.
+fn pl_revolve(text: Text, a: Number, b: Number) -> PlFigure {
+  let parsed = parse(pl_formula(text))
+  if not pl_unread(parsed).is_empty() { return pl_failed("revolve", pl_formula(text), pl_unread(parsed)) }
+  let v = pl_var(parsed.expr, "x")
+  var problems: Text[] = []
+  let lo = a.min(b)
+  let hi = if a == b { a + 1 } else { a.max(b) }
+  let nv = 40
+  var rs: Number[] = []
+  var ok: Bool[] = []
+  for k in 0 until nv + 1 {
+    let c = pl_eval(parsed.expr, [v], [lo + (hi - lo) * k / nv], [0])
+    let good = c.ok and c.im.abs() < 0.000001
+    rs = rs.append(if good { c.re.abs() } else { 0 })
+    ok = ok.append(good)
+  }
+  var vol = 0
+  for k in 0 until nv + 1 {
+    let wgt = if k == 0 or k == nv { 1 } else if k % 2 == 1 { 4 } else { 2 }
+    vol = vol + wgt * rs[k] * rs[k]
+  }
+  vol = 3.141592653589793 * vol * (hi - lo) / nv / 3
+  let rmax = (for r in rs { r }).sort()[nv].max(0.000001)
+  let half = ((hi - lo) / 2).max(rmax)
+  let nu = 36
+  var quads: Number[][] = []
+  for k in 0 until nv {
+    if ok[k] and ok[k + 1] {
+      let z0 = (lo + (hi - lo) * k / nv - (lo + hi) / 2) / half
+      let z1 = (lo + (hi - lo) * (k + 1) / nv - (lo + hi) / 2) / half
+      let r0 = rs[k] / half
+      let r1 = rs[k + 1] / half
+      for j in 0 until nu {
+        let a0 = 360 * j / nu
+        let a1 = 360 * (j + 1) / nu
+        quads = quads.append([r0 * a0.cos(), r0 * a0.sin(), z0, r1 * a0.cos(), r1 * a0.sin(), z1, r1 * a1.cos(), r1 * a1.sin(), z1, r0 * a1.cos(), r0 * a1.sin(), z0, 1])
+      }
+    }
+  }
+  let profile = pl_flat(for k in 0 until nv + 1 where ok[k] { [rs[k] / half * 1.003, 0, (lo + (hi - lo) * k / nv - (lo + hi) / 2) / half] })
+  let axis: PlLine = {pts: [0, 0, -1.15, 0, 0, 1.15], tone: "white", width: 0.8, dash: true}
+  let scene = pl_merge(pl_floor(1.15), {quads: quads, lines: [axis, {pts: profile, tone: "amber", width: 2, dash: false}, {pts: profile, tone: "tracer", width: 0.1, dash: false}], labels: []})
+  let view: PlView = {yaw: 35, pitch: 18, width: 960, height: 640}
+  let title = "y = " + pl_words(parsed.expr) + ", turned about the " + v + " axis"
+  let notation = pl_notation("<mi>y</mi>", parsed.expr) + f"<math display=\"block\"><mi>V</mi><mo>=</mo><mi>&#960;</mi><msubsup><mo>&#8747;</mo><mn>{pl_num(lo)}</mn><mn>{pl_num(hi)}</mn></msubsup><msup><mi>y</mi><mn>2</mn></msup><mspace width=\"0.2em\"/><mi>d</mi><mi>{v}</mi><mo>&#8776;</mo><mn>{pl_num(vol)}</mn></math>"
+  let notes: Text[] = [f"The amber curve is y = {pl_words(parsed.expr)} for {v} from {pl_num(lo)} to {pl_num(hi)}, drawn standing up; turned once round its axis it sweeps out the solid.", f"Its volume, by Simpson's rule on {nv} slices of the integral of π y², is {pl_num(vol)}."]
+  if (for g in ok where not g { 1 }).length() > 0 { problems = problems.append("some points of the curve have no real value and their slices are left out") }
+  let fig: PlFigure = {kind: "revolve", title: title, formula: pl_words(parsed.expr), notation: notation, svg: pl_scene_svg(scene, view, "solid of revolution " + title), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; a solid of revolution")
+}
+
+// ---------------------------------------------------------------- the Platonic solids
+
+// The five solids whose faces are all the same regular polygon. Kosika
+// finds the faces from the corners: corners an edge apart are joined, and
+// three or more joined corners in one plane make a face.
+fn pl_solid(text: Text) -> PlFigure {
+  let t = " " + text.lower() + " "
+  let g = 1.618033988749895
+  let h = 1 / g
+  var name = "icosahedron"
+  var verts: Number[][] = []
+  var edge = 2
+  if pl_has(t, ["tetrahedron", "pyramid"]) {
+    name = "tetrahedron"
+    verts = [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]
+    edge = 2.8284271247461903
+  } else if pl_has(t, ["cube", "hexahedron"]) {
+    name = "cube"
+    verts = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]]
+    edge = 2
+  } else if pl_has(t, ["octahedron"]) {
+    name = "octahedron"
+    verts = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+    edge = 1.4142135623730951
+  } else if pl_has(t, ["dodecahedron"]) {
+    name = "dodecahedron"
+    verts = [[1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1], [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1], [0, h, g], [0, h, 0 - g], [0, 0 - h, g], [0, 0 - h, 0 - g], [h, g, 0], [h, 0 - g, 0], [0 - h, g, 0], [0 - h, 0 - g, 0], [g, 0, h], [g, 0, 0 - h], [0 - g, 0, h], [0 - g, 0, 0 - h]]
+    edge = 2 / g
+  } else {
+    verts = [[0, 1, g], [0, 1, 0 - g], [0, -1, g], [0, -1, 0 - g], [1, g, 0], [1, 0 - g, 0], [-1, g, 0], [-1, 0 - g, 0], [g, 0, 1], [g, 0, -1], [0 - g, 0, 1], [0 - g, 0, -1]]
+    edge = 2
+  }
+  let nv = verts.length()
+  // Edges: pairs of corners one edge length apart.
+  var edges: Number[][] = []
+  for i in 0 until nv {
+    for j in i + 1 until nv {
+      let d = ((verts[i][0] - verts[j][0]).power(2) + (verts[i][1] - verts[j][1]).power(2) + (verts[i][2] - verts[j][2]).power(2)).sqrt()
+      if (d - edge).abs() < 0.001 { edges = edges.append([i, j]) }
+    }
+  }
+  // Faces: every face lies on a plane with all the other corners on one
+  // side; its corners are the ones on that plane. Planes are tried through
+  // each corner and two of its neighbours.
+  var faces: Number[][] = []
+  var seen: Text[] = []
+  for e in edges {
+    for f in edges {
+      let a = e[0]
+      let b = e[1]
+      let c = if f[0] == a and f[1] != b { f[1] } else if f[1] == a and f[0] != b { f[0] } else { -1 }
+      if c >= 0 {
+        let ux = verts[b][0] - verts[a][0]
+        let uy = verts[b][1] - verts[a][1]
+        let uz = verts[b][2] - verts[a][2]
+        let wx = verts[c][0] - verts[a][0]
+        let wy = verts[c][1] - verts[a][1]
+        let wz = verts[c][2] - verts[a][2]
+        let nx = uy * wz - uz * wy
+        let ny = uz * wx - ux * wz
+        let nz = ux * wy - uy * wx
+        let side = for q in verts { (q[0] - verts[a][0]) * nx + (q[1] - verts[a][1]) * ny + (q[2] - verts[a][2]) * nz }
+        let on = for k in 0 until nv where side[k].abs() < 0.001 { k }
+        let above = (for s in side where s > 0.001 { 1 }).length()
+        let under = (for s in side where s < -0.001 { 1 }).length()
+        let key = (for k in on { k.to_text() }).join(",")
+        if (above == 0 or under == 0) and not seen.contains(key) {
+          seen = seen.append(key)
+          faces = faces.append(on)
+        }
+      }
+    }
+  }
+  // Each face as a fan of triangles from its middle, its corners in order
+  // round the middle.
+  var quads: Number[][] = []
+  // Every corner sits on one sphere; scale it to radius 0.95.
+  var far = 0.000001
+  for q in verts { far = far.max((q[0] * q[0] + q[1] * q[1] + q[2] * q[2]).sqrt()) }
+  let pts = for q in verts { [q[0] / far * 0.95, q[1] / far * 0.95, q[2] / far * 0.95] }
+  for f in faces {
+    let m = f.length()
+    let cx = (for k in f { pts[k][0] }).sum() / m
+    let cy = (for k in f { pts[k][1] }).sum() / m
+    let cz = (for k in f { pts[k][2] }).sum() / m
+    // The face's normal points out through its middle; light comes from
+    // over the viewer's left shoulder.
+    let cl = (cx * cx + cy * cy + cz * cz).sqrt().max(0.000001)
+    let lit = ((0 - 0.2 * cx - 0.75 * cy + 0.63 * cz) / cl).max(0)
+    let light = 0.07 + 0.42 * lit * lit + 0.08 * lit
+    // Order the corners by walking along the face's edges.
+    var ring: Number[] = [f[0]]
+    var guard = 0
+    while ring.length() < m and guard < 20 {
+      let last = ring[ring.length() - 1]
+      for e in edges {
+        let next = if e[0] == last { e[1] } else if e[1] == last { e[0] } else { -1 }
+        if next >= 0 and f.contains(next) and not ring.contains(next) and ring.length() < m and ring[ring.length() - 1] == last { ring = ring.append(next) }
+      }
+      guard += 1
+    }
+    for k in 0 until ring.length() {
+      let p = pts[ring[k]]
+      let q = pts[ring[(k + 1) % ring.length()]]
+      // Wind every piece the same way round, seen from outside, so a
+      // piece seen from behind can be left out.
+      let turn = ((p[1] - cy) * (q[2] - cz) - (p[2] - cz) * (q[1] - cy)) * cx + ((p[2] - cz) * (q[0] - cx) - (p[0] - cx) * (q[2] - cz)) * cy + ((p[0] - cx) * (q[1] - cy) - (p[1] - cy) * (q[0] - cx)) * cz
+      let a = if turn >= 0 { p } else { q }
+      let b = if turn >= 0 { q } else { p }
+      quads = quads.append([cx, cy, cz, a[0], a[1], a[2], b[0], b[1], b[2], b[0], b[1], b[2], 3, light])
+    }
+  }
+  let scene = pl_merge(pl_floor(1.15), {quads: quads, lines: [], labels: []})
+  let view: PlView = {yaw: 28, pitch: 22, width: 960, height: 640}
+  let V = nv
+  let E = edges.length()
+  let F = faces.length()
+  let sides = if F > 0 { faces[0].length() } else { 0 }
+  let notation = f"<math display=\"block\"><mi>V</mi><mo>&#8722;</mo><mi>E</mi><mo>+</mo><mi>F</mi><mo>=</mo><mn>{V}</mn><mo>&#8722;</mo><mn>{E}</mn><mo>+</mo><mn>{F}</mn><mo>=</mo><mn>{V - E + F}</mn></math>"
+  let notes: Text[] = [f"The {name} has {V} corners, {E} edges and {F} faces, each a regular polygon with {sides} sides. Kosika found the edges as corners one edge length apart, and the faces as planes with every other corner on one side.", "Euler's formula V − E + F = 2 holds for every solid without holes."]
+  let fig: PlFigure = {kind: "solid", title: "The " + name, formula: name, notation: notation, svg: pl_scene_svg(scene, view, name), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: []}
+  return pl_paged(fig, "Kosika math &#183; a Platonic solid")
+}
+
+// ---------------------------------------------------------------- a surface that moves
+
+// z = f(x, y, t) at twelve moments of t from 0 to 2π: the still picture is
+// the first, and the live view plays them in a loop.
+fn pl_wave(text: Text, span: Number) -> PlFigure {
+  let parsed = parse(pl_formula(text))
+  if not pl_unread(parsed).is_empty() { return pl_failed("wave", pl_formula(text), pl_unread(parsed)) }
+  var problems: Text[] = []
+  let unknown = pl_unknown(parsed.expr, ["x", "y", "t"])
+  if not unknown.is_empty() { problems = problems.append("a moving surface is written in x, y and t; this one also has " + unknown.join(", ")) }
+  let s = if span > 0 { span } else { 3 }
+  let n = 22
+  let frames = 12
+  var all: Number[] = []
+  var grids: Number[][][] = []
+  var oks: Bool[][][] = []
+  for f in 0 until frames {
+    let t = 6.283185307179586 * f / frames
+    var hs: Number[][] = []
+    var ok: Bool[][] = []
+    for i in 0 until n + 1 {
+      var row: Number[] = []
+      var rok: Bool[] = []
+      for j in 0 until n + 1 {
+        let c = pl_eval(parsed.expr, ["x", "y", "t"], [0 - s + 2 * s * i / n, 0 - s + 2 * s * j / n, t], [0, 0, 0])
+        let good = c.ok and c.im.abs() < 0.000001
+        row = row.append(if good { c.re } else { 0 })
+        rok = rok.append(good)
+        if good { all = all.append(c.re) }
+      }
+      hs = hs.append(row)
+      ok = ok.append(rok)
+    }
+    grids = grids.append(hs)
+    oks = oks.append(ok)
+  }
+  // One height scale for every moment, so the motion is true.
+  let range = pl_range(all.sort())
+  let lo = range[0]
+  let hi = range[1]
+  let spanz = (hi - lo).max(0.000001)
+  let hgt = 0.62
+  var moments: Number[][][] = []
+  for f in 0 until frames {
+    var quads: Number[][] = []
+    let hs = grids[f]
+    let ok = oks[f]
+    for i in 0 until n {
+      for j in 0 until n {
+        if ok[i][j] and ok[i + 1][j] and ok[i + 1][j + 1] and ok[i][j + 1] {
+          let x0 = -1 + 2 * i / n
+          let x1 = -1 + 2 * (i + 1) / n
+          let y0 = -1 + 2 * j / n
+          let y1 = -1 + 2 * (j + 1) / n
+          quads = quads.append([x0, y0, 0 - hgt + 2 * hgt * (hs[i][j].max(lo).min(hi) - lo) / spanz, x1, y0, 0 - hgt + 2 * hgt * (hs[i + 1][j].max(lo).min(hi) - lo) / spanz, x1, y1, 0 - hgt + 2 * hgt * (hs[i + 1][j + 1].max(lo).min(hi) - lo) / spanz, x0, y1, 0 - hgt + 2 * hgt * (hs[i][j + 1].max(lo).min(hi) - lo) / spanz])
+        }
+      }
+    }
+    moments = moments.append(quads)
+  }
+  let scene = pl_merge(pl_box(hgt, "x", "y", "z"), {quads: moments[0], lines: [], labels: []})
+  let view = pl_view()
+  let title = "z = " + pl_words(parsed.expr)
+  let notation = pl_notation("<mi>z</mi>", parsed.expr) + "<math display=\"block\"><mi>t</mi><mo>&#8712;</mo><mo stretchy=\"false\">[</mo><mn>0</mn><mo>,</mo><mn>2</mn><mi>&#960;</mi><mo stretchy=\"false\">)</mo></math>"
+  let notes: Text[] = [f"Kosika computed the surface at {frames} moments of t, {(n + 1) * (n + 1)} points each, all on one height scale, and the live view plays them in a loop.", "The still picture shows the moment t = 0."]
+  let fig: PlFigure = {kind: "wave", title: title, formula: pl_words(parsed.expr), notation: notation, svg: pl_scene_svg(scene, view, "moving surface " + title), live: pl_scene_live_with(scene, view, moments, false), page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; a surface in motion")
 }
 
 // ---------------------------------------------------------------- the page
@@ -1636,7 +2303,7 @@ fn pl_has(t: Text, words: Text[]) -> Bool {
 // a complex function, a surface, or space-time.
 fn pl_wants(text: Text) -> Bool {
   let t = " " + text.lower() + " "
-  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "curved space", "gravity well", "taylor series", "taylor polynomial", "maclaurin", "power series", "integral of", "integrate ", "area under", "polar curve", "polar graph", "polar rose", " r = ", "parametric", "lissajous", "slope field", "direction field", "dy/dx", "differential equation", "vector field", "flow field", "phase portrait", "twin paradox"])
+  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "curved space", "gravity well", "taylor series", "taylor polynomial", "maclaurin", "power series", "integral of", "integrate ", "area under", "polar curve", "polar graph", "polar rose", " r = ", "parametric", "lissajous", "slope field", "direction field", "dy/dx", "differential equation", "vector field", "flow field", "phase portrait", "twin paradox", "torus", "sphere", "donut", "doughnut", "mobius", "möbius", "moebius", "klein bottle", "seashell", "helicoid", "catenoid", "enneper", "dini", "hyperboloid", "trefoil", " knot", "helix", "gyroid", "metaball", "melting spheres", "spheres melting", "spheres merging", "melting together", "schwarz", "chmutov", "implicit", "solid of revolution", "revolve", "rotated about", "rotated around", "turned about", "tetrahedron", " cube ", "octahedron", "dodecahedron", "icosahedron", "platonic", "parametric surface", "surface where"])
 }
 
 // Which drawing an ask wants, by its words and its formula: curve, taylor,
@@ -1648,6 +2315,18 @@ fn pl_kind(text: Text) -> Text {
   if pl_has(t, ["space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "gravity well", "curved space"]) {
     return if pl_has(t, ["gravity", "curved", "mass", " well", "black hole", "warp", "bend"]) { "well" } else { "spacetime" }
   }
+  if pl_has(t, ["tetrahedron", "octahedron", "dodecahedron", "icosahedron", "platonic", "hexahedron"]) or (t.contains(" cube") and not t.contains("cube root")) { return "solid" }
+  if pl_has(t, ["solid of revolution", "revolve", "rotated about", "rotated around", "turned about", "turned around", "spun around"]) { return "revolve" }
+  if pl_has(t, ["trefoil", " knot", "helix", "cinquefoil"]) { return "knot" }
+  if pl_has(t, ["parametric surface"]) { return "shape" }
+  for b in pl_blobs() { if pl_has(t, b.words) { return "implicit" } }
+  if not pl_shape_named(text).is_empty() { return "shape" }
+  if pl_has(t, ["implicit", "surface where"]) { return "implicit" }
+  let eq = parse(pl_equation(text))
+  let free = pl_names(eq.expr)
+  if text.contains("=") and free.contains("x") and free.contains("y") and free.contains("z") and eq.error.is_empty() and not pl_has(t, [" z = ", " z="]) { return "implicit" }
+  let wave = pl_names(parse(pl_formula(text)).expr)
+  if wave.contains("t") and wave.contains("x") and wave.contains("y") { return "wave" }
   if pl_has(t, ["slope field", "direction field", "dy/dx", "differential equation", "y' =", "y'="]) { return "slope" }
   if pl_has(t, ["vector field", "flow field", "phase portrait"]) { return "field" }
   if pl_has(t, ["parametric", "lissajous"]) { return "parametric" }
@@ -1723,6 +2402,32 @@ fn pl_for(text: Text) -> PlFigure {
   let pi = 3.141592653589793
   if kind == "well" { return pl_well(1) }
   if kind == "spacetime" { return pl_spacetime(0.5) }
+  if kind == "solid" { return pl_solid(text) }
+  if kind == "knot" { return pl_knot(text) }
+  if kind == "revolve" {
+    let ab = pl_bounds(text, 0, 3.141592653589793)
+    var src = text
+    for w in [" rotated ", " turned ", " revolved ", " spun ", " about ", " around "] {
+      let k = src.lower().index_of(w).or(-1)
+      if k > 0 { src = src.slice(0, k) }
+    }
+    return pl_revolve(src.replace("solid of revolution", "").replace("revolve", ""), ab[0], ab[1])
+  }
+  if kind == "shape" {
+    let named = pl_shape_named(text)
+    if not named.is_empty() { return pl_named(named) }
+    let xt = pl_after(text, "x =")
+    let yt = pl_after(text, "y =")
+    let zt = pl_after(text, "z =")
+    if xt.is_empty() or yt.is_empty() or zt.is_empty() { return pl_named("torus") }
+    return pl_shape(xt, yt, zt, 0, 2 * pi, 0, 2 * pi, "", "")
+  }
+  if kind == "implicit" {
+    let t = " " + text.lower() + " "
+    for b in pl_blobs() { if pl_has(t, b.words) { return pl_implicit(b.f + " = 0", b.span) } }
+    return pl_implicit(text, 1.6)
+  }
+  if kind == "wave" { return pl_wave(text, 3) }
   if kind == "twins" {
     let v = pl_number(pl_after(text, " at ").replace("c", "").replace("of light", ""), 0.6)
     return pl_twins(if v > 0 and v < 1 { v } else { 0.6 }, 3)
@@ -1770,7 +2475,7 @@ fn pl_for(text: Text) -> PlFigure {
 // One ask of each kind, for pictures and for Studio's examples. Each is
 // drawn in a run of its own.
 fn pl_examples() -> Text[] {
-  return ["plot y = sin(x)/x", "plot y = x^3 - 3x", "draw the complex function f(z) = z^2", "draw the complex function f(z) = exp(z)", "complex function 1/(z^2+1) in 3d", "plot z = sin(x)*cos(y)", "plot z = exp(-(x^2+y^2))*cos(2*(x^2+y^2))", "show me space-time with the light cone", "space-time curved by a mass", "taylor series of sin(x)", "integral of x^2 from 0 to 2", "polar curve r = cos(4*theta)", "parametric curve x = sin(3t), y = sin(2t)", "slope field dy/dx = x - y", "vector field F = (-y, x - y/3)", "the twin paradox at 0.8c"]
+  return ["plot y = sin(x)/x", "plot y = x^3 - 3x", "draw the complex function f(z) = z^2", "draw the complex function f(z) = exp(z)", "complex function 1/(z^2+1) in 3d", "plot z = sin(x)*cos(y)", "plot z = exp(-(x^2+y^2))*cos(2*(x^2+y^2))", "show me space-time with the light cone", "space-time curved by a mass", "taylor series of sin(x)", "integral of x^2 from 0 to 2", "polar curve r = cos(4*theta)", "parametric curve x = sin(3t), y = sin(2t)", "slope field dy/dx = x - y", "vector field F = (-y, x - y/3)", "the twin paradox at 0.8c", "draw a torus", "draw a klein bottle", "seashell", "trefoil knot", "gyroid", "two spheres melting together", "solid of revolution of y = sin(x) from 0 to pi", "dodecahedron", "animate z = sin(x - t)*cos(y)"]
 }
 
 // ---------------------------------------------------------------- workflows
@@ -1948,4 +2653,61 @@ test "a polar radius hides where the curve has no value" {
 
 test "motion stops for people who ask for less of it" {
   expect pl_style().contains("prefers-reduced-motion")
+}
+
+test "a named shape is drawn shaded, and turns by itself" {
+  f = pl_named("torus")
+  expect f.problems.is_empty()
+  expect f.kind == "shape"
+  expect f.svg.contains("rgb(")
+  expect f.live.contains("AUTO=true")
+}
+
+test "a knot is a tube with a point running along it" {
+  f = pl_knot("trefoil knot")
+  expect f.problems.is_empty()
+  expect f.svg.contains("<animateMotion")
+}
+
+test "an implicit surface is found where F is zero" {
+  f = pl_implicit("x^2 + y^2 + z^2 = 1", 1.6)
+  expect f.problems.is_empty()
+  expect f.svg.contains("<polygon")
+}
+
+test "an implicit surface that never meets zero says so" {
+  expect not pl_implicit("x^2 + y^2 + z^2 + 1 = 0", 1.6).problems.is_empty()
+}
+
+test "a solid of revolution works its volume" {
+  f = pl_revolve("x", 0, 1)
+  expect f.problems.is_empty()
+  expect f.notes.join(" ").contains("1.047")
+}
+
+test "a Platonic solid keeps Euler's formula" {
+  expect pl_solid("cube").notation.contains("<mn>8</mn><mo>&#8722;</mo><mn>12</mn><mo>+</mo><mn>6</mn><mo>=</mo><mn>2</mn>")
+  expect pl_solid("dodecahedron").notation.contains("<mn>20</mn><mo>&#8722;</mo><mn>30</mn><mo>+</mo><mn>12</mn><mo>=</mo><mn>2</mn>")
+  expect pl_solid("icosahedron").notation.contains("<mn>12</mn><mo>&#8722;</mo><mn>30</mn><mo>+</mo><mn>20</mn><mo>=</mo><mn>2</mn>")
+}
+
+test "a wave plays its moments in a loop" {
+  f = pl_wave("z = sin(x - t)*cos(y)", 3)
+  expect f.problems.is_empty()
+  expect f.live.contains("F=[[")
+}
+
+test "3D shape asks pick their drawings" {
+  expect pl_kind("draw a torus") == "shape"
+  expect pl_kind("mobius strip") == "shape"
+  expect pl_kind("parametric surface x = cos(u), y = sin(u), z = v") == "shape"
+  expect pl_kind("trefoil knot") == "knot"
+  expect pl_kind("gyroid") == "implicit"
+  expect pl_kind("two spheres melting together") == "implicit"
+  expect pl_kind("x^2 + y^2 - z^2 = 1") == "implicit"
+  expect pl_kind("revolve y = x^2 about the x axis") == "revolve"
+  expect pl_kind("icosahedron") == "solid"
+  expect pl_kind("cube root of x") != "solid"
+  expect pl_kind("animate z = sin(x - t)*cos(y)") == "wave"
+  expect pl_kind("plot z = sin(x)*cos(y)") == "surface"
 }

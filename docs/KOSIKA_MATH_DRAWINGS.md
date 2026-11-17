@@ -73,11 +73,53 @@ where `ask.json` holds `{"ask": {"text": "taylor series of sin(x)"}}`.
 | spacetime | space-time with the light cone | a 3D light cone with world lines, beside a Minkowski diagram | `pl_spacetime(v)` |
 | twins | twin paradox at 0.8c | the twin paradox on a Minkowski diagram, with each twin's years | `pl_twins(v, distance)` |
 | well | space-time curved by a mass | a rubber-sheet picture of curved space-time with an orbit | `pl_well(mass)` |
+| shape | draw a klein bottle | a named 3D shape, or any surface x, y, z in u and v, shaded and turning | `pl_named(name)`, `pl_shape(x, y, z, u0, u1, v0, v1, title, about)` |
+| knot | trefoil knot | a knot or space curve as a tube that does not twist, with a point running along it | `pl_knot(text)`, `pl_tube(x, y, z, t0, t1, radius, title)` |
+| implicit | gyroid | the surface where F(x, y, z) = 0 | `pl_implicit(equation, span)` |
+| revolve | solid of revolution of y = sin(x) from 0 to pi | a curve turned about the x axis, with its volume | `pl_revolve(formula, a, b)` |
+| solid | dodecahedron | a Platonic solid, with Euler's V − E + F = 2 | `pl_solid(name)` |
+| wave | animate z = sin(x - t)*cos(y) | a surface that moves in time t, played as a loop | `pl_wave(formula, span)` |
 
 Formulas are written the way `std/math.kos` reads them: `x^2`, `sin(x)`,
 `exp(-x^2)`, `3x`, `pi`, `e`, `i`. Angles inside `sin` and `cos` are in
 radians in a formula. Polar curves use `theta` (or θ), parametric curves
 use `t`, and complex functions use `z`.
+
+## 3D shapes
+
+Kosika models a 3D shape in four ways. Each is shaded by how squarely
+each face looks at the eye, and its live view turns slowly by itself
+until someone drags it.
+
+- **Parametric surfaces.** Any surface written as x, y and z in `u` and
+  `v`: `pl_shape("cos(u)*sin(v)", "sin(u)*sin(v)", "cos(v)", 0, 2*pi, 0, pi, "sphere", "")`.
+  `pl_shapes()` lists the named ones: sphere, torus, Möbius strip, Klein
+  bottle, seashell, helicoid, catenoid, Enneper surface, Dini's surface
+  and hyperboloid. An ask such as "parametric surface x = ..., y = ...,
+  z = ..." reads all three formulas over 0 to 2π.
+- **Implicit surfaces.** The surface where F(x, y, z) = 0, found by
+  marching tetrahedra through a 16 × 16 × 16 grid of the box from −span
+  to span. `pl_blobs()` lists the named ones: gyroid, two spheres
+  melting together, Schwarz P surface and Chmutov surface. Any equation
+  in x, y and z with "=" (but not "z = ...", which is a height surface)
+  is read as implicit.
+- **Tubes and solids of revolution.** `pl_tube` puts a ring round a space
+  curve at each point and turns each ring as little as possible from the
+  last, so knots do not twist. `pl_knots()` lists trefoil,
+  figure-eight, (2, 5) torus knot and helix. `pl_revolve` turns y = f(x)
+  about the x axis and works the volume π∫y² dx by Simpson's rule.
+- **Platonic solids.** `pl_solid` builds the five solids from their
+  corners alone: edges are pairs of corners one edge length apart, faces
+  are planes with every other corner on one side, and the notation
+  checks Euler's V − E + F = 2.
+
+`pl_wave` draws a height surface z = f(x, y, t) at 12 moments and plays
+them in a loop in the live view.
+
+What it cannot do yet: free-form models such as a face or a car need a
+mesh file, which Kosika does not read. A run's 10,000-call budget limits
+a parametric surface to about 1,000 points (such as 72 × 14) and an implicit surface to
+a 16-step grid, so fine detail smaller than that is lost.
 
 ## Rules to keep
 
