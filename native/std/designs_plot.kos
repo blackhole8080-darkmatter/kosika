@@ -101,7 +101,9 @@ fn pl_atan2(y: Number, x: Number) -> Number {
 fn pl_eval(e: Text[], names: Text[], res: Number[], ims: Number[]) -> PlC {
   let pi = 3.141592653589793
   let big = 1000000000000
-  let tiny = 0.000000000001
+  // Only a true zero is refused: a tiny divisor is fine, and a result too
+  // large to draw is caught by big below.
+  let tiny = 0.000000000000000000000000000001
   var sr: Number[] = []
   var si: Number[] = []
   var i = e.length() - 1
@@ -1010,7 +1012,7 @@ fn pl_has(t: Text, words: Text[]) -> Bool {
 // a complex function, a surface, or space-time.
 fn pl_wants(text: Text) -> Bool {
   let t = " " + text.lower() + " "
-  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "white-line", "white line", "curved space", "gravity well"])
+  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "curved space", "gravity well"])
 }
 
 // Which drawing an ask wants, by its words and its formula: curve,
@@ -1073,6 +1075,7 @@ test "the arctangent and complex arithmetic are worked exactly enough" {
 }
 
 test "a value Kosika cannot compute is left out, never guessed" {
+  expect pl_real(parse("1/x").expr, ["x"], [0.0000001]).re > 9999999
   expect not pl_eval(parse("1/z").expr, ["z"], [0], [0]).ok
   expect not pl_eval(parse("ln(z)").expr, ["z"], [0], [0]).ok
   expect not pl_real(parse("sqrt(x)").expr, ["x"], [-4]).ok

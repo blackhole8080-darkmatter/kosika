@@ -146,7 +146,7 @@ fn dz_named(ask: DzAsk) -> Text {
   if ui_wants(ask.text) { return "ui" }
   // A formula, a complex function or space-time to draw: Kosika math
   // draws it in white lines, in 2D or 3D, before "3d" art can claim it.
-  if pl_wants(ask.text) { return "plot" }
+  if pl_wants(ask.text) and not dz_has(t, dz_art_asked()) { return "plot" }
   if dz_has(t, [" 3d ", " 3-d ", " three dimensional", " three-dimensional"]) { return "3d" }
   // Asked for art in so many words, it is art, whatever it is of: "art of
   // planets orbiting a burning star" is not a reaction to balance.
@@ -2029,6 +2029,7 @@ test "a formula, a complex function or space-time is drawn by Kosika math" {
   expect dz_kind(dz_ask("draw the complex function f(z) = z^2")) == "plot"
   expect dz_kind(dz_ask("draw a space-time graph in 3D")) == "plot"
   expect dz_kind(dz_ask("a 3d sculptural bloom")) == "3d"
+  expect dz_kind(dz_ask("make an art piece of the curve y = sin(x)")) == "art"
   made = dz_from_plot(dz_ask("plot y = x^2 - 1"), pl_curve("x^2 - 1", -3, 3))
   expect made.kind == "plot"
   expect made.problems.is_empty()
