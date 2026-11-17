@@ -1141,6 +1141,17 @@ pre.diff .hunk { color: var(--faint); }
 .home-ask { display: flex; gap: 8px; margin: 0 0 18px; }
 .home-ask input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; }
 .home-ask input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.model-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.model-top h3 { margin: 0; }
+.model-card .chips { margin: 10px 0 6px; }
+.model-tip { color: var(--soft); font-size: 13px; margin: 6px 0 10px; line-height: 1.45; }
+.model-bar { display: flex; height: 6px; border-radius: 99px; overflow: hidden; background: var(--line); gap: 1px; }
+.model-bar i { display: block; min-width: 0; }
+.model-bar .ok { background: var(--ok); } .model-bar .warn { background: var(--accent); } .model-bar .bad { background: var(--bad); } .model-bar .soft { background: var(--soft); }
+.route-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.route-list li { display: grid; grid-template-columns: 160px 1fr; gap: 12px; font-size: 13.5px; padding: 4px; border-radius: 8px; }
+.route-list li.hit { cursor: pointer; } .route-list li.hit:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.route-list span { color: var(--soft); }
 .plan { margin: 0 0 16px; border-top: 3px solid var(--accent) !important; }
 .plan.done { border-top-color: var(--ok) !important; }
 .plan-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -1183,6 +1194,7 @@ pre.diff .hunk { color: var(--faint); }
 <main id="main"></main>
 <template id="icon-assistant"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></template>
 <template id="icon-home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h5v-5h4v5h5v-9"/></svg></template>
+<template id="icon-models"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg></template>
 <template id="icon-project"><svg viewBox="0 0 24 24"><path d="M4 5h6v6H4z"/><path d="M14 5h6v6h-6z"/><path d="M4 15h6v4H4z"/><path d="M14 15h6v4h-6z"/></svg></template>
 <template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
@@ -1382,7 +1394,7 @@ function drawRail(active) {
   const groups = [
     [null, [["home", "Home"], ["assistant", "Assistant"], ["coders", "Coders"]]],
     ["Create", [["designs", "Designs"], ["study", "Study"]]],
-    ["Build", [["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"]]],
+    ["Build", [["project", "Project"], ["agents", "Agents"], ["models", "Models"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"]]],
     ["System", [["services", "Services"], ["permissions", "Permissions"], ["mayaos", "MayaOS"]]]
   ];
   const item = ([key, label]) => h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null);
@@ -1418,6 +1430,7 @@ async function route() {
     if (active !== "home") clearTimeout(homeTimer);
     if (active === "home") await showHome(id);
     else if (active === "agents") showAgents();
+    else if (active === "models") await showModels();
     else if (active === "agent") await showAgent(id, false);
     else if (active === "project") await showProject();
     else if (active === "runs") await showRuns();
@@ -1793,6 +1806,44 @@ async function showServices() {
 // is still working.
 // Home: the day at a glance. The facts come from /api/home; what is said,
 // in which order and in which colours is decided by app_assets/home.kos.
+// Models: what the agents can ask, and how each model is doing today.
+// The facts come from /api/models; what they mean is said by models.kos.
+async function showModels() {
+  const view = await api("/api/models");
+  const badge = {ready: "ok", unused: "", limited: "warn", rejected: "warn", shaky: "warn", missing: "bad", "no-key": "bad"};
+  const rows = view.slots.map((slot, index) => {
+    const verdict = view.verdicts[index] || {};
+    const rate = slot.tries ? Math.round(100 * slot.ok / slot.tries) + "% answered" : "not asked today";
+    return h("div", {class: "card model-card"},
+      h("div", {class: "model-top"},
+        h("div", null, h("h3", null, slot.slot), h("small", {class: "path"}, slot.id)),
+        chip(verdict.label || "", badge[verdict.state] || "")),
+      h("div", {class: "chips"}, chip(slot.provider, slot.local ? "think" : ""), chip(slot.local ? "on this laptop" : "free cloud"),
+        slot.local ? null : chip(slot.key_set ? "key set" : "no key", slot.key_set ? "ok" : "bad"), chip(rate)),
+      h("p", {class: "model-tip"}, verdict.tip || ""),
+      slot.tries ? h("div", {class: "model-bar", title: slot.ok + " answered, " + slot.limited + " over the free limit, " + slot.missing + " not found, " + slot.rejected + " refused"},
+        h("i", {class: "ok", style: "flex:" + slot.ok}), h("i", {class: "warn", style: "flex:" + slot.limited}),
+        h("i", {class: "bad", style: "flex:" + slot.missing}), h("i", {class: "soft", style: "flex:" + slot.rejected})) : null);
+  });
+  const uses = (overview.agents || []).filter(agent => agent.models && agent.models.length);
+  const routes = Object.entries(view.routes || {});
+  main.replaceChildren(...[
+    titled("Models"),
+    h("p", {class: "lead"}, view.summary, " ", h("span", {class: "path"}, view.router_file)),
+    view.ok ? null : h("div", {class: "banner bad"}, view.error),
+    h("div", {class: "chips", style: "margin:-6px 0 18px"}, chip(view.router_up ? "router running" : "router stopped", view.router_up ? "ok" : "bad"),
+      chip(view.ollama_up ? "Ollama running" : "Ollama not running", view.ollama_up ? "ok" : "warn"), chip(view.ready + " of " + view.slots.length + " ready")),
+    h("div", {class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"}, rows),
+    routes.length ? h("h2", null, "Which models each kind of job tries, in order") : null,
+    routes.length ? h("div", {class: "card"}, h("ul", {class: "route-list"}, routes.map(([kind, order]) =>
+      h("li", null, h("b", null, kind), h("span", null, order.join(" \u2192 ")))))) : null,
+    uses.length ? h("h2", null, "Agents and the models they declare") : null,
+    uses.length ? h("div", {class: "card"}, h("p", {class: "lead", style: "margin:0 0 10px"}, "Each model an agent declares is answered by kosika-virtual, Kosika's router, unless a run names another."),
+      h("ul", {class: "route-list"}, uses.map(agent => h("li", {class: "hit", onclick: () => go("agent", agent.id)}, h("b", null, agent.title || agent.id),
+        h("span", null, agent.models.join(", ")))))) : null
+  ].filter(Boolean));
+}
+
 let homeTimer = 0;
 // A request in a few words: the file it is about and what it is for.
 function shortAsk(text) {

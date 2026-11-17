@@ -1,0 +1,104 @@
+// Studio's Models page, decided in Kosika: for each model the agents can
+// reach through Kosika's router, whether it is ready, and if not, why and
+// what to do. Studio's server gathers the facts (router.json, the keys that
+// are set, what Ollama has, the router's own record of the last day); this
+// says what they mean. No model is asked.
+
+import "std/designs_palette.kos"
+
+export [Slot, Verdict, ModelsIn, ModelsOut, verdict_for, summary_for, page]
+
+record Slot {
+  slot: Text        // the router's name for it: quick, strong, coder...
+  id: Text          // the model itself
+  provider: Text    // Groq, OpenRouter, Ollama, Kosika
+  local: Bool       // runs on this laptop
+  key_set: Bool     // its key is set (never the key itself)
+  reachable: Bool   // a local model is there to answer
+  tries: Number     // asked in the last day
+  ok: Number        // answered
+  limited: Number   // refused for its free allowance (429)
+  missing: Number   // not found (404)
+  rejected: Number  // the request was refused as too big or wrong (400, 413)
+  ms: Number        // usual time for an answer, in milliseconds
+  install: Text     // how to install it here, when it is a model of Kosika's own
+}
+
+record Verdict { slot: Text state: Text label: Text tip: Text colour: Text }
+record ModelsIn { router_up: Bool slots: Slot[] }
+record ModelsOut { summary: Text verdicts: Verdict[] ready: Number }
+
+fn share(part: Number, whole: Number) -> Number {
+  if whole == 0 { return 0 }
+  return part / whole
+}
+
+fn verdict_for(s: Slot) -> Verdict {
+  let p = palette_named("dark_matter")
+  if s.local and not s.reachable {
+    let how = if s.provider == "Kosika" { "Kosika's own model server for it is not running on this laptop." } else { if s.install == "" { "Ollama does not have it: pull it, or take it out of router.json." } else { "Install it here: " + s.install } }
+    return {slot: s.slot, state: "missing", label: "Not installed", tip: how, colour: p.hues[5]}
+  }
+  if not s.local and not s.key_set {
+    return {slot: s.slot, state: "no-key", label: "No key", tip: "Set its key once with setx (" + s.provider + "); the router then uses it.", colour: p.hues[5]}
+  }
+  if s.tries == 0 {
+    return {slot: s.slot, state: "unused", label: "Ready, not used today", tip: "Nothing was sent to it in the last day.", colour: p.soft}
+  }
+  if share(s.limited, s.tries) > 0.5 {
+    return {slot: s.slot, state: "limited", label: "Free allowance used up", tip: "Most asks today were refused for the free limit; the router moves on to the next model and comes back after it cools.", colour: p.gold}
+  }
+  if share(s.ok, s.tries) >= 0.5 {
+    return {slot: s.slot, state: "ready", label: "Ready", tip: s.ok.to_text() + " of " + s.tries.to_text() + " answered today, in about " + (s.ms / 1000).round().to_text() + " s", colour: p.hues[4]}
+  }
+  if share(s.rejected, s.tries) > 0.3 {
+    return {slot: s.slot, state: "rejected", label: "Refuses big requests", tip: "Many asks were too long for it; the router sends it short ones first.", colour: p.gold}
+  }
+  return {slot: s.slot, state: "shaky", label: "Unreliable today", tip: "Fewer than half its asks were answered today.", colour: p.gold}
+}
+
+fn summary_for(m: ModelsIn, ready: Number) -> Text {
+  if not m.router_up { return "Kosika's router is not running, so agents that use kosika-virtual have no model. Start the swarm or the router to bring it up." }
+  return ready.to_text() + " of " + m.slots.length().to_text() + " models are ready. Agents ask kosika-virtual at 127.0.0.1:8791, and the router picks among these."
+}
+
+fn page_of(m: ModelsIn) -> ModelsOut {
+  let verdicts = for s in m.slots { verdict_for(s) }
+  let ready = (for v in verdicts { if v.state == "ready" or v.state == "unused" { 1 } else { 0 } }).sum()
+  return {summary: summary_for(m, ready), verdicts: verdicts, ready: ready}
+}
+
+workflow page(m: ModelsIn) -> ModelsOut {
+  shown = page_of(m)
+}
+
+fn slot(name: Text, local: Bool, key: Bool, reach: Bool, tries: Number, ok: Number, limited: Number, missing: Number) -> Slot {
+  return {slot: name, id: name, provider: "Groq", local: local, key_set: key, reachable: reach, tries: tries, ok: ok,
+          limited: limited, missing: missing, rejected: 0, ms: 4000, install: if local { "ollama create " + name } else { "" }}
+}
+
+test "a model of Kosika's own that is not installed says how to install it" {
+  v = verdict_for(slot("kosika-coder", true, false, false, 40, 0, 0, 40))
+  expect v.state == "missing"
+  expect v.tip.contains("ollama create kosika-coder")
+}
+
+test "a cloud model needs its key, and its free allowance is said plainly" {
+  expect verdict_for(slot("strong", false, false, false, 0, 0, 0, 0)).state == "no-key"
+  expect verdict_for(slot("spare", false, true, false, 10, 2, 8, 0)).state == "limited"
+  expect verdict_for(slot("strong", false, true, false, 10, 7, 3, 0)).state == "ready"
+  expect verdict_for(slot("quick", false, true, false, 0, 0, 0, 0)).state == "unused"
+}
+
+test "a model of Kosika's own server says it is not running" {
+  s: Slot = {slot: "small", id: "kosika-small", provider: "Kosika", local: true, key_set: true, reachable: false, tries: 0, ok: 0, limited: 0, missing: 0, rejected: 0, ms: 0, install: ""}
+  expect verdict_for(s).tip.contains("not running")
+}
+
+test "the summary says when the router is down" {
+  m: ModelsIn = {router_up: false, slots: []}
+  expect page_of(m).summary.contains("not running")
+  n: ModelsIn = {router_up: true, slots: [slot("strong", false, true, false, 10, 7, 3, 0), slot("coder", true, false, false, 5, 0, 0, 5)]}
+  expect page_of(n).ready == 1
+  expect page_of(n).summary.starts_with("1 of 2 models are ready")
+}

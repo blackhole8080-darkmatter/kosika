@@ -2286,6 +2286,14 @@ class App:
 
         return home.home()
 
+    def models_page(self) -> dict[str, Any]:
+        """The models the agents reach through Kosika's router, and how each
+        is doing, as app_assets/models.kos says."""
+
+        from . import models_page
+
+        return models_page.page()
+
     def morning(self) -> dict[str, Any]:
         """Kosi's plan for the day, as app_assets/morning.kos writes it."""
 
@@ -2777,6 +2785,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.pause_service(self._body()))
                 elif method == "GET" and url.path == "/api/home":
                     self._json(200, app.home())
+                elif method == "GET" and url.path == "/api/models":
+                    self._json(200, app.models_page())
                 elif method == "GET" and url.path == "/api/morning":
                     self._json(200, app.morning())
                 elif method == "POST" and url.path == "/api/morning/approve":
