@@ -391,15 +391,19 @@ fn pl_tracer(d: Text, dur: Number, tangent: Bool) -> Text {
   return f"<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"2.4s\" fill=\"freeze\"/>{line}<circle r=\"9\" fill=\"#f5b942\" fill-opacity=\".18\"/><circle r=\"4.2\" fill=\"#f5b942\"/><animateMotion dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\" rotate=\"auto\" path=\"{d}\"/></g>"
 }
 
-// A radius from a centre to a point that runs round a polar curve.
+// A radius from a centre to a point that runs round a polar curve. Where
+// the curve has no value the radius folds back to the centre and hides,
+// so it never sweeps across a gap.
 fn pl_spoke(cx: Number, cy: Number, xs: Number[], ys: Number[], ok: Bool[], dur: Number) -> Text {
   let every = (xs.length() / 240).ceil().max(1)
-  let picks = for k in 0 until xs.length() where ok[k] and k % every == 0 { k }
-  if picks.length() < 2 { return "" }
-  let vx = (for k in picks { xs[k].to_fixed(1) }).join(";")
-  let vy = (for k in picks { ys[k].to_fixed(1) }).join(";")
+  let picks = for k in 0 until xs.length() where k % every == 0 { k }
+  if (for k in picks where ok[k] { k }).length() < 2 { return "" }
+  let vx = (for k in picks { if ok[k] { xs[k].to_fixed(1) } else { cx.to_fixed(1) } }).join(";")
+  let vy = (for k in picks { if ok[k] { ys[k].to_fixed(1) } else { cy.to_fixed(1) } }).join(";")
+  let seen = (for k in picks { if ok[k] { "1" } else { "0" } }).join(";")
   let c = f"cx=\"{cx.to_fixed(1)}\" cy=\"{cy.to_fixed(1)}\""
-  return f"<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"2.4s\" fill=\"freeze\"/><line x1=\"{cx.to_fixed(1)}\" y1=\"{cy.to_fixed(1)}\" stroke=\"#f5b942\" stroke-width=\"1.4\"><animate attributeName=\"x2\" values=\"{vx}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/><animate attributeName=\"y2\" values=\"{vy}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/></line><circle r=\"9\" fill=\"#f5b942\" fill-opacity=\".18\" {c}><animate attributeName=\"cx\" values=\"{vx}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/><animate attributeName=\"cy\" values=\"{vy}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/></circle><circle r=\"4.2\" fill=\"#f5b942\" {c}><animate attributeName=\"cx\" values=\"{vx}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/><animate attributeName=\"cy\" values=\"{vy}\" dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\"/></circle></g>"
+  let run = f"dur=\"{dur}s\" begin=\"2.4s\" repeatCount=\"indefinite\""
+  return f"<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"2.4s\" fill=\"freeze\"/><g><animate attributeName=\"opacity\" values=\"{seen}\" calcMode=\"discrete\" {run}/><line x1=\"{cx.to_fixed(1)}\" y1=\"{cy.to_fixed(1)}\" stroke=\"#f5b942\" stroke-width=\"1.4\"><animate attributeName=\"x2\" values=\"{vx}\" {run}/><animate attributeName=\"y2\" values=\"{vy}\" {run}/></line><circle r=\"9\" fill=\"#f5b942\" fill-opacity=\".18\" {c}><animate attributeName=\"cx\" values=\"{vx}\" {run}/><animate attributeName=\"cy\" values=\"{vy}\" {run}/></circle><circle r=\"4.2\" fill=\"#f5b942\" {c}><animate attributeName=\"cx\" values=\"{vx}\" {run}/><animate attributeName=\"cy\" values=\"{vy}\" {run}/></circle></g></g>"
 }
 
 fn pl_curve(text: Text, x0: Number, x1: Number) -> PlFigure {
@@ -1935,6 +1939,11 @@ test "a graph's point travels along it with its tangent" {
 test "the twins count their own birthdays as they move" {
   expect pl_twins(0.6, 3).svg.contains("traveller: 8")
   expect pl_twins(0.6, 3).svg.contains("home: 10")
+}
+
+test "a polar radius hides where the curve has no value" {
+  expect pl_spoke(0, 0, [1, 2, 3, 4], [1, 2, 3, 4], [true, false, true, true], 4).contains("values=\"1;0;1;1\"")
+  expect pl_spoke(0, 0, [1, 2], [1, 2], [true, false], 4) == ""
 }
 
 test "motion stops for people who ask for less of it" {
