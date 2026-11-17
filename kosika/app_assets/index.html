@@ -1386,6 +1386,17 @@ async function route() {
   const [view, rawId] = location.hash.slice(1).split("/");
   const id = rawId ? decodeURIComponent(rawId) : "";
   try {
+    // Home needs no agent list: on the first open it is drawn at once and
+    // the side bar is finished when the list (seconds, the first time) comes.
+    if ((view || "home") === "home" && !overview) {
+      overview = {loading: true, can_run: true, model: "Reading your agents…", root: "", agents: []};
+      drawRail("home");
+      await showHome(id);
+      const listed = await api("/api/agents");
+      overview = listed;
+      if (mine === routing) { drawRail("home"); if (id === "chat") await showHome(id); }
+      return;
+    }
     overview = await api("/api/agents");
     if (mine !== routing) return;
     const active = view || "home";
@@ -1793,7 +1804,7 @@ async function showHome(tab, quiet) {
   function send() {
     const text = ask.value.trim();
     if (!text) return;
-    if (!overview.assistant) { alert("There is no assistant agent in this folder to ask."); return; }
+    if (!overview.assistant) { alert(overview.loading ? "Studio is still reading your agents. Ask again in a moment." : "There is no assistant agent in this folder to ask."); return; }
     handed = {agent: overview.assistant, text, why: "you asked from Home"};
     go("home", "chat");
   }
