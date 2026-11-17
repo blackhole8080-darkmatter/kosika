@@ -1131,7 +1131,34 @@ pre.diff .hunk { color: var(--faint); }
 [data-skin="graphite"] pre, [data-skin="graphite"] code { font-family: "JetBrains Mono", var(--mono); }
 [data-skin="graphite"] .path { font-family: var(--mono); color: var(--faint); }
 [data-skin="graphite"] main { animation: none !important; }
-</style>
+/* Home: the day at a glance (home.kos decides the words, order and colours). */
+.home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.home-head h1 { margin: 0; font-size: 30px; letter-spacing: -.01em; }
+.home-head p { margin: 4px 0 0; color: var(--soft); }
+.home-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); margin: 14px 0 18px; width: max-content; max-width: 100%; overflow-x: auto; }
+.home-tab { padding: 7px 14px; border-radius: 9px; cursor: pointer; color: var(--soft); font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+.home-tab.on { background: var(--accent); color: #fff; }
+.home-ask { display: flex; gap: 8px; margin: 0 0 18px; }
+.home-ask input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; }
+.home-ask input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.home-card { border-top: 3px solid var(--card-accent, var(--accent)); }
+.home-card h3 { margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
+.home-card h3 i { width: 9px; height: 9px; border-radius: 50%; background: var(--card-accent, var(--accent)); box-shadow: 0 0 10px var(--card-accent, var(--accent)); }
+.home-card .line { color: var(--soft); margin: 0 0 10px; font-size: 13.5px; }
+.home-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.home-card li { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; font-size: 13.5px; line-height: 1.4; }
+.home-card li .txt { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.home-card li.hit { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; }
+.home-card li.hit:hover { background: var(--accent-soft); }
+.home-who { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #0b0d12; background: var(--who); box-shadow: 0 0 0 3px color-mix(in srgb, var(--who) 30%, transparent), 0 0 16px var(--who); animation: home-breathe 3.4s ease-in-out infinite; }
+.home-typing { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--ink); opacity: .85; }
+.home-typing::after { content: "\258D"; animation: home-caret 1s steps(1) infinite; color: var(--who); }
+@keyframes home-breathe { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--who) 18%, transparent), 0 0 26px var(--who); } }
+@keyframes home-caret { 50% { opacity: 0; } }
+.home-glow { position: fixed; inset: 0; pointer-events: none; z-index: 50; border-radius: 0; transition: opacity .9s; animation: home-glow 3.4s ease-in-out infinite; }
+@keyframes home-glow { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .home-who, .home-glow, .home-typing::after { animation: none; } }</style>
 </head>
 <body>
 <aside class="rail">
@@ -1141,6 +1168,7 @@ pre.diff .hunk { color: var(--faint); }
 </aside>
 <main id="main"></main>
 <template id="icon-assistant"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></template>
+<template id="icon-home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h5v-5h4v5h5v-9"/></svg></template>
 <template id="icon-project"><svg viewBox="0 0 24 24"><path d="M4 5h6v6H4z"/><path d="M14 5h6v6h-6z"/><path d="M4 15h6v4H4z"/><path d="M14 15h6v4h-6z"/></svg></template>
 <template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
@@ -1336,7 +1364,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["home", "Home"], ["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
@@ -1354,9 +1382,11 @@ async function route() {
   try {
     overview = await api("/api/agents");
     if (mine !== routing) return;
-    const active = view || "assistant";
+    const active = view || "home";
     drawRail(active === "agent" ? "agents" : active);
-    if (active === "agents") showAgents();
+    if (active !== "home") clearTimeout(homeTimer);
+    if (active === "home") await showHome(id);
+    else if (active === "agents") showAgents();
     else if (active === "agent") await showAgent(id, false);
     else if (active === "project") await showProject();
     else if (active === "runs") await showRuns();
@@ -1730,6 +1760,83 @@ async function showServices() {
 // to-do list it takes requests from; a box to add one, and a button that
 // starts the swarm. The page looks again every few seconds while any coder
 // is still working.
+// Home: the day at a glance. The facts come from /api/home; what is said,
+// in which order and in which colours is decided by app_assets/home.kos.
+let homeTimer = 0;
+// A request in a few words: the file it is about and what it is for.
+function shortAsk(text) {
+  const found = /^(?:write|add|make) (?:a )?(?:new )?(?:file )?([\w./-]+)[:,]?\s*(.*)$/i.exec(text || "");
+  if (!found) return text || "";
+  const rest = found[2].replace(/^Kosika Studio's\s*/i, "").split(/[.;(]/)[0].trim();
+  return found[1].split("/").pop() + (rest ? " \u2014 " + rest : "");
+}
+async function showHome(tab, quiet) {
+  clearTimeout(homeTimer);
+  const view = await api("/api/home");
+  const look = view.look;
+  const tabs = (look.tabs || ["Today", "Chat", "Designs", "Coders"]).map(name => {
+    const key = name === "Today" ? "" : name.toLowerCase();
+    return h("div", {class: "home-tab" + (key === (tab || "") ? " on" : ""), onclick: () => go("home", key)}, name);
+  });
+  const strip = h("div", {class: "home-tabs"}, tabs);
+  glow(look.glow || []);
+  if (tab === "chat" && overview.assistant) { await showAgent(overview.assistant, true); main.prepend(strip); return; }
+  if (tab === "designs") { showDesigns(); main.prepend(strip); return; }
+  if (tab === "coders") { await showCoders(); main.prepend(strip); return; }
+  const ask = h("input", {placeholder: "Ask Kosi anything, or tell the agents what to do next…", "aria-label": "Ask Kosi"});
+  function send() {
+    const text = ask.value.trim();
+    if (!text) return;
+    if (!overview.assistant) { alert("There is no assistant agent in this folder to ask."); return; }
+    handed = {agent: overview.assistant, text, why: "you asked from Home"};
+    go("home", "chat");
+  }
+  ask.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
+  const lists = {
+    working: view.working.length
+      ? view.working.map(w => h("li", null, h("span", {class: "home-who", style: "--who:" + (w.colour || "var(--accent)")}, (w.tag || w.name).slice(0, 1).toUpperCase()),
+          h("div", null, h("b", null, w.tag || w.name), " ", h("small", {class: "path"}, w.name), h("div", {class: "txt", title: w.doing}, shortAsk(w.doing) || "working"),
+            w.typing ? h("div", {class: "home-typing", style: "--who:" + (w.colour || "var(--accent)")}, w.typing.slice(-70)) : null)))
+      : [],
+    waiting: view.waiting.map(run => h("li", {class: "hit", onclick: () => go("coders", run.run), title: "See the change, and keep it"}, chip("passed", "ok"), h("span", {class: "txt", title: run.request}, shortAsk(run.request)))),
+    tasks: view.tasks.items.map(item => h("li", null, chip(item.state === "taken" ? "working" : "waiting", item.state === "taken" ? "warn" : ""), h("span", {class: "txt", title: item.text}, shortAsk(item.text)))),
+    done: view.done.recent.map(run => h("li", {class: "hit", onclick: () => go("coders", run.run)}, chip(run.result === "passed" ? "passed" : "did not pass", run.result === "passed" ? "ok" : "bad"), h("span", {class: "txt", title: run.request}, shortAsk(run.request))))
+  };
+  const cards = (look.cards || []).map(card => h("div", {class: "card home-card", style: "--card-accent:" + card.accent},
+    h("h3", null, h("i"), card.title), h("p", {class: "line"}, card.line), lists[card.key] && lists[card.key].length ? h("ul", null, lists[card.key]) : null));
+  const again = () => { homeTimer = setTimeout(() => { if (["", "#", "#home"].includes(location.hash)) showHome("", true); }, view.working.length ? 2000 : 8000); };
+  const grid = quiet && main.querySelector(".home-grid");
+  if (grid) {
+    // Live while you look: only the cards change, so nothing jumps and the
+    // box keeps what you were writing.
+    grid.replaceChildren(...cards);
+    main.querySelector(".home-head h1").textContent = look.greeting;
+    main.querySelector(".home-head p").textContent = look.line;
+    again();
+    return;
+  }
+  main.replaceChildren(...[
+    h("div", {class: "home-head"}, h("div", null, h("h1", null, look.greeting), h("p", null, look.line))),
+    strip,
+    h("div", {class: "home-ask"}, ask, h("button", {onclick: send}, "Ask Kosi")),
+    view.ok ? null : h("div", {class: "banner bad"}, view.error || "home.kos could not be run"),
+    h("div", {class: "home-grid"}, cards)].filter(Boolean));
+  again();
+}
+
+// The edge of Studio glows in the colours of the agents at work, as the
+// edges of the screen do (the overlay), and fades when they stop.
+function glow(colours) {
+  let edge = document.querySelector(".home-glow");
+  if (!edge) { edge = h("div", {class: "home-glow"}); document.body.append(edge); }
+  if (!colours.length) { edge.style.opacity = "0"; return; }
+  const ring = colours.concat(colours[0]).join(", ");
+  edge.style.opacity = "1";
+  edge.style.boxShadow = "inset 0 0 38px 2px " + colours[0];
+  edge.style.background = "none";
+  edge.style.border = "3px solid transparent";
+  edge.style.borderImage = "linear-gradient(120deg, " + ring + ") 1";
+}
 let codersTimer = 0;
 async function showCoders(note) {
   clearTimeout(codersTimer);

@@ -2253,6 +2253,14 @@ class App:
             raise AppError(str(exc), 404) from exc
         return self.services()
 
+    def home(self) -> dict[str, Any]:
+        """The home screen: who is at work, what waits for a Keep, the day's
+        list and what the swarm did, shown as app_assets/home.kos says."""
+
+        from . import home
+
+        return home.home()
+
     def coders(self) -> dict[str, Any]:
         """The coder swarm: the latest day's runs, who is on what and how
         each ended, and the to-do list the coders take requests from."""
@@ -2728,6 +2736,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.services())
                 elif method == "POST" and url.path == "/api/services/pause":
                     self._json(200, app.pause_service(self._body()))
+                elif method == "GET" and url.path == "/api/home":
+                    self._json(200, app.home())
                 elif method == "GET" and url.path == "/api/coders":
                     self._json(200, app.coders())
                 elif method == "POST" and url.path == "/api/coders/request":
