@@ -2398,7 +2398,9 @@ fn pl_orbits(text: Text) -> PlFigure {
     labels = labels.append({x: pts[3 * half], y: pts[3 * half + 1], z: pts[3 * half + 2] + 0.06, text: b.name, tone: "white"})
     said = said.append(f"{b.name}: a = {pl_num(b.a)} AU, e = {pl_num(b.e)}, tilted {pl_num(b.tilt)}°, once round in {pl_num(period)} Earth years.")
   }
-  let sun: PlScene = {quads: pl_ball(0, 0, 0, 0.045, 2), lines: [], labels: [{x: 0, y: 0, z: 0.1, text: "Sun", tone: "amber"}]}
+  // The Sun in white line, with short amber rays for its light.
+  let rays: PlLine[] = for d in 0 until 12 { {pts: [0.075 * (30 * d).cos(), 0.075 * (30 * d).sin(), 0, 0.12 * (30 * d).cos(), 0.12 * (30 * d).sin(), 0], tone: "amber", width: 1.4, dash: false} }
+  let sun: PlScene = {quads: pl_ball(0, 0, 0, 0.055, 0), lines: rays, labels: [{x: 0, y: 0, z: 0.13, text: "Sun", tone: "amber"}]}
   let scene = pl_merge(sun, {quads: [], lines: lines, labels: labels})
   let view: PlView = {yaw: 25, pitch: 32, width: 960, height: 640}
   let notation = "<math display=\"block\"><mi>M</mi><mo>=</mo><mi>E</mi><mo>&#8722;</mo><mi>e</mi><mi>sin</mi><mi>E</mi><mo>,</mo><mspace width=\"1em\"/><msup><mi>T</mi><mn>2</mn></msup><mo>&#8733;</mo><msup><mi>a</mi><mn>3</mn></msup></math>"
@@ -2444,18 +2446,18 @@ fn pl_blackhole(text: Text) -> PlFigure {
       let r1 = 1 + (rmax - 1) * ((j + 1) / nv) * ((j + 1) / nv)
       let z0 = 2 * (r0 - 1).sqrt() * k + lift
       let z1 = 2 * (r1 - 1).sqrt() * k + lift
-      quads = quads.append([r0 * k * a0.cos(), r0 * k * a0.sin(), z0, r1 * k * a0.cos(), r1 * k * a0.sin(), z1, r1 * k * a1.cos(), r1 * k * a1.sin(), z1, r0 * k * a1.cos(), r0 * k * a1.sin(), z0, 1])
+      quads = quads.append([r0 * k * a0.cos(), r0 * k * a0.sin(), z0, r1 * k * a0.cos(), r1 * k * a0.sin(), z1, r1 * k * a1.cos(), r1 * k * a1.sin(), z1, r0 * k * a1.cos(), r0 * k * a1.sin(), z0, 0])
     }
   }
   let rings = for r in [1, 1.5, 3] { pl_flat(for d in 0 until 73 { [r * k * (5 * d).cos(), r * k * (5 * d).sin(), 2 * (r - 1).sqrt() * k + lift + 0.004] }) }
-  let lines: PlLine[] = [{pts: rings[0], tone: "white", width: 2.4, dash: false}, {pts: rings[1], tone: "amber", width: 1.6, dash: true}, {pts: rings[2], tone: "indigo", width: 1.6, dash: false}, {pts: rings[2], tone: "tracer", width: 5, dash: false}]
-  let labels: PlLabel[] = [{x: 0, y: -1 * k, z: lift - 0.07, text: "event horizon", tone: "white"}, {x: 1.5 * k, y: 1.5 * k, z: 2 * 0.5.sqrt() * k + lift + 0.06, text: "photon sphere", tone: "amber"}, {x: 3 * k + 0.12, y: 0, z: 2 * 2.sqrt() * k + lift + 0.06, text: "last stable orbit", tone: "indigo"}]
+  let lines: PlLine[] = [{pts: rings[0], tone: "white", width: 2.4, dash: false}, {pts: rings[1], tone: "amber", width: 1.6, dash: true}, {pts: rings[2], tone: "white", width: 1.4, dash: true}, {pts: rings[2], tone: "tracer", width: 5, dash: false}]
+  let labels: PlLabel[] = [{x: 0, y: -1 * k, z: lift - 0.07, text: "event horizon", tone: "white"}, {x: 1.5 * k, y: 1.5 * k, z: 2 * 0.5.sqrt() * k + lift + 0.06, text: "photon sphere", tone: "amber"}, {x: 3 * k + 0.12, y: 0, z: 2 * 2.sqrt() * k + lift + 0.06, text: "last stable orbit", tone: "white"}]
   let scene: PlScene = {quads: quads, lines: lines, labels: labels}
   let view: PlView = {yaw: 30, pitch: 24, width: 960, height: 640}
   let rs = 2.953 * mass
   let size = if rs < 1000000 { pl_num(rs) + " km" } else { pl_num(rs / 1000000) + " million km (" + pl_num(rs / 149597871) + " AU)" }
   let notation = "<math display=\"block\"><mi>z</mi><mo stretchy=\"false\">(</mo><mi>r</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mn>2</mn><msqrt><msub><mi>r</mi><mi>s</mi></msub><mo stretchy=\"false\">(</mo><mi>r</mi><mo>&#8722;</mo><msub><mi>r</mi><mi>s</mi></msub><mo stretchy=\"false\">)</mo></msqrt><mo>,</mo><mspace width=\"1em\"/><msub><mi>r</mi><mi>s</mi></msub><mo>=</mo><mfrac><mrow><mn>2</mn><mi>G</mi><mi>M</mi></mrow><msup><mi>c</mi><mn>2</mn></msup></mfrac></math>"
-  let notes: Text[] = [f"For a mass of {pl_num(mass)} Suns, Kosika works the Schwarzschild radius rs = 2GM/c² = {size}: the event horizon, the throat of the funnel.", "The funnel is Flamm's paraboloid: one slice of space at one moment round a black hole that does not spin, with distances along the surface true to the geometry.", "Light can circle at 1.5 rs (amber), and no orbit is steady inside 3 rs (indigo), where the amber point goes round."]
+  let notes: Text[] = [f"For a mass of {pl_num(mass)} Suns, Kosika works the Schwarzschild radius rs = 2GM/c² = {size}: the event horizon, the throat of the funnel.", "The funnel is Flamm's paraboloid: one slice of space at one moment round a black hole that does not spin, with distances along the surface true to the geometry.", "Light can circle at 1.5 rs (amber, the colour of light here), and no orbit is steady inside 3 rs (dashed), where the amber point goes round."]
   let fig: PlFigure = {kind: "blackhole", title: "A black hole of " + pl_num(mass) + " Suns", formula: "z = 2 sqrt(rs (r - rs))", notation: notation, svg: pl_scene_svg(scene, view, "a black hole: Flamm's paraboloid"), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: []}
   return pl_paged(fig, "Kosika math &#183; astrophysics")
 }
@@ -2517,11 +2519,10 @@ fn pl_lensing(text: Text) -> PlFigure {
     let turn = (swept - 3.141592653589793 + 2 * start) * 57.29577951308232
     if b == 7.5 and not inside { wide = turn }
     if b == 2.65 and not inside { turned = turn }
-    let tone = if inside { "amber" } else { "white" }
     for plane in 0 until 1 {
       for sign in [1, -1] {
         let pts = pl_flat(for j in 0 until xs.length() where xs[j].abs() < view0 * 1.05 and ys[j].abs() < view0 * 1.05 { if plane == 0 { [0 - xs[j] * k, sign * ys[j] * k, 0] } else { [0 - xs[j] * k, 0, sign * ys[j] * k] } })
-        lines = lines.append({pts: pts, tone: tone, width: if inside { 1.3 } else { 1 }, dash: false})
+        lines = lines.append({pts: pts, tone: "amber", width: if inside { 1.3 } else { 1.1 }, dash: inside})
         if plane == 0 and sign == 1 and (b == 2.65 or b == 4) { lines = lines.append({pts: pts, tone: "tracer", width: 7, dash: false}) }
       }
     }
@@ -2533,7 +2534,7 @@ fn pl_lensing(text: Text) -> PlFigure {
   let scene: PlScene = {quads: pl_ball(0, 0, 0, k, 0), lines: lines, labels: [{x: 0, y: 0, z: 1.5 * k + 0.07, text: "photon sphere", tone: "amber"}, {x: -0.9, y: 0, z: 0.08, text: "light in", tone: "white"}]}
   let view: PlView = {yaw: 12, pitch: 42, width: 960, height: 640}
   let notation = "<math display=\"block\"><mfrac><mrow><msup><mi>d</mi><mn>2</mn></msup><mi>u</mi></mrow><mrow><mi>d</mi><msup><mi>&#966;</mi><mn>2</mn></msup></mrow></mfrac><mo>+</mo><mi>u</mi><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><msub><mi>r</mi><mi>s</mi></msub><msup><mi>u</mi><mn>2</mn></msup><mo>,</mo><mspace width=\"1em\"/><mi>u</mi><mo>=</mo><mfrac><mn>1</mn><mi>r</mi></mfrac></math>"
-  let notes: Text[] = [f"Kosika followed 8 rays by the photon orbit equation with Runge-Kutta steps, and drew each above and below the hole: {bent} pass by and {fell} fall in (amber).", f"Rays closer than b = 3&#8730;3/2 rs &#8776; 2.6 rs fall in. The ray at b = 2.65 rs skims the photon sphere and is turned through {pl_num(turned)}°, more than half a turn.", f"Far out, at b = 7.5 rs, the ray bends {pl_num(wide)}°; Einstein's weak-field rule 2rs/b gives {pl_num(2 / 7.5 * 57.29577951308232)}°, and the two agree better the farther out the ray passes."]
+  let notes: Text[] = [f"Kosika followed 8 rays by the photon orbit equation with Runge-Kutta steps, and drew each above and below the hole: {bent} pass by and {fell} fall in (dashed).", f"Rays closer than b = 3&#8730;3/2 rs &#8776; 2.6 rs fall in. The ray at b = 2.65 rs skims the photon sphere and is turned through {pl_num(turned)}°, more than half a turn.", f"Far out, at b = 7.5 rs, the ray bends {pl_num(wide)}°; Einstein's weak-field rule 2rs/b gives {pl_num(2 / 7.5 * 57.29577951308232)}°, and the two agree better the farther out the ray passes."]
   let fig: PlFigure = {kind: "lensing", title: "Light bent by a black hole", formula: "u'' + u = 3/2 rs u^2", notation: notation, svg: pl_scene_svg(scene, view, "light rays bending round a black hole"), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: []}
   return pl_paged(fig, "Kosika math &#183; astrophysics")
 }
