@@ -15,29 +15,45 @@ nothing answers on that port, the router is started from kosika-agents, as
 
 Runs are kept in ~/.kosika/ai/runs (one JSON file each); what Kosika AI has
 learned is in ~/.kosika/ai/lessons (its memory folder).
+
+Kosika AI runs from its own copy of kosika-agents' main branch, kept in
+~/.kosika/ai/agents and fetched again when it is more than a few hours old,
+so it always has the merged agent while the kosika-agents folder beside
+Studio stays on whatever branch its owner (such as the coder swarm) keeps it
+on. KOSIKA_AI_AGENTS_HOME points at another copy instead, and is never
+fetched over. When no copy can be fetched, the folder beside Studio is used
+if it has the agent.
 """
 
 from __future__ import annotations
 
 import ast
+import io
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
-from .agents_home import FETCH, agent_program, agents_home
+from .agents_home import FETCH, agents_home
 
 ROUTER_PORT = int(os.environ.get("KOSIKA_ROUTER_PORT", "8791"))
 MODEL = os.environ.get("KOSIKA_AI_MODEL", "kosika-virtual:soft")
 HOME = Path(os.environ.get("KOSIKA_AI_HOME", str(Path.home() / ".kosika" / "ai")))
 MOST_RUNS = 50
+#: kosika-agents' main branch as one zip, the same way Studio updates itself.
+AGENTS_ZIP = "https://codeload.github.com/blackhole8080-darkmatter/kosika-agents/zip/refs/heads/main"
+#: How old the copy may get before it is fetched again.
+AGENTS_FRESH_SECONDS = 6 * 3600
 _lock = threading.Lock()
 # One run at a time: runs share the lessons file, and free models their allowance.
 _one = threading.Semaphore(1)
@@ -59,6 +75,65 @@ def lessons_folder() -> Path:
     return folder
 
 
+def own_agents() -> Path:
+    """Where Kosika AI keeps its own copy of kosika-agents."""
+    told = os.environ.get("KOSIKA_AI_AGENTS_HOME")
+    return Path(told).expanduser().resolve() if told else HOME / "agents"
+
+
+def _download(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=60) as answer:
+        return answer.read()
+
+
+def fetch_agents(force: bool = False) -> str:
+    """Bring Kosika AI's copy of kosika-agents main up to date; "" when it is.
+
+    A copy named by KOSIKA_AI_AGENTS_HOME is someone's own and is left alone.
+    The new copy is unpacked beside the old one and only then put in its
+    place, so a failed download never leaves Kosika AI without an agent.
+    """
+    if os.environ.get("KOSIKA_AI_AGENTS_HOME"):
+        return ""
+    home = own_agents()
+    stamp = home / ".fetched"
+    have = (home / "agents" / "ai" / "main.kos").is_file()
+    if have and not force and stamp.is_file() and time.time() - stamp.stat().st_mtime < AGENTS_FRESH_SECONDS:
+        return ""
+    try:
+        packed = zipfile.ZipFile(io.BytesIO(_download(AGENTS_ZIP)))
+        fresh = home.with_name(home.name + ".new")
+        shutil.rmtree(fresh, ignore_errors=True)
+        packed.extractall(fresh)
+        tops = [path for path in fresh.iterdir() if path.is_dir()]
+        if len(tops) != 1 or not (tops[0] / "agents" / "ai" / "main.kos").is_file():
+            shutil.rmtree(fresh, ignore_errors=True)
+            return "The kosika-agents download has no agents/ai/main.kos."
+        old = home.with_name(home.name + ".old")
+        shutil.rmtree(old, ignore_errors=True)
+        if home.exists():
+            home.rename(old)
+        tops[0].rename(home)
+        shutil.rmtree(fresh, ignore_errors=True)
+        shutil.rmtree(old, ignore_errors=True)
+        (home / ".fetched").write_text(time.strftime("%Y-%m-%d %H:%M:%S"), encoding="utf-8")
+        return ""
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+        return f"Kosika AI could not fetch kosika-agents main: {exc}"
+
+
+def ai_agents() -> Path:
+    """The kosika-agents folder Kosika AI runs from: its own copy, else the one beside Studio."""
+    mine = own_agents()
+    if (mine / "agents" / "ai" / "main.kos").is_file():
+        return mine
+    return agents_home()
+
+
+def ai_program(name: str = "main") -> Path:
+    return ai_agents() / "agents" / "ai" / f"{name}.kos"
+
+
 def _engine() -> list[str]:
     from .designs import _engine as engine
 
@@ -77,11 +152,11 @@ def start_router() -> str:
     """Start Kosika's model router when nothing answers on its port; "" when it is up."""
     if router_up():
         return ""
-    script = agents_home() / "models" / "learning_router.py"
+    script = ai_agents() / "models" / "learning_router.py"
     if not script.is_file():
         return f"Kosika's model router is not at {script}. {FETCH}"
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    subprocess.Popen([sys.executable, str(script)], cwd=str(agents_home()), creationflags=flags,
+    subprocess.Popen([sys.executable, str(script)], cwd=str(script.parent.parent), creationflags=flags,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(40):
         if router_up():
@@ -118,7 +193,7 @@ def _work(run: dict[str, Any]) -> None:
 
 
 def _run(run: dict[str, Any]) -> None:
-    program = agent_program("ai")
+    program = ai_program()
     with tempfile.TemporaryDirectory() as work:
         given = Path(work) / "ask.json"
         given.write_text(json.dumps({"ask": {"text": run["ask"], "most": 3}}), encoding="utf-8")
@@ -153,8 +228,9 @@ def ask(text: str) -> dict[str, Any]:
         raise AIError("Say what Kosika AI should work on.")
     if len(text) > 2000:
         raise AIError("Keep the ask under 2,000 characters.")
-    if not agent_program("ai").is_file():
-        raise AIError(f"Kosika AI is not at {agent_program('ai')}. {FETCH}")
+    fetched = fetch_agents()
+    if not ai_program().is_file():
+        raise AIError(fetched or f"Kosika AI is not at {ai_program()}. {FETCH}")
     problem = start_router()
     if problem:
         raise AIError(problem)
@@ -178,7 +254,7 @@ def runs() -> dict[str, Any]:
         # A run still marked running after an hour was cut off (Studio closed).
         if run.get("state") == "running" and time.time() - run.get("started", 0) > 3600:
             run.update(state="failed", error="This run was cut off: Studio was closed while it worked.")
-    return {"runs": found, "router": router_up(), "model": MODEL}
+    return {"runs": found, "router": router_up(), "model": MODEL, "agents": str(ai_agents())}
 
 
 def mark(body: dict[str, Any]) -> dict[str, Any]:
@@ -190,7 +266,7 @@ def mark(body: dict[str, Any]) -> dict[str, Any]:
     if not path.is_file():
         raise AIError("There is no such run.")
     run = json.loads(path.read_text(encoding="utf-8"))
-    program = agent_program("ai").parent / "mark.kos"
+    program = ai_program("mark")
     with tempfile.TemporaryDirectory() as work:
         given = Path(work) / "mark.json"
         given.write_text(json.dumps({"m": {"ask": run["ask"], "verdict": verdict}}), encoding="utf-8")
