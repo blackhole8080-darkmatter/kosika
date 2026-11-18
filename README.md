@@ -225,7 +225,7 @@ agent for maths and it draws it. The guide for agents is
 </tr>
 <tr>
 <td>Gyroid: sin x cos y + sin y cos z + sin z cos x = 0</td>
-<td>A black hole and its disc</td>
+<td>A black hole: space-time as a funnel</td>
 <td>A Taylor series, one more term each beat</td>
 </tr>
 <tr>
