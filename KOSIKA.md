@@ -401,6 +401,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
 | `Text` | `is_upper_letter()` | `Bool` indicating whether the text is exactly one uppercase letter A‑Z |
 | `Text` | `trim_start()`, `trim_end()` | `Text` without white space at its start, or at its end; the other end is untouched |
+| `Text` | `truncate(most: Number)` | `Text` unchanged when length ≤ `most`; otherwise first `most-1` characters followed by “…”; `most` must be a whole number ≥ 1 |
 | `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
 | `Number[]` | `dot(other)`, `norm()`, `mean()` | `Number` |
 | `Number` | `identity()`, `zeros(columns: Number)` | `Number[][]`: the identity matrix of that size, or a matrix of zeros with that many rows |
