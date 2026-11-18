@@ -1253,6 +1253,7 @@ pre.diff .hunk { color: var(--faint); }
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
 <template id="icon-study"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M7 9.500v5c0 1.400 2.200 3 5 3s5-1.600 5-3v-5"/><path d="M21 7v6"/></svg></template>
+<template id="icon-ai"><svg viewBox="0 0 24 24"><path d="M12 3l1.800 4.700L18.500 9.500l-4.700 1.800L12 16l-1.800-4.700L5.500 9.500l4.700-1.800z"/><path d="M18 15l.9 2.100 2.100.9-2.100.9L18 21l-.9-2.100-2.100-.9 2.100-.9z"/></svg></template>
 <template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
@@ -1467,7 +1468,7 @@ new MutationObserver(() => {
 }).observe(main, {childList: true});
 function drawRail(active) {
   const on = sectionOf(active);
-  const top = [["home", "Home"], ["assistant", "Kosi"], ["coders", "Coders"], ["study", "Study"], ["designs", "Designs"]];
+  const top = [["home", "Home"], ["assistant", "Kosi"], ["coders", "Coders"], ["ai", "Kosika AI"], ["study", "Study"], ["designs", "Designs"]];
   const bottom = [["agents", "Agents"], ["settings", "Settings"]];
   const item = ([key, label]) => h("div", {class: "nav" + (key === on ? " on" : ""), title: label, onclick: () => go(key === "settings" ? "models" : key)}, icon(key), h("span", null, label));
   document.getElementById("nav").replaceChildren(...top.map(item), h("div", {class: "nav-gap"}), ...bottom.map(item));
@@ -1507,6 +1508,7 @@ async function route() {
     else if (active === "tools") await showTools();
     else if (active === "skills") await showSkills();
     else if (active === "designs") showDesigns();
+    else if (active === "ai") await showAI();
     else if (active === "study") showStudy();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
@@ -2257,6 +2259,78 @@ function showDesigns() {
 // answer in plain words, from your own study notes where they help, with a
 // Kosika Designs canvas beside it that ends in a short quiz. "remember: ..."
 // keeps a note on this computer. Answers stay on the page, newest first.
+// Kosika AI: an ask planned in small steps, each done by the hand that
+// suits it (calc, code, look, draw, think) and checked by Kosika, never by
+// the model's own word. Runs take minutes on free models, so they run in
+// the background and this page looks again every few seconds.
+let aiTimer = 0;
+async function showAI() {
+  clearTimeout(aiTimer);
+  const ask = h("input", {type: "text", placeholder: "What is 18% of 2450, and is it more than 400? · Why are there seasons? · Plot y = x^3 - 3x", style: "flex:1;min-width:240px"});
+  const go = h("button", {onclick: start}, "Ask");
+  const note = h("div");
+  const list = h("div", {style: "display:grid;gap:16px;margin-top:14px"});
+  const TOOL = {calc: "computed", code: "program", look: "read on the web", draw: "drawn", think: "in words"};
+  function step(d) {
+    return h("div", {style: "border-top:1px solid var(--line);padding:10px 0 4px"},
+      h("div", {class: "chips", style: "margin-bottom:4px"}, chip("step " + d.n, ""), chip(TOOL[d.tool] || d.tool, "accent"), chip(d.ok ? "checked" : "not checked", d.ok ? "ok" : "warn")),
+      h("div", {style: "font-weight:600;margin:2px 0"}, d.what),
+      h(d.tool === "code" ? "pre" : "p", {style: "white-space:pre-wrap;line-height:1.55;margin:4px 0;" + (d.tool === "code" ? "font-size:12.5px;background:var(--panel);padding:10px;border-radius:10px;overflow:auto" : "")}, d.answer),
+      h("small", {style: "color:var(--soft)"}, "How Kosika checked it: " + d.check));
+  }
+  async function markRun(run, verdict, button) {
+    button.disabled = true;
+    try { await api("/api/ai/mark", {method: "POST", body: JSON.stringify({id: run.id, verdict})}); await refresh(); }
+    catch (error) { button.disabled = false; alert(error.message || error); }
+  }
+  function card(run) {
+    const parts = [h("div", {class: "card-top"}, h("h3", {style: "margin:0"}, run.ask),
+      run.state === "running" ? chip("working…", "think") : run.state === "failed" ? chip("stopped", "bad") : chip(run.report.failed ? run.report.passed + " of " + (run.report.passed + run.report.failed) + " checked" : "all checked", run.report.failed ? "warn" : "ok"))];
+    if (run.state === "running") {
+      const minutes = Math.max(0, Math.round((Date.now() / 1000 - run.started) / 60));
+      parts.push(h("p", {class: "lead", style: "margin:8px 0 0"}, "Planning, doing and checking each step… " + (minutes ? minutes + " min so far." : "just started.") + " Free models can take a few minutes."));
+    } else if (run.state === "failed") {
+      parts.push(h("div", {class: "banner bad", style: "margin-top:8px"}, run.error));
+    } else {
+      const r = run.report;
+      parts.push(h("p", {style: "white-space:pre-wrap;line-height:1.6;font-size:15.5px;margin:10px 0"}, r.answer));
+      // Each drawing in a frame of its own with nothing allowed to run, as Study shows a canvas.
+      (r.pictures || []).forEach(svg => { const frame = h("iframe", {title: "A drawing by Kosika Designs", sandbox: "", style: "width:100%;aspect-ratio:3/2;border:0;border-radius:14px;margin:8px 0;background:#0b0d1a"}); frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:#0b0d1a}svg{width:100%;height:auto;display:block}</style></head><body>" + svg + "</body></html>"; parts.push(frame); });
+      parts.push(h("details", null, h("summary", {style: "cursor:pointer;color:var(--soft);margin:6px 0"}, "The plan (" + r.planned_by + ") and every step"), h("p", {style: "margin:6px 0"}, "Goal: " + r.goal), ...(r.steps || []).map(step)));
+      parts.push(h("small", {style: "display:block;color:var(--soft);margin-top:6px"}, r.note + " " + ((run.seconds || 0) < 90 ? (run.seconds || 0) + " s." : Math.round(run.seconds / 6) / 10 + " min.")));
+      const keep = h("button", {class: run.verdict === "keep" ? "" : "ghost", onclick: event => markRun(run, "keep", event.currentTarget)}, run.verdict === "keep" ? "Kept" : "Keep");
+      const drop = h("button", {class: "ghost", onclick: event => markRun(run, "drop", event.currentTarget)}, run.verdict === "drop" ? "Dropped" : "Drop");
+      parts.push(h("div", {style: "display:flex;gap:8px;align-items:center;margin-top:10px"}, keep, drop, h("small", {style: "color:var(--soft)"}, "Kept runs teach the planner; dropped ones are never used again.")));
+    }
+    return h("div", {class: "card", style: "display:block"}, parts);
+  }
+  async function refresh() {
+    if (location.hash.slice(1).split("/")[0] !== "ai") return;
+    let view;
+    try { view = await api("/api/ai"); } catch (error) { note.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error))); return; }
+    note.replaceChildren(view.router ? "" : h("div", {class: "banner warn"}, "Kosika’s model router is not running; it starts when you ask."));
+    list.replaceChildren(...(view.runs.length ? view.runs.map(card) : [h("p", {class: "lead"}, "No asks yet. Try one of the examples above.")]));
+    if (view.runs.some(run => run.state === "running")) aiTimer = setTimeout(refresh, 4000);
+  }
+  async function start() {
+    const text = ask.value.trim();
+    if (!text) { ask.focus(); return; }
+    go.disabled = true;
+    try { await api("/api/ai", {method: "POST", body: JSON.stringify({text})}); ask.value = ""; }
+    catch (error) { note.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error))); }
+    finally { go.disabled = false; clearTimeout(aiTimer); refresh(); }
+  }
+  ask.addEventListener("keydown", event => { if (event.key === "Enter") start(); });
+  const tries = ["What is 18% of 2450, and is it more than 400?", "Why are there seasons on Earth?", "Write a function that counts the vowels in a text, in Kosika", "Plot y = x^3 - 3x", "Plan a two-week project to learn graph theory"];
+  main.replaceChildren(titled("Kosika AI"),
+    h("p", {class: "lead"}, "Ask anything. Kosika AI plans it in small steps on free models, and Kosika checks every step itself: it computes the numbers, runs the code’s tests, finds each web quote on its page, and has a second model quote the answer. What could not be checked is marked so."),
+    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, go),
+    h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; start(); }}, text))),
+    note, list);
+  ask.focus();
+  await refresh();
+}
+
 const studyLog = [];
 function showStudy() {
   const ask = h("input", {type: "text", placeholder: "explain how a transistor works · quiz me on optics · remember: Physics 2 exam on 12 December", style: "flex:1;min-width:240px"});

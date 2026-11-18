@@ -2715,6 +2715,21 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         )
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
+                elif url.path in ("/api/ai", "/api/ai/mark"):
+                    # Kosika AI: an ask planned, done step by step, each step checked.
+                    from . import ai_page
+
+                    try:
+                        if method == "GET" and url.path == "/api/ai":
+                            self._json(200, ai_page.runs())
+                        elif method == "POST" and url.path == "/api/ai":
+                            self._json(200, ai_page.ask(str(self._body().get("text", ""))))
+                        elif method == "POST":
+                            self._json(200, ai_page.mark(self._body()))
+                        else:
+                            raise AppError("Kosika AI does not answer that.")
+                    except ai_page.AIError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/study":
                     # The study companion: words, the person's notes, and a Designs canvas.
                     from .designs import DesignsError, study
