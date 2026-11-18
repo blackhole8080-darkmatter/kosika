@@ -22,7 +22,7 @@
 
 import "designs_plot.kos"
 
-export [neuron3d_scene, neuron3d_figure, neuron3d_parts, neuron3d_links]
+export [neuron3d_scene, neuron3d_figure, neuron3d_parts, neuron3d_links, neuron2d_figure, NrDraw]
 
 // The neurons of the network: part, soma position.
 fn neuron3d_parts() -> Text[] { return ["sense", "think", "check", "act", "memory", "know"] }
@@ -296,6 +296,160 @@ fn neuron3d_figure(lit: Text[]) -> PlFigure {
   return pl_paged(fig, "Kosika math &#183; neurons in 3D")
 }
 
+// ---------------------------------------------------------------- flat, in white lines
+//
+// The same network drawn flat, the way a neuroscience notebook would: a
+// white pen on a dark page, each part's colour only in its nucleus, its
+// glow and its name. It moves a little: the pen draws every branch, the
+// dendrites sway, signals run down the axons, and when one arrives the
+// synapse releases its vesicles and the next neuron fires.
+
+record NrDraw { svg: Text tips: Number[] }
+
+fn nr2_place(k: Number) -> Number[] {
+  let at = [[170, 400], [540, 300], [910, 320], [900, 610], [330, 640], [640, 650]]
+  return at[k]
+}
+
+fn nr2_n(v: Number) -> Text { return v.to_fixed(1) }
+
+// One neuron: soma, nucleus, its dendrite tree (grown like the 3D one,
+// in degrees on the page), spines, and its glow.
+fn nr2_neuron(k: Number, region: Number, glow: Number, seed: Number) -> NrDraw {
+  let c = nr2_place(k)
+  let colour = pl_region_hex(region)
+  let r0 = 17
+  var s = seed
+  var todo: Number[][] = [[c[0], c[1] - r0 * 1.5, 270, 78, 3.2, 3]]
+  for j in 0 until 5 {
+    todo = todo.append([c[0], c[1] + 4, 18 + 36 * j, 58, 2.4, 2])
+  }
+  var paths: Text[] = []
+  var spines: Text[] = []
+  var tips: Number[] = []
+  var i = 0
+  while i < todo.length() {
+    let b = todo[i]
+    var x = b[0]
+    var y = b[1]
+    var a = b[2]
+    var pts = [x, y]
+    for step in 1 until 4 {
+      s = (s * 9301 + 49297) % 233280
+      a = a + 36 * (s / 233280 - 0.5)
+      x = x + b[3] / 3 * a.cos()
+      y = y + b[3] / 3 * a.sin()
+      pts = pts.concat([x, y])
+    }
+    paths = paths.append("<path class=\"pl-draw\" d=\"M" + nr2_n(pts[0]) + " " + nr2_n(pts[1]) + "C" + nr2_n(pts[2]) + " " + nr2_n(pts[3]) + " " + nr2_n(pts[4]) + " " + nr2_n(pts[5]) + " " + nr2_n(pts[6]) + " " + nr2_n(pts[7]) + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"" + b[4].to_fixed(2) + "\" stroke-linecap=\"round\"/>")
+    if b[5] < 2 {
+      for t in [0.35, 0.7] {
+        let mx = pts[2] + (pts[6] - pts[2]) * t
+        let my = pts[3] + (pts[7] - pts[3]) * t
+        s = (s * 9301 + 49297) % 233280
+        let side = if s % 2 == 0 { 1 } else { -1 }
+        let sa = a + side * 80
+        spines = spines.append("M" + nr2_n(mx) + " " + nr2_n(my) + "l" + nr2_n(5 * sa.cos()) + " " + nr2_n(5 * sa.sin()))
+      }
+    }
+    if b[5] > 0 {
+      s = (s * 9301 + 49297) % 233280
+      let turn = 20 + 16 * s / 233280
+      todo = todo.append([x, y, a - turn, b[3] * 0.72, b[4] * 0.64, b[5] - 1])
+      todo = todo.append([x, y, a + turn, b[3] * 0.72, b[4] * 0.64, b[5] - 1])
+    } else {
+      tips = tips.concat([x, y])
+      paths = paths.append("<circle cx=\"" + nr2_n(x) + "\" cy=\"" + nr2_n(y) + "\" r=\"1.3\" fill=\"#f4f1ea\"/>")
+    }
+    i += 1
+  }
+  // The soma: a teardrop drawn up into the apical dendrite.
+  var soma: Text[] = []
+  for j in 0 until 37 {
+    let t = 10 * j
+    let up = (0 - t.sin()).max(0)
+    let r = r0 * (1 + 0.55 * up * up * up)
+    let w = 1 - 0.3 * up * up
+    soma = soma.append((if j == 0 { "M" } else { "L" }) + nr2_n(c[0] + r * w * t.cos()) + " " + nr2_n(c[1] + r * t.sin()))
+  }
+  let sway = (5.5 + 1.3 * k).to_fixed(1)
+  let o = (0.25 + 0.75 * glow).to_fixed(2)
+  let halo = "<circle cx=\"" + nr2_n(c[0]) + "\" cy=\"" + nr2_n(c[1]) + "\" r=\"46\" fill=\"url(#nr-glow-" + region.to_text() + ")\" opacity=\"" + (glow * 0.9).to_fixed(2) + "\"><animate attributeName=\"r\" values=\"40;52;40\" dur=\"" + (3.2 + 0.4 * k).to_fixed(1) + "s\" repeatCount=\"indefinite\"/></circle>"
+  let tree = "<g opacity=\"" + o + "\"><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"-1.4 " + nr2_n(c[0]) + " " + nr2_n(c[1]) + ";1.4 " + nr2_n(c[0]) + " " + nr2_n(c[1]) + ";-1.4 " + nr2_n(c[0]) + " " + nr2_n(c[1]) + "\" dur=\"" + sway + "s\" repeatCount=\"indefinite\"/>" + paths.join("") + "<path class=\"pl-fade\" d=\"" + spines.join("") + "\" stroke=\"#f4f1ea\" stroke-width=\".8\" stroke-linecap=\"round\" fill=\"none\"/></g>"
+  let body = "<path class=\"pl-draw\" d=\"" + soma.join("") + "Z\" fill=\"#07080d\" stroke=\"#f4f1ea\" stroke-width=\"1.8\" stroke-linejoin=\"round\"/><circle class=\"pl-fade\" cx=\"" + nr2_n(c[0]) + "\" cy=\"" + nr2_n(c[1] + 2) + "\" r=\"7\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"1.6\"/><circle cx=\"" + nr2_n(c[0] + 1.5) + "\" cy=\"" + nr2_n(c[1] + 1) + "\" r=\"2.4\" fill=\"" + colour + "\"/>"
+  let name = pl_regions()[region - 1]
+  let label = "<text class=\"pl-fade\" x=\"" + nr2_n(c[0] + 26) + "\" y=\"" + nr2_n(c[1] + 6) + "\" fill=\"" + colour + "\" font-family=\"Georgia,serif\" font-style=\"italic\" font-size=\"17\">" + name + "</text>"
+  return {svg: halo + tree + body + label, tips: tips}
+}
+
+// An axon from below one soma to beside another: a cubic curve, a thin
+// core with myelin beads over it, branching at its end into boutons. A
+// signal runs along it; on arrival the vesicles cross the cleft and the
+// next neuron fires a ring.
+fn nr2_axon(from: Number, to: Number, region: Number, glow: Number, delay: Number) -> Text {
+  let a = nr2_place(from)
+  let b = nr2_place(to)
+  let dx = a[0] - b[0]
+  let dy = a[1] - b[1]
+  let dl = (dx * dx + dy * dy).sqrt().max(1)
+  let e = [b[0] + dx / dl * 44, b[1] + dy / dl * 44 + 16]
+  let p0 = [a[0], a[1] + 20]
+  let p1 = [a[0] + 10, a[1] + 150]
+  let p2 = [e[0] + dx / dl * 90, e[1] + 110]
+  let d = "M" + nr2_n(p0[0]) + " " + nr2_n(p0[1]) + "C" + nr2_n(p1[0]) + " " + nr2_n(p1[1]) + " " + nr2_n(p2[0]) + " " + nr2_n(p2[1]) + " " + nr2_n(e[0]) + " " + nr2_n(e[1])
+  let colour = pl_region_hex(region)
+  let o = (0.3 + 0.7 * glow).to_fixed(2)
+  let dur = 2.6
+  let begin = (2.4 + delay).to_fixed(1) + "s"
+  let stream = if glow > 0.6 { " class=\"pl-stream\"" } else { "" }
+  var ends: Text[] = []
+  var vesicles: Text[] = []
+  for j in 0 until 3 {
+    let ang = pl_atan2(0 - dy, 0 - dx) * 57.29577951308232 + 40 * (j - 1)
+    let bx = e[0] + 13 * ang.cos()
+    let by = e[1] + 13 * ang.sin()
+    ends = ends.append("<path d=\"M" + nr2_n(e[0]) + " " + nr2_n(e[1]) + "L" + nr2_n(bx) + " " + nr2_n(by) + "\" stroke=\"#f4f1ea\" stroke-width=\"1\"/><circle cx=\"" + nr2_n(bx) + "\" cy=\"" + nr2_n(by) + "\" r=\"3.4\" fill=\"#07080d\" stroke=\"#f4f1ea\" stroke-width=\"1.2\"/>")
+    vesicles = vesicles.append("<circle cx=\"" + nr2_n(bx) + "\" cy=\"" + nr2_n(by) + "\" r=\"1.6\" fill=\"" + colour + "\" opacity=\"0\"><animate attributeName=\"opacity\" values=\"0;0;1;0\" keyTimes=\"0;.86;.93;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/><animate attributeName=\"r\" values=\"1.6;1.6;3;5\" keyTimes=\"0;.86;.93;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/></circle>")
+  }
+  let fire = "<circle cx=\"" + nr2_n(b[0]) + "\" cy=\"" + nr2_n(b[1]) + "\" r=\"18\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"1.4\" opacity=\"0\"><animate attributeName=\"opacity\" values=\"0;0;.9;0\" keyTimes=\"0;.9;.94;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/><animate attributeName=\"r\" values=\"18;18;22;40\" keyTimes=\"0;.9;.94;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/></circle>"
+  let spark = "<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"" + begin + "\" fill=\"freeze\"/><circle r=\"9\" fill=\"#f5b942\" fill-opacity=\".18\"/><circle r=\"3.6\" fill=\"#f5b942\"/><animateMotion dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\" path=\"" + d + "\"/></g>"
+  return "<g opacity=\"" + o + "\"><path class=\"pl-draw\" d=\"" + d + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"1\"/><path" + stream + " d=\"" + d + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"4.4\" stroke-dasharray=\"18 6\" stroke-dashoffset=\"-10\" stroke-linecap=\"round\" opacity=\".8\"/>" + ends.join("") + "</g>" + vesicles.join("") + fire + spark
+}
+
+fn neuron2d_figure(lit: Text[]) -> PlFigure {
+  var problems: Text[] = []
+  for name in lit {
+    if neuron3d_parts().index_of(name).or(-1) < 0 { problems = problems.append("the network has no neuron called " + name) }
+  }
+  let names = neuron3d_parts()
+  let glow = nr_glow(lit)
+  var defs: Text[] = []
+  var cells: Text[] = []
+  var regions: Number[] = []
+  for k in 0 until names.length() {
+    let region = pl_regions().index_of(names[k]).or(0) + 1
+    regions = regions.append(region)
+    defs = defs.append("<radialGradient id=\"nr-glow-" + region.to_text() + "\"><stop offset=\"0\" stop-color=\"" + pl_region_hex(region) + "\" stop-opacity=\".55\"/><stop offset=\"1\" stop-color=\"" + pl_region_hex(region) + "\" stop-opacity=\"0\"/></radialGradient>")
+    cells = cells.append(nr2_neuron(k, region, glow[k], 4321 + 613 * k).svg)
+  }
+  var axons: Text[] = []
+  var n = 0
+  for link in neuron3d_links() {
+    axons = axons.append(nr2_axon(link[0], link[1], regions[link[0]], glow[link[0]], 0.45 * n))
+    n += 1
+  }
+  let w = 1100
+  let h = 820
+  let title = if lit.is_empty() { "Kosika network: neurons in white lines" } else { "Kosika network: " + lit.join(", ") }
+  let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"pl-svg\" width=\"" + w.to_text() + "\" height=\"" + h.to_text() + "\" viewBox=\"0 0 " + w.to_text() + " " + h.to_text() + "\" role=\"img\" aria-label=\"" + pl_esc(title) + "\"><defs>" + defs.join("") + "</defs><rect width=\"" + w.to_text() + "\" height=\"" + h.to_text() + "\" fill=\"#07080d\"/>" + axons.join("") + cells.join("") + "</svg>"
+  let notation = "<math display=\"block\"><msub><mi>s</mi><mrow><mi>n</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mo>(</mo><mn>9301</mn><msub><mi>s</mi><mi>n</mi></msub><mo>+</mo><mn>49297</mn><mo>)</mo><mspace width=\".3em\"/><mi>mod</mi><mspace width=\".3em\"/><mn>233280</mn><mspace width=\"1.5em\"/><msub><mi>&#952;</mi><mrow><mi>k</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mi>&#952;</mi><mi>k</mi></msub><mo>+</mo><mn>36</mn><mo>&#176;</mo><mo>(</mo><msub><mi>s</mi><mi>n</mi></msub><mo>/</mo><mn>233280</mn><mo>&#8722;</mo><mn>&#189;</mn><mo>)</mo></math>"
+  var notes: Text[] = []
+  notes = notes.append(f"Kosika grew {names.length()} neurons on the page: each dendrite turns a little at every step (the angle rule above) and splits until it is three splits deep. Axons are cubic curves wrapped in myelin beads, ending in three boutons.")
+  notes = notes.append("Watch: the pen draws every branch, the dendrites sway, amber signals run down the axons, the vesicles cross the synapse when a signal arrives, and the next neuron fires a ring.")
+  let fig: PlFigure = {kind: "neurons", title: title, formula: "dendrite trees and axons", notation: notation, svg: svg, live: "", page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; neurons in white lines")
+}
+
 test "a tube is closed around its path" {
   q = nr_tube([0, 0, 0, 0, 0, 1], [0.1, 0.1], 4, 1, 0.5)
   expect q.length() == 4
@@ -322,4 +476,13 @@ test "the network is drawn, lit by part" {
   expect f.svg.contains("<polygon")
   expect f.live.contains("PAL=")
   expect not neuron3d_figure(["dream"]).problems.is_empty()
+}
+
+test "the flat network draws every neuron and animates its signals" {
+  f = neuron2d_figure([])
+  expect f.problems.is_empty()
+  expect f.svg.contains("<animateMotion")
+  expect f.svg.contains("nr-glow-1")
+  expect f.page.contains("neurons in white lines")
+  expect nr2_neuron(0, 4, 0.5, 7).tips.length() == 2 * (8 + 5 * 4)
 }
