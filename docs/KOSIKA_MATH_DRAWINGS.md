@@ -79,6 +79,10 @@ where `ask.json` holds `{"ask": {"text": "taylor series of sin(x)"}}`.
 | revolve | solid of revolution of y = sin(x) from 0 to pi | a curve turned about the x axis, with its volume | `pl_revolve(formula, a, b)` |
 | solid | dodecahedron | a Platonic solid, with Euler's V − E + F = 2 | `pl_solid(name)` |
 | wave | animate z = sin(x - t)*cos(y) | a surface that moves in time t, played as a loop | `pl_wave(formula, span)` |
+| orbits | orbits of the planets in 3d | the inner planets' orbits by Kepler's equation, tilted and timed truly | `pl_orbits(text)` |
+| blackhole | black hole of 10 solar masses | Flamm's paraboloid with the event horizon, photon sphere and last stable orbit | `pl_blackhole(text)` |
+| lensing | light bending round a black hole | light rays bent or captured, by the photon orbit equation | `pl_lensing(text)` |
+| galaxy | spiral galaxy | stars on two logarithmic arms round a bulge | `pl_galaxy(text)` |
 
 Formulas are written the way `std/math.kos` reads them: `x^2`, `sin(x)`,
 `exp(-x^2)`, `3x`, `pi`, `e`, `i`. Angles inside `sin` and `cos` are in
@@ -120,6 +124,28 @@ What it cannot do yet: free-form models such as a face or a car need a
 mesh file, which Kosika does not read. A run's 10,000-call budget limits
 a parametric surface to about 1,000 points (such as 72 × 14) and an implicit surface to
 a 16-step grid, so fine detail smaller than that is lost.
+
+## Astrophysics
+
+- **Orbits** (`pl_orbits`): Mercury, Venus, Earth and Mars from their real
+  orbital elements (a, e, tilt, node, perihelion). Kosika solves Kepler's
+  equation M = E − e sin E by Newton's method at equal steps of time, so
+  each moving point keeps true time by T² = a³ and runs fastest near the
+  Sun. An ask that names a comet adds Comet Encke.
+- **Black hole** (`pl_blackhole`): Flamm's paraboloid z = 2√(rs(r − rs)),
+  with the event horizon, the photon sphere at 1.5 rs and the last stable
+  orbit at 3 rs. The mass is read from the ask ("10 solar masses",
+  "Sagittarius A*", "M87"), and the notes give rs = 2GM/c².
+- **Light bending** (`pl_lensing`): rays from far away followed by the
+  photon orbit equation u'' + u = 3/2 rs u² with Runge-Kutta steps. Rays
+  inside b ≈ 2.6 rs fall in; the bending of the others matches the exact
+  integral (19.27° at b = 7.5 rs).
+- **Galaxy** (`pl_galaxy`): stars on two logarithmic spiral arms with the
+  Milky Way's pitch of about 12°, from a seeded generator so both engines
+  draw the same galaxy.
+
+A tracer line's width, when it is 1 or more, is the seconds one lap
+takes in the still picture.
 
 ## Rules to keep
 

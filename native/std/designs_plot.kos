@@ -733,7 +733,8 @@ fn pl_scene_svg(scene: PlScene, view: PlView, label: Text) -> Text {
       d = d.append((if j == 0 { "M" } else { "L" }) + q[j].to_fixed(1) + " " + q[j + 1].to_fixed(1))
       j += 3
     }
-    moving = moving.append(pl_tracer(d.join(""), 12, false))
+    // A tracer's width, when 1 or more, is its lap time in seconds.
+    moving = moving.append(pl_tracer(d.join(""), if line.width >= 1 { line.width } else { 12 }, false))
   }
   // Lines seen through the surface ("x-" tones) are drawn over everything.
   for line in scene.lines where line.tone.starts_with("x-") {
@@ -1697,7 +1698,11 @@ fn pl_catalogue() -> PlEntry[] {
     {kind: "implicit", ask: "gyroid", draws: "the surface where F(x, y, z) = 0, found by marching tetrahedra", call: "pl_implicit(equation, span)"},
     {kind: "revolve", ask: "solid of revolution of y = sin(x) from 0 to pi", draws: "a curve turned about the x axis, with its volume by Simpson's rule", call: "pl_revolve(formula, a, b)"},
     {kind: "solid", ask: "dodecahedron", draws: "a Platonic solid, with Euler's V - E + F = 2", call: "pl_solid(name)"},
-    {kind: "wave", ask: "animate z = sin(x - t)*cos(y)", draws: "a surface that moves in time t, played as a loop", call: "pl_wave(formula, span)"}
+    {kind: "wave", ask: "animate z = sin(x - t)*cos(y)", draws: "a surface that moves in time t, played as a loop", call: "pl_wave(formula, span)"},
+    {kind: "orbits", ask: "orbits of the planets in 3d", draws: "the inner planets' orbits by Kepler's equation, tilted and timed truly (add a comet by asking)", call: "pl_orbits(text)"},
+    {kind: "blackhole", ask: "black hole of 10 solar masses", draws: "Flamm's paraboloid with the event horizon, photon sphere and last stable orbit, and the Schwarzschild radius", call: "pl_blackhole(text)"},
+    {kind: "lensing", ask: "light bending round a black hole", draws: "light rays bent or captured by a black hole, by the photon orbit equation", call: "pl_lensing(text)"},
+    {kind: "galaxy", ask: "spiral galaxy", draws: "a spiral galaxy of stars on two logarithmic arms round a bulge", call: "pl_galaxy(text)"}
   ]
 }
 
@@ -2313,6 +2318,280 @@ fn pl_wave(text: Text, span: Number) -> PlFigure {
   return pl_paged(fig, "Kosika math &#183; a surface in motion")
 }
 
+// ---------------------------------------------------------------- astrophysics
+
+// A shaded ball, as quads round a centre: style 2 is smooth, 1 shows the grid.
+fn pl_ball(cx: Number, cy: Number, cz: Number, r: Number, style: Number) -> Number[][] {
+  var quads: Number[][] = []
+  let nu = 20
+  let nv = 10
+  for i in 0 until nu {
+    for j in 0 until nv {
+      let a0 = 360 * i / nu
+      let a1 = 360 * (i + 1) / nu
+      let b0 = -90 + 180 * j / nv
+      let b1 = -90 + 180 * (j + 1) / nv
+      quads = quads.append([cx + r * b0.cos() * a0.cos(), cy + r * b0.cos() * a0.sin(), cz + r * b0.sin(), cx + r * b0.cos() * a1.cos(), cy + r * b0.cos() * a1.sin(), cz + r * b0.sin(), cx + r * b1.cos() * a1.cos(), cy + r * b1.cos() * a1.sin(), cz + r * b1.sin(), cx + r * b1.cos() * a0.cos(), cy + r * b1.cos() * a0.sin(), cz + r * b1.sin(), style])
+    }
+  }
+  return quads
+}
+
+// A body in orbit round the Sun: its semi-major axis a in AU, eccentricity
+// e, and the three angles (degrees) that tilt and turn the ellipse.
+record PlBody { name: Text a: Number e: Number tilt: Number node: Number peri: Number }
+
+fn pl_bodies(comet: Bool) -> PlBody[] {
+  let inner: PlBody[] = [
+    {name: "Mercury", a: 0.387, e: 0.2056, tilt: 7.0, node: 48.3, peri: 29.1},
+    {name: "Venus", a: 0.723, e: 0.0068, tilt: 3.39, node: 76.7, peri: 54.9},
+    {name: "Earth", a: 1.0, e: 0.0167, tilt: 0, node: 0, peri: 102.9},
+    {name: "Mars", a: 1.524, e: 0.0934, tilt: 1.85, node: 49.6, peri: 286.5}
+  ]
+  return if comet { inner.append({name: "Comet Encke", a: 2.215, e: 0.8483, tilt: 11.8, node: 334.6, peri: 186.5}) } else { inner }
+}
+
+// The planets' orbits in 3D. Kosika solves Kepler's equation
+// M = E - e sin E by Newton's method at equal steps of time, so the points
+// crowd where a body moves slowly and the moving dots keep true time.
+fn pl_orbits(text: Text) -> PlFigure {
+  let t = " " + text.lower() + " "
+  let bodies = pl_bodies(pl_has(t, ["comet", "encke", "halley"]))
+  var far = 0
+  for b in bodies { far = far.max(b.a * (1 + b.e)) }
+  let s = 1.3 / far
+  var lines: PlLine[] = []
+  var labels: PlLabel[] = []
+  var said: Text[] = []
+  for b in bodies {
+    let period = b.a.power(1.5)
+    let n = (110 * period).floor().max(24)
+    let ci = b.tilt.cos()
+    let si = b.tilt.sin()
+    let cn = b.node.cos()
+    let sn = b.node.sin()
+    let cw = b.peri.cos()
+    let sw = b.peri.sin()
+    let root = (1 - b.e * b.e).sqrt()
+    var pts: Number[] = []
+    var worst = 0
+    for k in 0 until n + 1 {
+      let m = 6.283185307179586 * k / n
+      var e = m + b.e * (m * 57.29577951308232).sin()
+      for step in 0 until 8 {
+        let deg = e * 57.29577951308232
+        e = e - (e - b.e * deg.sin() - m) / (1 - b.e * deg.cos())
+      }
+      let deg = e * 57.29577951308232
+      worst = worst.max((e - b.e * deg.sin() - m).abs())
+      let xo = b.a * (deg.cos() - b.e)
+      let yo = b.a * root * deg.sin()
+      let x = (cn * cw - sn * sw * ci) * xo + (0 - cn * sw - sn * cw * ci) * yo
+      let y = (sn * cw + cn * sw * ci) * xo + (0 - sn * sw + cn * cw * ci) * yo
+      let z = sw * si * xo + cw * si * yo
+      pts = pts.concat([x * s, y * s, z * s])
+    }
+    lines = lines.append({pts: pts, tone: "white", width: 1, dash: false})
+    // A tracer's width is how many seconds one lap takes in the still picture.
+    lines = lines.append({pts: pts, tone: "tracer", width: (6 * period).max(2), dash: false})
+    let half = (n / 2).floor()
+    labels = labels.append({x: pts[3 * half], y: pts[3 * half + 1], z: pts[3 * half + 2] + 0.06, text: b.name, tone: "white"})
+    said = said.append(f"{b.name}: a = {pl_num(b.a)} AU, e = {pl_num(b.e)}, tilted {pl_num(b.tilt)}°, once round in {pl_num(period)} Earth years.")
+  }
+  let sun: PlScene = {quads: pl_ball(0, 0, 0, 0.045, 2), lines: [], labels: [{x: 0, y: 0, z: 0.1, text: "Sun", tone: "amber"}]}
+  let scene = pl_merge(sun, {quads: [], lines: lines, labels: labels})
+  let view: PlView = {yaw: 25, pitch: 32, width: 960, height: 640}
+  let notation = "<math display=\"block\"><mi>M</mi><mo>=</mo><mi>E</mi><mo>&#8722;</mo><mi>e</mi><mi>sin</mi><mi>E</mi><mo>,</mo><mspace width=\"1em\"/><msup><mi>T</mi><mn>2</mn></msup><mo>&#8733;</mo><msup><mi>a</mi><mn>3</mn></msup></math>"
+  let notes: Text[] = ["Kosika solved Kepler's equation by Newton's method at equal steps of time for each body, then turned each ellipse by its tilt, node and perihelion.", "Each year follows Kepler's third law, T² = a³ in years and AU, so the dots keep true time with each other, and each moves fastest nearest the Sun."].concat(said)
+  let fig: PlFigure = {kind: "orbits", title: "Orbits round the Sun", formula: "M = E - e sin E", notation: notation, svg: pl_scene_svg(scene, view, "orbits of the planets round the Sun"), live: pl_scene_live_with(scene, view, [], false), page: "", notes: notes, problems: []}
+  return pl_paged(fig, "Kosika math &#183; astrophysics")
+}
+
+// A black hole's mass in Suns, read from an ask: a number before "solar"
+// or "sun", or a famous one by name; 10 Suns when none is given.
+fn pl_hole_mass(text: Text) -> Number {
+  let t = " " + text.lower() + " "
+  if pl_has(t, ["sagittarius", "sgr a", "milky way"]) { return 4300000 }
+  if t.contains("m87") { return 6500000000 }
+  for word in [" solar", " sun"] {
+    let at = t.index_of(word).or(-1)
+    if at > 0 {
+      let before = t.slice(0, at).trim().split(" ")
+      let n = pl_number(before[before.length() - 1].replace(",", ""), 0)
+      if n > 0 { return n }
+    }
+  }
+  return 10
+}
+
+// A black hole: Flamm's paraboloid, the shape of space at one moment
+// round a mass that does not spin, z = 2 sqrt(rs (r - rs)). The event
+// horizon is its throat; light can circle at 1.5 rs; nothing orbits
+// steadily inside 3 rs.
+fn pl_blackhole(text: Text) -> PlFigure {
+  let mass = pl_hole_mass(text)
+  let rmax = 6
+  let k = 0.95 / rmax
+  let lift = 0.0 - 0.5
+  let nu = 48
+  let nv = 18
+  var quads: Number[][] = []
+  for i in 0 until nu {
+    for j in 0 until nv {
+      let a0 = 360 * i / nu
+      let a1 = 360 * (i + 1) / nu
+      let r0 = 1 + (rmax - 1) * (j / nv) * (j / nv)
+      let r1 = 1 + (rmax - 1) * ((j + 1) / nv) * ((j + 1) / nv)
+      let z0 = 2 * (r0 - 1).sqrt() * k + lift
+      let z1 = 2 * (r1 - 1).sqrt() * k + lift
+      quads = quads.append([r0 * k * a0.cos(), r0 * k * a0.sin(), z0, r1 * k * a0.cos(), r1 * k * a0.sin(), z1, r1 * k * a1.cos(), r1 * k * a1.sin(), z1, r0 * k * a1.cos(), r0 * k * a1.sin(), z0, 1])
+    }
+  }
+  let rings = for r in [1, 1.5, 3] { pl_flat(for d in 0 until 73 { [r * k * (5 * d).cos(), r * k * (5 * d).sin(), 2 * (r - 1).sqrt() * k + lift + 0.004] }) }
+  let lines: PlLine[] = [{pts: rings[0], tone: "white", width: 2.4, dash: false}, {pts: rings[1], tone: "amber", width: 1.6, dash: true}, {pts: rings[2], tone: "indigo", width: 1.6, dash: false}, {pts: rings[2], tone: "tracer", width: 5, dash: false}]
+  let labels: PlLabel[] = [{x: 0, y: -1 * k, z: lift - 0.07, text: "event horizon", tone: "white"}, {x: 1.5 * k, y: 1.5 * k, z: 2 * 0.5.sqrt() * k + lift + 0.06, text: "photon sphere", tone: "amber"}, {x: 3 * k + 0.12, y: 0, z: 2 * 2.sqrt() * k + lift + 0.06, text: "last stable orbit", tone: "indigo"}]
+  let scene: PlScene = {quads: quads, lines: lines, labels: labels}
+  let view: PlView = {yaw: 30, pitch: 24, width: 960, height: 640}
+  let rs = 2.953 * mass
+  let size = if rs < 1000000 { pl_num(rs) + " km" } else { pl_num(rs / 1000000) + " million km (" + pl_num(rs / 149597871) + " AU)" }
+  let notation = "<math display=\"block\"><mi>z</mi><mo stretchy=\"false\">(</mo><mi>r</mi><mo stretchy=\"false\">)</mo><mo>=</mo><mn>2</mn><msqrt><msub><mi>r</mi><mi>s</mi></msub><mo stretchy=\"false\">(</mo><mi>r</mi><mo>&#8722;</mo><msub><mi>r</mi><mi>s</mi></msub><mo stretchy=\"false\">)</mo></msqrt><mo>,</mo><mspace width=\"1em\"/><msub><mi>r</mi><mi>s</mi></msub><mo>=</mo><mfrac><mrow><mn>2</mn><mi>G</mi><mi>M</mi></mrow><msup><mi>c</mi><mn>2</mn></msup></mfrac></math>"
+  let notes: Text[] = [f"For a mass of {pl_num(mass)} Suns, Kosika works the Schwarzschild radius rs = 2GM/c² = {size}: the event horizon, the throat of the funnel.", "The funnel is Flamm's paraboloid: one slice of space at one moment round a black hole that does not spin, with distances along the surface true to the geometry.", "Light can circle at 1.5 rs (amber), and no orbit is steady inside 3 rs (indigo), where the amber point goes round."]
+  let fig: PlFigure = {kind: "blackhole", title: "A black hole of " + pl_num(mass) + " Suns", formula: "z = 2 sqrt(rs (r - rs))", notation: notation, svg: pl_scene_svg(scene, view, "a black hole: Flamm's paraboloid"), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: []}
+  return pl_paged(fig, "Kosika math &#183; astrophysics")
+}
+
+// Light passing a black hole. Kosika follows each ray by the photon orbit
+// equation u'' + u = 3/2 rs u², with u = 1/r and rs = 1, stepping by
+// Runge-Kutta. Rays start 400 rs away, so their bending is nearly all
+// counted, and the drawing shows the 10 rs round the hole.
+fn pl_lensing(text: Text) -> PlFigure {
+  let r0 = 400
+  let view0 = 10
+  let k = 1.15 / view0
+  let h = 0.025
+  var lines: PlLine[] = []
+  var fell = 0
+  var bent = 0
+  var wide = 0
+  var turned = 0
+  for b in [2.2, 2.45, 2.65, 2.8, 3.2, 4, 5.5, 7.5] {
+    let sn = b / r0
+    var phi = sn
+    for step in 0 until 6 { phi = phi - ((phi * 57.29577951308232).sin() - sn) / (phi * 57.29577951308232).cos() }
+    let start = phi
+    var u = 1 / r0
+    var before = u
+    var w = (phi * 57.29577951308232).cos() / b
+    var xs: Number[] = [(phi * 57.29577951308232).cos() / u]
+    var ys: Number[] = [(phi * 57.29577951308232).sin() / u]
+    var steps = 0
+    var inside = false
+    while steps < 600 and not inside and (steps < 4 or u >= 1 / r0) {
+      let k1u = w
+      let k1w = 1.5 * u * u - u
+      let k2u = w + h / 2 * k1w
+      let u2 = u + h / 2 * k1u
+      let k2w = 1.5 * u2 * u2 - u2
+      let k3u = w + h / 2 * k2w
+      let u3 = u + h / 2 * k2u
+      let k3w = 1.5 * u3 * u3 - u3
+      let k4u = w + h * k3w
+      let u4 = u + h * k3u
+      let k4w = 1.5 * u4 * u4 - u4
+      before = u
+      u = u + h / 6 * (k1u + 2 * k2u + 2 * k3u + k4u)
+      w = w + h / 6 * (k1w + 2 * k2w + 2 * k3w + k4w)
+      phi = phi + h
+      steps += 1
+      if u >= 1 { inside = true }
+      if u > 0 and steps % 2 == 0 {
+        xs = xs.append((phi * 57.29577951308232).cos() / u)
+        ys = ys.append((phi * 57.29577951308232).sin() / u)
+      }
+    }
+    if inside { fell += 1 } else { bent += 1 }
+    // How far the ray turned: the angle it swept, less the straight
+    // line's, with the last step cut where it crossed back out to r0.
+    let back = if before > u { (before - 1 / r0) / (before - u) } else { 1 }
+    let swept = phi - h + h * back - start
+    let turn = (swept - 3.141592653589793 + 2 * start) * 57.29577951308232
+    if b == 7.5 and not inside { wide = turn }
+    if b == 2.65 and not inside { turned = turn }
+    let tone = if inside { "amber" } else { "white" }
+    for plane in 0 until 1 {
+      for sign in [1, -1] {
+        let pts = pl_flat(for j in 0 until xs.length() where xs[j].abs() < view0 * 1.05 and ys[j].abs() < view0 * 1.05 { if plane == 0 { [0 - xs[j] * k, sign * ys[j] * k, 0] } else { [0 - xs[j] * k, 0, sign * ys[j] * k] } })
+        lines = lines.append({pts: pts, tone: tone, width: if inside { 1.3 } else { 1 }, dash: false})
+        if plane == 0 and sign == 1 and (b == 2.65 or b == 4) { lines = lines.append({pts: pts, tone: "tracer", width: 7, dash: false}) }
+      }
+    }
+  }
+  let ring = pl_flat(for d in 0 until 73 { [1.5 * k * (5 * d).cos(), 1.5 * k * (5 * d).sin(), 0] })
+  let ring2 = pl_flat(for d in 0 until 73 { [1.5 * k * (5 * d).cos(), 0, 1.5 * k * (5 * d).sin()] })
+  lines = lines.append({pts: ring, tone: "amber", width: 1.2, dash: true})
+  lines = lines.append({pts: ring2, tone: "amber", width: 1.2, dash: true})
+  let scene: PlScene = {quads: pl_ball(0, 0, 0, k, 0), lines: lines, labels: [{x: 0, y: 0, z: 1.5 * k + 0.07, text: "photon sphere", tone: "amber"}, {x: -0.9, y: 0, z: 0.08, text: "light in", tone: "white"}]}
+  let view: PlView = {yaw: 12, pitch: 42, width: 960, height: 640}
+  let notation = "<math display=\"block\"><mfrac><mrow><msup><mi>d</mi><mn>2</mn></msup><mi>u</mi></mrow><mrow><mi>d</mi><msup><mi>&#966;</mi><mn>2</mn></msup></mrow></mfrac><mo>+</mo><mi>u</mi><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><msub><mi>r</mi><mi>s</mi></msub><msup><mi>u</mi><mn>2</mn></msup><mo>,</mo><mspace width=\"1em\"/><mi>u</mi><mo>=</mo><mfrac><mn>1</mn><mi>r</mi></mfrac></math>"
+  let notes: Text[] = [f"Kosika followed 8 rays by the photon orbit equation with Runge-Kutta steps, and drew each above and below the hole: {bent} pass by and {fell} fall in (amber).", f"Rays closer than b = 3&#8730;3/2 rs &#8776; 2.6 rs fall in. The ray at b = 2.65 rs skims the photon sphere and is turned through {pl_num(turned)}°, more than half a turn.", f"Far out, at b = 7.5 rs, the ray bends {pl_num(wide)}°; Einstein's weak-field rule 2rs/b gives {pl_num(2 / 7.5 * 57.29577951308232)}°, and the two agree better the farther out the ray passes."]
+  let fig: PlFigure = {kind: "lensing", title: "Light bent by a black hole", formula: "u'' + u = 3/2 rs u^2", notation: notation, svg: pl_scene_svg(scene, view, "light rays bending round a black hole"), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: []}
+  return pl_paged(fig, "Kosika math &#183; astrophysics")
+}
+
+// A spiral galaxy: stars scattered along two logarithmic arms
+// r = r0 e^(theta tan pitch), a bulge of old stars, and a thin disc.
+// The stars come from a seeded generator, so the picture is the same
+// every time and in both engines.
+fn pl_galaxy(text: Text) -> PlFigure {
+  let pitch = 12
+  let grow = pitch.sin() / pitch.cos()
+  let turns = 3.4 * 3.141592653589793
+  var seed = 20261118
+  var lines: PlLine[] = []
+  var young = 0
+  for star in 0 until 1100 {
+    seed = (seed * 16807) % 2147483647
+    let p = seed / 2147483647
+    seed = (seed * 16807) % 2147483647
+    let q = seed / 2147483647
+    seed = (seed * 16807) % 2147483647
+    let v = seed / 2147483647
+    seed = (seed * 16807) % 2147483647
+    let w = seed / 2147483647
+    if star < 220 {
+      // The bulge: a squashed ball, densest in the middle.
+      let r = 0.34 * p * p
+      let a = 360 * q
+      let c = 180 * v - 90
+      let x = r * c.cos() * a.cos()
+      let y = r * c.cos() * a.sin()
+      let z = 0.55 * r * c.sin()
+      lines = lines.append({pts: [x, y, z, x + 0.003, y, z], tone: "amber", width: 1.6, dash: false})
+    } else {
+      let arm = star % 2
+      let th = turns * p.sqrt()
+      let r0 = 0.14 * (grow * th).exp()
+      let spread = (q + v + w - 1.5) * 0.09 * (0.4 + r0)
+      let ang = th * 57.29577951308232 + 180 * arm + 40 * (w - 0.5) * (1 - p)
+      let r = r0 + spread
+      let x = r * ang.cos()
+      let y = r * ang.sin()
+      let z = (v - 0.5) * 0.05 * (0 - 1.5 * r).exp()
+      let bright = q > 0.8
+      if bright { young += 1 }
+      lines = lines.append({pts: [x, y, z, x + 0.003, y, z], tone: if bright { "indigo" } else { "white" }, width: if bright { 2.2 } else { 1.4 }, dash: false})
+    }
+  }
+  let arm0 = pl_flat(for d in 0 until 61 { [0.14 * (grow * turns * d / 60).exp() * (turns * d / 60 * 57.29577951308232).cos(), 0.14 * (grow * turns * d / 60).exp() * (turns * d / 60 * 57.29577951308232).sin(), 0] })
+  lines = lines.append({pts: arm0, tone: "tracer", width: 9, dash: false})
+  let scene: PlScene = {quads: [], lines: lines, labels: []}
+  let view: PlView = {yaw: 20, pitch: 38, width: 960, height: 640}
+  let notation = "<math display=\"block\"><mi>r</mi><mo stretchy=\"false\">(</mo><mi>&#952;</mi><mo stretchy=\"false\">)</mo><mo>=</mo><msub><mi>r</mi><mn>0</mn></msub><msup><mi>e</mi><mrow><mi>&#952;</mi><mi>tan</mi><mi>&#966;</mi></mrow></msup><mo>,</mo><mspace width=\"1em\"/><mi>&#966;</mi><mo>=</mo><mn>" + pitch.to_text() + "</mn><mo>&#176;</mo></math>"
+  let notes: Text[] = [f"Kosika scattered 880 stars along two logarithmic spiral arms with a pitch angle of {pitch}°, about the Milky Way's, in a disc that thins outward, and 220 old stars (amber) in the central bulge.", f"{young} bright young stars (indigo) mark the arms, where gas is squeezed and new stars form.", "The stars come from a seeded generator, so the galaxy is the same every time it is drawn."]
+  let fig: PlFigure = {kind: "galaxy", title: "A spiral galaxy", formula: "r = r0 e^(theta tan " + pitch.to_text() + "°)", notation: notation, svg: pl_scene_svg(scene, view, "a spiral galaxy"), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: []}
+  return pl_paged(fig, "Kosika math &#183; astrophysics")
+}
+
 // ---------------------------------------------------------------- the page
 
 fn pl_style() -> Text {
@@ -2346,7 +2625,7 @@ fn pl_has(t: Text, words: Text[]) -> Bool {
 // a complex function, a surface, or space-time.
 fn pl_wants(text: Text) -> Bool {
   let t = " " + text.lower() + " "
-  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "curved space", "gravity well", "taylor series", "taylor polynomial", "maclaurin", "power series", "integral of", "integrate ", "area under", "polar curve", "polar graph", "polar rose", " r = ", "parametric", "lissajous", "slope field", "direction field", "dy/dx", "differential equation", "vector field", "flow field", "phase portrait", "twin paradox", "torus", "sphere", "donut", "doughnut", "mobius", "möbius", "moebius", "klein bottle", "seashell", "helicoid", "catenoid", "enneper", "dini", "hyperboloid", "trefoil", " knot", "helix", "gyroid", "metaball", "melting spheres", "spheres melting", "spheres merging", "melting together", "schwarz", "chmutov", "implicit", "solid of revolution", "revolve", "rotated about", "rotated around", "turned about", "tetrahedron", " cube ", "octahedron", "dodecahedron", "icosahedron", "platonic", "parametric surface", "surface where"])
+  return pl_has(t, [" plot ", "plot of", " graph of ", "graph y", "graph f(", " y = ", " y=", "f(x) =", "f(x)=", "f(z)", "complex function", "complex map", "conformal", "surface z", " z = ", " z=", "space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "curved space", "gravity well", "taylor series", "taylor polynomial", "maclaurin", "power series", "integral of", "integrate ", "area under", "polar curve", "polar graph", "polar rose", " r = ", "parametric", "lissajous", "slope field", "direction field", "dy/dx", "differential equation", "vector field", "flow field", "phase portrait", "twin paradox", "torus", "sphere", "donut", "doughnut", "mobius", "möbius", "moebius", "klein bottle", "seashell", "helicoid", "catenoid", "enneper", "dini", "hyperboloid", "trefoil", " knot", "helix", "gyroid", "metaball", "melting spheres", "spheres melting", "spheres merging", "melting together", "schwarz", "chmutov", "implicit", "solid of revolution", "revolve", "rotated about", "rotated around", "turned about", "tetrahedron", " cube ", "octahedron", "dodecahedron", "icosahedron", "platonic", "parametric surface", "surface where", "kepler", "planetary orbit", "orbits of the planets", "orbits of planets", "orbits in 3d", "3d orbits", "inner planets", "comet orbit", "orbit of a comet", "black hole", "event horizon", "schwarzschild", "gravitational lens", "light bending", "bending of light", "bends light", "light bent", "spiral galaxy", "milky way", "galaxy model", "model a galaxy", "galaxy in 3d", "3d galaxy"])
 }
 
 // Which drawing an ask wants, by its words and its formula: curve, taylor,
@@ -2358,6 +2637,10 @@ fn pl_kind(text: Text) -> Text {
   if pl_has(t, ["space-time", "spacetime", "space time", "light cone", "minkowski", "world line", "worldline", "gravity well", "curved space"]) {
     return if pl_has(t, ["gravity", "curved", "mass", " well", "black hole", "warp", "bend"]) { "well" } else { "spacetime" }
   }
+  if pl_has(t, ["gravitational lens", "light bending", "bending of light", "bends light", "light bent", "lensing"]) { return "lensing" }
+  if pl_has(t, ["black hole", "event horizon", "schwarzschild"]) { return "blackhole" }
+  if pl_has(t, ["galaxy", "milky way"]) and not pl_has(t, ["galaxy of points"]) { return "galaxy" }
+  if pl_has(t, ["kepler", "planetary orbit", "orbits of the planets", "orbits of planets", "orbits in 3d", "3d orbits", "inner planets", "comet orbit", "orbit of a comet"]) { return "orbits" }
   if pl_has(t, ["tetrahedron", "octahedron", "dodecahedron", "icosahedron", "platonic", "hexahedron"]) or (t.contains(" cube") and not t.contains("cube root")) { return "solid" }
   if pl_has(t, ["solid of revolution", "revolve", "rotated about", "rotated around", "turned about", "turned around", "spun around"]) { return "revolve" }
   if pl_has(t, ["trefoil", " knot", "helix", "cinquefoil"]) { return "knot" }
@@ -2447,6 +2730,10 @@ fn pl_for(text: Text) -> PlFigure {
   if kind == "spacetime" { return pl_spacetime(0.5) }
   if kind == "solid" { return pl_solid(text) }
   if kind == "knot" { return pl_knot(text) }
+  if kind == "orbits" { return pl_orbits(text) }
+  if kind == "blackhole" { return pl_blackhole(text) }
+  if kind == "lensing" { return pl_lensing(text) }
+  if kind == "galaxy" { return pl_galaxy(text) }
   if kind == "revolve" {
     let ab = pl_bounds(text, 0, 3.141592653589793)
     var src = text
@@ -2518,7 +2805,7 @@ fn pl_for(text: Text) -> PlFigure {
 // One ask of each kind, for pictures and for Studio's examples. Each is
 // drawn in a run of its own.
 fn pl_examples() -> Text[] {
-  return ["plot y = sin(x)/x", "plot y = x^3 - 3x", "draw the complex function f(z) = z^2", "draw the complex function f(z) = exp(z)", "complex function 1/(z^2+1) in 3d", "plot z = sin(x)*cos(y)", "plot z = exp(-(x^2+y^2))*cos(2*(x^2+y^2))", "show me space-time with the light cone", "space-time curved by a mass", "taylor series of sin(x)", "integral of x^2 from 0 to 2", "polar curve r = cos(4*theta)", "parametric curve x = sin(3t), y = sin(2t)", "slope field dy/dx = x - y", "vector field F = (-y, x - y/3)", "the twin paradox at 0.8c", "draw a torus", "draw a klein bottle", "seashell", "trefoil knot", "gyroid", "two spheres melting together", "solid of revolution of y = sin(x) from 0 to pi", "dodecahedron", "animate z = sin(x - t)*cos(y)"]
+  return ["plot y = sin(x)/x", "plot y = x^3 - 3x", "draw the complex function f(z) = z^2", "draw the complex function f(z) = exp(z)", "complex function 1/(z^2+1) in 3d", "plot z = sin(x)*cos(y)", "plot z = exp(-(x^2+y^2))*cos(2*(x^2+y^2))", "show me space-time with the light cone", "space-time curved by a mass", "taylor series of sin(x)", "integral of x^2 from 0 to 2", "polar curve r = cos(4*theta)", "parametric curve x = sin(3t), y = sin(2t)", "slope field dy/dx = x - y", "vector field F = (-y, x - y/3)", "the twin paradox at 0.8c", "draw a torus", "draw a klein bottle", "seashell", "trefoil knot", "gyroid", "two spheres melting together", "solid of revolution of y = sin(x) from 0 to pi", "dodecahedron", "animate z = sin(x - t)*cos(y)", "orbits of the planets in 3d", "black hole of 10 solar masses", "light bending round a black hole", "spiral galaxy"]
 }
 
 // ---------------------------------------------------------------- workflows
@@ -2753,4 +3040,41 @@ test "3D shape asks pick their drawings" {
   expect pl_kind("cube root of x") != "solid"
   expect pl_kind("animate z = sin(x - t)*cos(y)") == "wave"
   expect pl_kind("plot z = sin(x)*cos(y)") == "surface"
+}
+
+test "the planets keep Kepler's laws" {
+  f = pl_orbits("orbits of the planets")
+  expect f.problems.is_empty()
+  expect f.notes.join(" ").contains("Mars: a = 1.524 AU")
+  expect f.notes.join(" ").contains("once round in 1.881 Earth years")
+  expect not f.notes.join(" ").contains("Encke")
+  expect pl_orbits("kepler orbits with a comet").notes.join(" ").contains("Comet Encke")
+}
+
+test "a black hole works its Schwarzschild radius" {
+  expect pl_blackhole("black hole of 10 solar masses").notes[0].contains("29.53 km")
+  expect pl_blackhole("the black hole sagittarius a*").notes[0].contains("12.698 million km")
+  expect pl_hole_mass("a black hole") == 10
+}
+
+test "light is bent and captured by a black hole" {
+  f = pl_lensing("light bending round a black hole")
+  expect f.problems.is_empty()
+  expect f.notes[0].contains("6 pass by and 2 fall in")
+  expect f.notes[2].contains("bends 19.27")
+}
+
+test "a spiral galaxy is the same every time" {
+  expect pl_galaxy("spiral galaxy").svg == pl_galaxy("milky way").svg
+}
+
+test "astrophysics asks pick their drawings" {
+  expect pl_kind("orbits of the planets in 3d") == "orbits"
+  expect pl_kind("black hole of 10 solar masses") == "blackhole"
+  expect pl_kind("light bending round a black hole") == "lensing"
+  expect pl_kind("gravitational lensing") == "lensing"
+  expect pl_kind("spiral galaxy") == "galaxy"
+  expect pl_kind("space-time curved by a mass") == "well"
+  expect not pl_wants("how does the moon orbit the earth")
+  expect not pl_wants("generative art of planets orbiting a burning star")
 }
