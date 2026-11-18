@@ -224,11 +224,17 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	// every attempt together, not a fresh allowance for each attempt: one
 	// call can otherwise take six times the timeout and more.
 	deadline := time.Now().Add(h.timeout)
+	// Nor does it wait past the run's own deadline.
+	pastRunEnd()
+	if !runEnds.IsZero() && runEnds.Before(deadline) {
+		deadline = runEnds
+	}
 	var answer *http.Response
 	var raw []byte
 	for {
 		left := time.Until(deadline)
 		if left <= 0 {
+			pastRunEnd()
 			stopProvider("Model did not answer within %s seconds", pyShortFloat(h.timeout.Seconds()))
 		}
 		httpRequest, err := http.NewRequest("POST", h.endpoint, bytes.NewReader(body))
@@ -244,6 +250,7 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		if err != nil {
 			var timeout net.Error
 			if errors.As(err, &timeout) && timeout.Timeout() {
+				pastRunEnd()
 				stopProvider("Model did not answer within %s seconds", pyShortFloat(h.timeout.Seconds()))
 			}
 			stopProvider("Model provider request failed: %v", err)
@@ -269,6 +276,10 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 			pause = time.Duration(min(said, 120)) * time.Second
 		}
 		if pause >= time.Until(deadline) {
+			if deadline.Equal(runEnds) {
+				// It is the run's time that is up, not this model's.
+				panic(&budgetError{"Execution deadline exceeded", "deadline"})
+			}
 			// No time is left to wait and ask again: the busy answer is the
 			// answer, for the caller to try another model.
 			break

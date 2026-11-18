@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The reference engine's limits on one run.
@@ -24,6 +25,19 @@ const (
 // The function calls one run may make: 10,000 unless the person running it
 // says otherwise with --max-function-calls, as the reference engine allows.
 var maxFunctionCalls = 10_000
+
+// runEnds is when the run must stop, from --deadline-seconds or an
+// environment's budget; the zero time when nothing limits it. A model call
+// waits no later than this, and a long computation looks at it now and then,
+// so a run that loops without asking anything still stops on time.
+var runEnds time.Time
+
+// pastRunEnd stops a run whose deadline has passed, as the workflow steps do.
+func pastRunEnd() {
+	if !runEnds.IsZero() && !time.Now().Before(runEnds) {
+		panic(&budgetError{"Execution deadline exceeded", "deadline"})
+	}
+}
 
 type Scope struct {
 	vars   map[string]Value
@@ -642,6 +656,9 @@ func (m *Machine) invoke(decl *FuncDecl, arguments, captured map[string]Value, f
 	m.calls++
 	if m.calls > maxFunctionCalls {
 		panic(&budgetError{Message: fmt.Sprintf("Execution exceeded max_function_calls=%d", maxFunctionCalls)})
+	}
+	if m.calls&1023 == 0 {
+		pastRunEnd()
 	}
 	if depth >= maxCallDepth {
 		runFail("Function call depth exceeds 128")
