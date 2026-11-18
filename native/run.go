@@ -8,6 +8,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -23,7 +24,7 @@ func runCommand(args []string) int {
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true, "--json": true}
 	var givenSites []string
-	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--approve-in": true, "--standing": true, "--model-context": true, "--max-function-calls": true, "--approve-wait": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--approve-in": true, "--standing": true, "--model-context": true, "--max-function-calls": true, "--deadline-seconds": true, "--approve-wait": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -86,6 +87,17 @@ func runCommand(args []string) int {
 			return 2
 		}
 		maxFunctionCalls = calls
+	}
+	// The whole run's time, as the reference engine's --deadline-seconds:
+	// past it the run stops, wherever it is, and says so.
+	deadlineSeconds := 0.0
+	if given := options["--deadline-seconds"]; given != "" {
+		seconds, err := strconv.ParseFloat(given, 64)
+		if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 || seconds > 86_400 {
+			fmt.Fprintln(os.Stderr, "--deadline-seconds must be a number of seconds between 0 and 86400")
+			return 2
+		}
+		deadlineSeconds = seconds
 	}
 	// The program is checked first, as the reference checks it, before
 	// anything it would reach is looked at.
@@ -319,6 +331,13 @@ func runCommand(args []string) int {
 			if amount, given := env.budget["seconds"]; given {
 				running.deadline, running.started = toFloat(amount), started
 			}
+		}
+		// The person's deadline, which an environment's budget only tightens.
+		if deadlineSeconds > 0 && (running.deadline <= 0 || deadlineSeconds < running.deadline) {
+			running.deadline, running.started = deadlineSeconds, started
+		}
+		if running.deadline > 0 {
+			runEnds = started.Add(time.Duration(running.deadline * float64(time.Second)))
 		}
 		running.traced = true
 		running.hash = running.checker.program.Identity
