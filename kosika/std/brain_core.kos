@@ -61,12 +61,12 @@ record BrainAnswer { text: Text outcome: Text why: Text recalled: Number said: T
 memory timeline of BrainEpisode
 memory working of BrainWorking
 
-record ThinkerBrief { task: Text context: Text ask: Text }
-record ThinkerSaid { text: Text }
+record BrainThinkerBrief { task: Text context: Text ask: Text }
+record BrainThinkerSaid { text: Text }
 
-model thinker {
-  input: ThinkerBrief
-  output: ThinkerSaid
+model brain_thinker {
+  input: BrainThinkerBrief
+  output: BrainThinkerSaid
   parameters: {
     max_output_tokens: 700
   }
@@ -176,7 +176,7 @@ fn bc_task() -> Text {
   return "You are Kosika's Brain. Answer the ask plainly and briefly. Use the context only where it helps, and say so when you rely on it. Never say you did something you were not seen to do: you cannot install, send, change or delete anything. Do not rate your own confidence."
 }
 
-fn bc_no_answer() -> ThinkerSaid { return {text: ""} }
+fn bc_no_answer() -> BrainThinkerSaid { return {text: ""} }
 
 // The checks code can make of a plain answer. They can fail an answer;
 // they cannot prove one, so the best a plain answer gets is unchecked.
@@ -193,7 +193,7 @@ fn bc_done(t: BrainThought, text: Text, c: BrainCheck) -> BrainDone {
   return {part: t.part, session: t.session, at: t.at, ask: t.ask, did: did, outcome: c.outcome, checked_by: "brain_check"}
 }
 
-fn bc_answer(said: ThinkerSaid, c: BrainCheck, ctx: BrainContext, rec: BrainRecorded) -> BrainAnswer {
+fn bc_answer(said: BrainThinkerSaid, c: BrainCheck, ctx: BrainContext, rec: BrainRecorded) -> BrainAnswer {
   let n = ctx.episodes.length()
   let recalled = if n == 0 { "nothing from before reached the floor" } else { f"it recalled {n} past episode" + (if n == 1 { "" } else { "s" }) }
   let text = if c.outcome == "failed" { "" } else { said.text.trim() }
@@ -227,7 +227,7 @@ workflow brain_record(d: BrainDone) -> BrainRecorded {
 workflow brain_think(t: BrainThought) -> BrainAnswer {
   budget 3 model calls, 180 seconds
   ctx   = call brain_sense(t)
-  said  = use_model thinker(bc_task(), ctx.prompt, t.ask) retry 1 otherwise bc_no_answer()
+  said  = use_model brain_thinker(bc_task(), ctx.prompt, t.ask) retry 1 otherwise bc_no_answer()
   check = bc_check(said.text)
   rec   = call brain_record(bc_done(t, said.text, check))
   out   = bc_answer(said, check, ctx, rec)
