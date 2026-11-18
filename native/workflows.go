@@ -895,7 +895,10 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 		shape = asked
 	}
 	for {
-		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true, Schema: shape})
+		// A model `as text` is asked for plain text, so it is not put in
+		// JSON mode: a server in JSON mode wraps the text in an object of
+		// its own, as the reference engine never asks it to.
+		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: !model.Plain, Schema: shape})
 		if len(response.ToolCalls) > 0 || response.Finish != "stop" {
 			runFail("Model step requires a completed response without tool calls")
 		}
