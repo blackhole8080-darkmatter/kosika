@@ -220,9 +220,17 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	// it is asked again after a while, as the reference engine does: a
 	// little over three minutes in all, sooner if it says when.
 	busy := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second, 90 * time.Second}
+	// --model-timeout is the whole wait for this answer, the busy waits and
+	// every attempt together, not a fresh allowance for each attempt: one
+	// call can otherwise take six times the timeout and more.
+	deadline := time.Now().Add(h.timeout)
 	var answer *http.Response
 	var raw []byte
 	for {
+		left := time.Until(deadline)
+		if left <= 0 {
+			stopProvider("Model did not answer within %s seconds", pyShortFloat(h.timeout.Seconds()))
+		}
 		httpRequest, err := http.NewRequest("POST", h.endpoint, bytes.NewReader(body))
 		if err != nil {
 			stopProvider("Model provider request failed: %v", err)
@@ -232,7 +240,7 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		if h.apiKey != "" {
 			httpRequest.Header.Set("Authorization", "Bearer "+h.apiKey)
 		}
-		answer, err = (&http.Client{Timeout: h.timeout}).Do(httpRequest)
+		answer, err = (&http.Client{Timeout: left}).Do(httpRequest)
 		if err != nil {
 			var timeout net.Error
 			if errors.As(err, &timeout) && timeout.Timeout() {
@@ -259,6 +267,11 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 				break
 			}
 			pause = time.Duration(min(said, 120)) * time.Second
+		}
+		if pause >= time.Until(deadline) {
+			// No time is left to wait and ask again: the busy answer is the
+			// answer, for the caller to try another model.
+			break
 		}
 		time.Sleep(pause)
 	}
