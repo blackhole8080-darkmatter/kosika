@@ -125,7 +125,9 @@ def _run(run: dict[str, Any]) -> None:
         command = _engine() + ["run", str(program), "--input", str(given),
                                "--memory", str(lessons_folder()), "--allow-site", "en.wikipedia.org",
                                "--model", MODEL, "--model-url", f"http://127.0.0.1:{ROUTER_PORT}/v1",
-                               "--model-timeout", "120", "--max-output-tokens", "2000"]
+                               "--model-timeout", "120", "--max-output-tokens", "2000",
+                               # Reading a formula or drawing a curve is many small steps in Kosika.
+                               "--max-function-calls", "400000"]
         try:
             ran = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                  timeout=1800, cwd=work, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
