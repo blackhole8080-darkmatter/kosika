@@ -209,6 +209,44 @@ on top of it lives in its own repo, so each one stays small and easy to read.
 The drawing code itself is part of the standard library here
 (`kosika/std/designs*.kos`), so any Kosika program can draw.
 
+## Gallery: what Kosika draws
+
+Kosika draws its own mathematics as white lines in 2D and 3D, from
+`std/designs_plot.kos`: curves, surfaces, implicit shapes found by marching
+tetrahedra, knots as tubes, Platonic solids, and drawings that move. Ask an
+agent for maths and it draws it. The guide for agents is
+[docs/KOSIKA_MATH_DRAWINGS.md](docs/KOSIKA_MATH_DRAWINGS.md).
+
+<table>
+<tr>
+<td><img src="docs/images/art/s-gyroid.gif" width="260" alt="A gyroid turning"></td>
+<td><img src="docs/images/art/a-black-hole.gif" width="260" alt="A black hole"></td>
+<td><img src="docs/images/art/m-taylor-growing.gif" width="260" alt="A Taylor series growing term by term"></td>
+</tr>
+<tr>
+<td>Gyroid: sin x cos y + sin y cos z + sin z cos x = 0</td>
+<td>A black hole: space-time as a funnel</td>
+<td>A Taylor series, one more term each beat</td>
+</tr>
+<tr>
+<td><img src="docs/images/art/s-trefoil.gif" width="260" alt="A trefoil knot drawn as a tube"></td>
+<td><img src="docs/images/art/s-seashell.webp" width="260" alt="A seashell surface"></td>
+<td><img src="docs/images/art/p-complex-modulus-3d.webp" width="260" alt="The modulus of a complex function as a 3D landscape"></td>
+</tr>
+<tr>
+<td>A trefoil knot, as a tube</td>
+<td>A seashell, a spiral that grows as it turns</td>
+<td>|f(z)| of a complex function, in 3D</td>
+</tr>
+</table>
+
+<img src="docs/images/art/b-brain-maths-3d-lit.webp" width="520" alt="The Kosika Brain drawn in 3D: sense, recall, think, check, act and learn">
+
+The Kosika Brain (sense, recall, think, check, act, learn), drawn in 3D.
+
+**See all of it moving, and some of it live in 3D, in the
+[Kosika Gallery](https://blackhole8080-darkmatter.github.io/kosika-site/gallery/).**
+
 ## Use it from an AI assistant
 
 `kosika-mcp` is a Model Context Protocol server: an assistant can read the guide,
