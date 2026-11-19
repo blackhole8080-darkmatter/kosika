@@ -28,13 +28,18 @@
 
 import "designs_plot.kos"
 
-export [brain3d_scene, brain3d_figure, brain3d_parts, brain3d_where]
+export [brain3d_scene, brain3d_figure, brain3d_parts, brain3d_where, brain3d_roles]
 
 // The parts, in the renderer's region order (1 to 9).
 fn brain3d_parts() -> Text[] { return pl_regions() }
 
 fn brain3d_where() -> Text[] {
   return ["prefrontal cortex", "motor cortex", "parietal lobe", "occipital lobe", "temporal lobe", "hippocampus", "amygdala", "cerebellum", "midbrain"]
+}
+
+// What each part does in the Kosika Brain, in the same order.
+fn brain3d_roles() -> Text[] {
+  return ["plans the steps and decides what to do", "does the work: tools, code and replies", "checks every answer before it goes out", "reads the ask and what is around it", "the facts Kosika has learnt and keeps", "the timeline: every episode, kept for good", "what Kosika knows about you", "turns Keep and Drop into lessons", "notices gaps and asks its own questions"]
 }
 
 // How strongly each part glows, by region number (index 0 unused).
@@ -287,13 +292,17 @@ fn brain3d_figure(lit: Text[]) -> PlFigure {
     let state = if glow[k + 1] > 0.4 { (if lit.is_empty() { "shown" } else { "lit" }) } else { "resting" }
     notes = notes.append("<span style=\"color:" + pl_region_hex(k + 1) + "\">&#9679;</span> " + names[k] + ", the " + places[k] + ": " + state)
   }
-  let fig: PlFigure = {kind: "brain", title: title, formula: "folded sphere", notation: notation, svg: pl_scene_svg(scene, view, title), live: pl_scene_live_with(scene, view, [], true), page: "", notes: notes, problems: problems}
+  let roles = brain3d_roles()
+  let tips = for k in 0 until 9 { "the " + places[k] + ": " + roles[k] + (if glow[k + 1] > 0.4 and not lit.is_empty() { " (lit now)" } else { "" }) }
+  let heads = for k in 0 until 9 { names[k] }
+  let fig: PlFigure = {kind: "brain", title: title, formula: "folded sphere", notation: notation, svg: pl_scene_svg(scene, view, title), live: pl_scene_live_parts(scene, view, [], true, heads, tips), page: "", notes: notes, problems: problems}
   return pl_paged(fig, "Kosika math &#183; the Brain in 3D")
 }
 
 test "every part of the Brain has a place and a colour" {
   expect brain3d_parts().length() == 9
   expect brain3d_where().length() == 9
+  expect brain3d_roles().length() == 9
   expect br_glow([]).length() == 10
   expect br_glow(["think"])[1] > 0.9
   expect br_glow(["think"])[2] < 0.2
@@ -318,6 +327,8 @@ test "the Brain is drawn with every region tinted and the deep parts seen throug
   expect f.problems.is_empty()
   expect f.kind == "brain"
   expect f.svg.contains("<polygon")
+  expect f.live.contains("data-solid")
+  expect f.live.contains("hippocampus")
   expect f.svg.contains("#3fe0c5")
   expect f.live.contains("PAL=")
   expect f.page.contains("Kosika Brain: think, memory")
