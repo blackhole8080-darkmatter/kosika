@@ -1,0 +1,283 @@
+// Networks for the whole Kosika platform, drawn as simple neurons in 2.5D.
+//
+// A network is a list of neurons standing on a floor and the links between
+// them. Kosika places each neuron on an isometric floor (a white-line grid
+// seen from above at an angle), lifts it to its height, and drops a thin
+// line to its shadow, so where it stands is easy to read. Each neuron is a
+// small white-line sphere (an outline, an equator and a meridian) with its
+// part's colour in the nucleus, and a few short dendrites. Each link is an
+// axon arching up between two neurons, with its shadow on the floor. Amber
+// signals run along the axons and the neuron they reach fires a ring.
+//
+//   import "std/designs_network.kos"
+//
+//   net25_figure(net25_platform([]))           the Kosika platform
+//   net25_figure(net25_platform(["Brain"]))    one neuron lit, the rest dim
+//   net25_figure(net25_layers([3, 5, 4, 2], "a small neural net"))
+//   net25_svg(net)                             any network, as one SVG
+//
+// A neuron with no name draws no label (a big net stays readable); its
+// "about" still shows when it is pointed at. A link sends signals only
+// when its weight is at least 0.5 and its neurons are not dimmed.
+//
+// Any part of the platform can draw its own network: give each neuron a
+// name, a colour (a Brain region, 1 to 9, see pl_regions), and a place
+// (x and y on the floor from -4 to 4, z its height), and link them by
+// number. Everything is computed by Kosika; nothing is guessed.
+//
+// The projection: a point (x, y, z) lands on the page at
+//   X = cx + (x - y) cos 30 u,   Y = cy + (x + y) sin 30 u - z u
+// which keeps straight lines straight, so a curve's control points can be
+// projected first and the curve drawn on the page.
+
+import "designs_plot.kos"
+
+export [Net, NetNode, NetLink, net25_svg, net25_figure, net25_platform, net25_layers, net25_at]
+
+record NetNode { name: Text region: Number x: Number y: Number z: Number about: Text }
+record NetLink { from: Number to: Number weight: Number }
+record Net { title: Text nodes: NetNode[] links: NetLink[] lit: Text[] }
+
+// Where a point lands on the page (1100 by 660, 58 to a unit).
+fn net25_at(x: Number, y: Number, z: Number) -> Number[] {
+  return [550 + (x - y) * 0.8660254 * 58, 330 + (x + y) * 0.5 * 58 - z * 58]
+}
+
+fn nw_glow(net: Net, k: Number) -> Number {
+  if net.lit.is_empty() { return 0.6 }
+  if net.lit.contains(net.nodes[k].name) { return 1 }
+  return 0.18
+}
+
+// The floor: a white-line grid from -4 to 4, faint at its edges.
+fn nw_floor() -> Text {
+  var d: Text[] = []
+  for i in 0 until 9 {
+    let c = i - 4
+    let a = net25_at(c, -4, 0)
+    let b = net25_at(c, 4, 0)
+    let e = net25_at(-4, c, 0)
+    let f = net25_at(4, c, 0)
+    d = d.append("M" + a[0].to_fixed(1) + " " + a[1].to_fixed(1) + "L" + b[0].to_fixed(1) + " " + b[1].to_fixed(1) + "M" + e[0].to_fixed(1) + " " + e[1].to_fixed(1) + "L" + f[0].to_fixed(1) + " " + f[1].to_fixed(1))
+  }
+  return "<path d=\"" + d.join("") + "\" stroke=\"#f4f1ea\" stroke-width=\".6\" stroke-opacity=\".16\" fill=\"none\"/>"
+}
+
+// An axon: a curve that arches up between two neurons (its middle control
+// point lifted by half the distance), its shadow on the floor, and the
+// signal that runs along it.
+fn nw_axon(net: Net, l: NetLink, n: Number, total: Number) -> Text {
+  let a = net.nodes[l.from]
+  let b = net.nodes[l.to]
+  let dist = ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).sqrt()
+  let lift = 0.35 + 0.22 * dist
+  let p0 = net25_at(a.x, a.y, a.z)
+  let p1 = net25_at((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2 + lift)
+  let p2 = net25_at(b.x, b.y, b.z)
+  let s0 = net25_at(a.x, a.y, 0)
+  let s1 = net25_at((a.x + b.x) / 2, (a.y + b.y) / 2, 0)
+  let s2 = net25_at(b.x, b.y, 0)
+  // Stop short of the soma at each end, so the axon meets its outline.
+  let dx = p2[0] - p0[0]
+  let dy = p2[1] - p0[1]
+  let dl = (dx * dx + dy * dy).sqrt().max(1)
+  let cut = 15 / dl
+  let q0 = [p0[0] + (p1[0] - p0[0]) * cut * 1.4, p0[1] + (p1[1] - p0[1]) * cut * 1.4]
+  let q2 = [p2[0] + (p1[0] - p2[0]) * cut * 1.4, p2[1] + (p1[1] - p2[1]) * cut * 1.4]
+  let d = "M" + q0[0].to_fixed(1) + " " + q0[1].to_fixed(1) + "Q" + p1[0].to_fixed(1) + " " + p1[1].to_fixed(1) + " " + q2[0].to_fixed(1) + " " + q2[1].to_fixed(1)
+  let shadow = "M" + s0[0].to_fixed(1) + " " + s0[1].to_fixed(1) + "Q" + s1[0].to_fixed(1) + " " + s1[1].to_fixed(1) + " " + s2[0].to_fixed(1) + " " + s2[1].to_fixed(1)
+  let glow = (nw_glow(net, l.from) + nw_glow(net, l.to)) / 2
+  let w = (0.7 + 1.1 * l.weight.max(0).min(1)).to_fixed(2)
+  let o = (0.3 + 0.7 * glow).to_fixed(2)
+  let dur = 2.4
+  let begin = (2.2 + 3.2 * n / total.max(1)).to_fixed(2) + "s"
+  let colour = pl_region_hex(b.region)
+  let line = "<path d=\"" + shadow + "\" stroke=\"#f4f1ea\" stroke-width=\".7\" stroke-opacity=\".1\" fill=\"none\"/><path class=\"pl-draw\" d=\"" + d + "\" stroke=\"#f4f1ea\" stroke-width=\"" + w + "\" stroke-opacity=\"" + o + "\" fill=\"none\" stroke-linecap=\"round\"/>"
+  let tip = "<circle cx=\"" + q2[0].to_fixed(1) + "\" cy=\"" + q2[1].to_fixed(1) + "\" r=\"2.6\" fill=\"#07080d\" stroke=\"#f4f1ea\" stroke-opacity=\"" + o + "\" stroke-width=\"1\"/>"
+  if glow < 0.3 or l.weight < 0.5 { return line + tip }
+  let spark = "<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"" + begin + "\" fill=\"freeze\"/><circle r=\"7\" fill=\"#f5b942\" fill-opacity=\".2\"/><circle r=\"2.8\" fill=\"#f5b942\"/><animateMotion dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\" path=\"" + d + "\"/></g>"
+  let fire = "<circle class=\"pl-move\" cx=\"" + p2[0].to_fixed(1) + "\" cy=\"" + p2[1].to_fixed(1) + "\" r=\"14\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"1.3\" opacity=\"0\"><animate attributeName=\"opacity\" values=\"0;0;.9;0\" keyTimes=\"0;.88;.93;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/><animate attributeName=\"r\" values=\"14;14;17;32\" keyTimes=\"0;.88;.93;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/></circle>"
+  return line + tip + spark + fire
+}
+
+// A neuron: its drop line and shadow, a few short dendrites (one split
+// each, turned by the same seeded sequence as the other neurons), the
+// sphere in white lines, the nucleus in its colour, and its name.
+fn nw_neuron(net: Net, k: Number) -> Text {
+  let v = net.nodes[k]
+  let c = net25_at(v.x, v.y, v.z)
+  let f = net25_at(v.x, v.y, 0)
+  let glow = nw_glow(net, k)
+  let colour = pl_region_hex(v.region)
+  let o = (0.35 + 0.65 * glow).to_fixed(2)
+  let r = 12
+  let drop = "<path d=\"M" + c[0].to_fixed(1) + " " + (c[1] + r).to_fixed(1) + "L" + f[0].to_fixed(1) + " " + f[1].to_fixed(1) + "\" stroke=\"#f4f1ea\" stroke-width=\".7\" stroke-dasharray=\"2 4\" stroke-opacity=\".35\"/><ellipse cx=\"" + f[0].to_fixed(1) + "\" cy=\"" + f[1].to_fixed(1) + "\" rx=\"15\" ry=\"7.5\" fill=\"" + colour + "\" fill-opacity=\"" + (0.08 + 0.14 * glow).to_fixed(2) + "\" stroke=\"#f4f1ea\" stroke-opacity=\".22\" stroke-width=\".6\"/>"
+  var s = 7919 + 613 * k
+  var dend: Text[] = []
+  for j in 0 until 5 {
+    s = (s * 9301 + 49297) % 233280
+    let a = 72 * j + 30 * (s / 233280 - 0.5) - 90
+    let x1 = c[0] + (r + 12) * a.cos()
+    let y1 = c[1] + (r + 12) * a.sin()
+    var seg = "M" + (c[0] + r * a.cos()).to_fixed(1) + " " + (c[1] + r * a.sin()).to_fixed(1) + "L" + x1.to_fixed(1) + " " + y1.to_fixed(1)
+    for side in [-1, 1] {
+      s = (s * 9301 + 49297) % 233280
+      let b = a + side * (18 + 18 * s / 233280)
+      seg = seg + "M" + x1.to_fixed(1) + " " + y1.to_fixed(1) + "l" + (9 * b.cos()).to_fixed(1) + " " + (9 * b.sin()).to_fixed(1)
+    }
+    dend = dend.append(seg)
+  }
+  let sway = (4.6 + 0.37 * k).to_fixed(2)
+  let tree = "<g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"-3 " + c[0].to_fixed(1) + " " + c[1].to_fixed(1) + ";3 " + c[0].to_fixed(1) + " " + c[1].to_fixed(1) + ";-3 " + c[0].to_fixed(1) + " " + c[1].to_fixed(1) + "\" dur=\"" + sway + "s\" repeatCount=\"indefinite\"/><path class=\"pl-draw\" d=\"" + dend.join("") + "\" stroke=\"#f4f1ea\" stroke-opacity=\"" + o + "\" stroke-width=\"1\" stroke-linecap=\"round\" fill=\"none\"/></g>"
+  let halo = "<circle cx=\"" + c[0].to_fixed(1) + "\" cy=\"" + c[1].to_fixed(1) + "\" r=\"30\" fill=\"url(#nw-glow-" + v.region.to_text() + ")\" opacity=\"" + (glow * 0.85).to_fixed(2) + "\"><animate attributeName=\"r\" values=\"26;34;26\" dur=\"" + (3 + 0.29 * k).to_fixed(2) + "s\" repeatCount=\"indefinite\"/></circle>"
+  let ball = "<circle cx=\"" + c[0].to_fixed(1) + "\" cy=\"" + c[1].to_fixed(1) + "\" r=\"" + r.to_text() + "\" fill=\"#07080d\" stroke=\"#f4f1ea\" stroke-opacity=\"" + o + "\" stroke-width=\"1.5\"/><ellipse cx=\"" + c[0].to_fixed(1) + "\" cy=\"" + c[1].to_fixed(1) + "\" rx=\"" + r.to_text() + "\" ry=\"4.2\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\"" + (0.45 * glow + 0.1).to_fixed(2) + "\" stroke-width=\".7\"/><ellipse cx=\"" + c[0].to_fixed(1) + "\" cy=\"" + c[1].to_fixed(1) + "\" rx=\"4.2\" ry=\"" + r.to_text() + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-opacity=\"" + (0.3 * glow + 0.08).to_fixed(2) + "\" stroke-width=\".6\"/><circle cx=\"" + (c[0] + 1.5).to_fixed(1) + "\" cy=\"" + (c[1] - 1).to_fixed(1) + "\" r=\"3.4\" fill=\"" + colour + "\" fill-opacity=\"" + (0.4 + 0.6 * glow).to_fixed(2) + "\"/>"
+  let label = if v.name.is_empty() { "" } else { "<text class=\"pl-fade\" x=\"" + (c[0] + 20).to_fixed(1) + "\" y=\"" + (c[1] - 12).to_fixed(1) + "\" fill=\"" + colour + "\" fill-opacity=\"" + o + "\" font-family=\"Georgia,serif\" font-style=\"italic\" font-size=\"15\">" + pl_esc(v.name) + "</text>" }
+  let named = if v.name.is_empty() { v.about } else if v.about.is_empty() { v.name } else { v.name + ": " + v.about }
+  let hover = "<title>" + pl_esc(named) + "</title>"
+  return "<g>" + hover + drop + halo + tree + ball + label + "</g>"
+}
+
+// The whole network as one SVG: floor, axons (far first), neurons (far
+// first, so a nearer one is drawn over a farther one).
+fn net25_svg(net: Net) -> Text {
+  var defs: Text[] = []
+  for k in 1 until 10 {
+    defs = defs.append("<radialGradient id=\"nw-glow-" + k.to_text() + "\"><stop offset=\"0\" stop-color=\"" + pl_region_hex(k) + "\" stop-opacity=\".55\"/><stop offset=\"1\" stop-color=\"" + pl_region_hex(k) + "\" stop-opacity=\"0\"/></radialGradient>")
+  }
+  var axons: Text[] = []
+  var n = 0
+  for l in net.links {
+    if l.from >= 0 and l.to >= 0 and l.from < net.nodes.length() and l.to < net.nodes.length() and l.from != l.to {
+      axons = axons.append(nw_axon(net, l, n, net.links.length()))
+      n += 1
+    }
+  }
+  // Far to near: a smaller x + y is farther back.
+  // Each key holds the depth in its high digits and the neuron's number in
+  // its last three, so sorting the keys sorts the neurons.
+  let order = (for k in 0 until net.nodes.length() { ((net.nodes[k].x + net.nodes[k].y + 20) * 100).floor() * 1000 + k }).sort()
+  let cells = for key in order { nw_neuron(net, key % 1000) }
+  return "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"pl-svg\" width=\"1100\" height=\"660\" viewBox=\"0 0 1100 660\" role=\"img\" aria-label=\"" + pl_esc(net.title) + "\"><defs>" + defs.join("") + "</defs><rect width=\"1100\" height=\"660\" fill=\"#07080d\"/>" + nw_floor() + axons.join("") + cells.join("") + "</svg>"
+}
+
+fn nw_problems(net: Net) -> Text[] {
+  var out: Text[] = []
+  if net.nodes.is_empty() { out = out.append("the network has no neurons to draw") }
+  for v in net.nodes {
+    if v.region < 1 or v.region > 9 { out = out.append(v.name + " needs a colour from 1 to 9") }
+    if v.x.abs() > 4 or v.y.abs() > 4 { out = out.append(v.name + " stands off the floor (x and y go from -4 to 4)") }
+  }
+  for l in net.links {
+    if l.from < 0 or l.to < 0 or l.from >= net.nodes.length() or l.to >= net.nodes.length() { out = out.append(f"a link joins neuron {l.from} to neuron {l.to}, and one of them is not in the network") }
+  }
+  for name in net.lit {
+    if not (for v in net.nodes { v.name }).contains(name) { out = out.append("the network has no neuron called " + name) }
+  }
+  return out
+}
+
+fn net25_figure(net: Net) -> PlFigure {
+  let notation = "<math display=\"block\"><mi>X</mi><mo>=</mo><msub><mi>c</mi><mi>x</mi></msub><mo>+</mo><mo>(</mo><mi>x</mi><mo>&#8722;</mo><mi>y</mi><mo>)</mo><mi>cos</mi><mn>30</mn><mo>&#176;</mo><mi>u</mi><mspace width=\"1.5em\"/><mi>Y</mi><mo>=</mo><msub><mi>c</mi><mi>y</mi></msub><mo>+</mo><mo>(</mo><mi>x</mi><mo>+</mo><mi>y</mi><mo>)</mo><mi>sin</mi><mn>30</mn><mo>&#176;</mo><mi>u</mi><mo>&#8722;</mo><mi>z</mi><mi>u</mi></math>"
+  var notes: Text[] = []
+  notes = notes.append(f"Kosika placed {net.nodes.length()} neurons on an isometric floor with the projection above, and linked them with {net.links.length()} axons. Each axon is a curve lifted halfway along by half its length, with its shadow on the floor.")
+  notes = notes.append("Watch: the pen draws the dendrites and axons, the dendrites sway, amber signals run along each axon, and the neuron they reach fires a ring. Point at a neuron to read what it does.")
+  if not net.lit.is_empty() { notes = notes.append("Lit: " + net.lit.join(", ") + ". The rest are dim and send no signals.") }
+  let fig: PlFigure = {kind: "network", title: net.title, formula: "isometric projection", notation: notation, svg: net25_svg(net), live: "", page: "", notes: notes, problems: nw_problems(net)}
+  return pl_paged(fig, "Kosika math &#183; a network in 2.5D")
+}
+
+// The Kosika platform as a network. Colours are the Brain's regions: think
+// 1, act 2, check 3, sense 4, know 5, memory 6, you 7, learn 8, curious 9.
+fn net25_platform(lit: Text[]) -> Net {
+  let nodes: NetNode[] = [
+    {name: "Brain", region: 1, x: 0, y: 0, z: 1.6, about: "the one intelligence layer: senses, recalls, thinks, checks, records"},
+    {name: "Kosi", region: 4, x: -3, y: -1.4, z: 1.0, about: "the voice: hears you and speaks back"},
+    {name: "Chat", region: 4, x: -2.6, y: 0.9, z: 0.8, about: "talks with you and draws anything"},
+    {name: "Phone", region: 4, x: -3.6, y: -3.4, z: 0.5, about: "Kosika on your iPhone, online and offline"},
+    {name: "Kosika AI", region: 2, x: 1.5, y: -1.5, z: 1.2, about: "plans, does and checks a task, step by step"},
+    {name: "Coder swarm", region: 2, x: 3.4, y: -2.6, z: 0.7, about: "Shilpi, Drishti, Yantra, Setu and Vayu write Kosika's code"},
+    {name: "Checks", region: 3, x: 3.4, y: 0.6, z: 0.9, about: "both engines and every test: nothing is trusted unchecked"},
+    {name: "Kosika maths", region: 5, x: 0.6, y: -3.5, z: 0.9, about: "std/math: every number computed, never guessed"},
+    {name: "Designs", region: 5, x: -0.9, y: -2.7, z: 1.3, about: "Kosika Designs: art, diagrams and white-line maths"},
+    {name: "Timeline", region: 6, x: 1.4, y: 2.0, z: 0.7, about: "every episode, kept for good"},
+    {name: "Studio", region: 7, x: -1.4, y: 3.0, z: 0.9, about: "your home for every part of Kosika"},
+    {name: "Lessons", region: 8, x: 3.2, y: 3.3, z: 0.6, about: "Keep and Drop become lessons for the planner"},
+    {name: "Own models", region: 8, x: 0.4, y: 3.7, z: 0.4, about: "Kosika's free models, trained on its lessons"},
+    {name: "Research", region: 9, x: -3.4, y: 3.2, z: 1.1, about: "reads papers and brings back ideas"}
+  ]
+  let pairs = [[1, 0, 0.9], [2, 0, 0.9], [3, 1, 0.6], [3, 2, 0.5], [0, 4, 1], [4, 7, 0.9], [4, 8, 0.9], [8, 0, 0.5], [4, 5, 0.8], [5, 6, 0.9], [4, 6, 0.7], [6, 9, 0.8], [0, 9, 0.7], [9, 11, 0.7], [11, 12, 0.6], [12, 4, 0.5], [10, 0, 0.8], [8, 10, 0.6], [13, 0, 0.6], [9, 0, 0.5]]
+  let links: NetLink[] = for p in pairs { {from: p[0], to: p[1], weight: p[2]} }
+  let title = if lit.is_empty() { "The Kosika platform as a network" } else { "The Kosika platform: " + lit.join(", ") }
+  return {title: title, nodes: nodes, links: links, lit: lit}
+}
+
+// A layered neural net: one column of neurons per layer, standing in rows
+// across the floor, every neuron linked to every one in the next layer.
+// Weights come from the seeded sequence, so the same net draws the same.
+fn net25_layers(sizes: Number[], title: Text) -> Net {
+  var nodes: NetNode[] = []
+  var links: NetLink[] = []
+  var first = 0
+  var s = 2718
+  let count = sizes.length()
+  for i in 0 until count {
+    let n = sizes[i]
+    let x = if count > 1 { -3.4 + 6.8 * i / (count - 1) } else { 0 }
+    let role = if i == 0 { "input" } else if i == count - 1 { "output" } else { "hidden" }
+    let region = if i == 0 { 4 } else if i == count - 1 { 2 } else { 1 }
+    for j in 0 until n {
+      let y = if n > 1 { -3 + 6 * j / (n - 1) } else { 0 }
+      let name = if j == 0 { (if role == "hidden" { f"hidden {i}" } else { role }) } else { "" }
+      nodes = nodes.append({name: name, region: region, x: x, y: y, z: 0.6 + 0.25 * i, about: f"{role} layer {i + 1}, neuron {j + 1}"})
+    }
+    if i > 0 {
+      let before = sizes[i - 1]
+      let start = first - before
+      for a in 0 until before {
+        for b in 0 until n {
+          s = (s * 9301 + 49297) % 233280
+          links = links.append({from: start + a, to: first + b, weight: s / 233280})
+        }
+      }
+    }
+    first = first + n
+  }
+  return {title: title, nodes: nodes, links: links, lit: []}
+}
+
+test "a point on the floor lands where the projection puts it" {
+  expect net25_at(0, 0, 0) == [550, 330]
+  expect net25_at(1, 1, 0)[0] == 550
+  expect net25_at(0, 0, 1)[1] == 272
+}
+
+test "the platform network names every neuron and links only real ones" {
+  net = net25_platform([])
+  expect net.nodes.length() == 14
+  expect nw_problems(net).is_empty()
+  expect nw_problems(net25_platform(["Brain", "Nowhere"])).length() == 1
+}
+
+test "a layered net links every neuron to the next layer" {
+  net = net25_layers([3, 4, 2], "small")
+  expect net.nodes.length() == 9
+  expect net.links.length() == 20
+  expect net.links[0].from == 0
+  expect net.links[0].to == 3
+  expect net.links[19].to == 8
+}
+
+test "the platform is drawn with signals on its axons" {
+  f = net25_figure(net25_platform([]))
+  expect f.problems.is_empty()
+  expect f.kind == "network"
+  expect f.svg.contains("animateMotion")
+  expect f.svg.contains("<title>Brain: ")
+  expect f.page.contains("<svg")
+}
+
+test "a dim neuron sends no signals" {
+  lit = net25_svg(net25_platform(["Brain"]))
+  all = net25_svg(net25_platform([]))
+  expect lit.length() < all.length()
+}
