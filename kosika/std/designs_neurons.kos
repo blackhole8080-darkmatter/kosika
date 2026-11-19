@@ -22,7 +22,7 @@
 
 import "designs_plot.kos"
 
-export [neuron3d_scene, neuron3d_figure, neuron3d_parts, neuron3d_links, neuron2d_figure, NrDraw]
+export [neuron3d_scene, neuron3d_figure, neuron3d_parts, neuron3d_links, neuron2d_figure, NrDraw, nr_glow, nr2_neuron, nr2_axon, nr2_axon_d, nr2_place, nr2_n]
 
 // The neurons of the network: part, soma position.
 fn neuron3d_parts() -> Text[] { return ["sense", "think", "check", "act", "memory", "know"] }
@@ -386,7 +386,8 @@ fn nr2_neuron(k: Number, region: Number, glow: Number, seed: Number) -> NrDraw {
 // core with myelin beads over it, branching at its end into boutons. A
 // signal runs along it; on arrival the vesicles cross the cleft and the
 // next neuron fires a ring.
-fn nr2_axon(from: Number, to: Number, region: Number, glow: Number, delay: Number) -> Text {
+// The axon's curve from one neuron to the next, as an SVG path.
+fn nr2_axon_d(from: Number, to: Number) -> Text {
   let a = nr2_place(from)
   let b = nr2_place(to)
   let dx = a[0] - b[0]
@@ -396,7 +397,18 @@ fn nr2_axon(from: Number, to: Number, region: Number, glow: Number, delay: Numbe
   let p0 = [a[0], a[1] + 20]
   let p1 = [a[0] + 10, a[1] + 150]
   let p2 = [e[0] + dx / dl * 90, e[1] + 110]
-  let d = "M" + nr2_n(p0[0]) + " " + nr2_n(p0[1]) + "C" + nr2_n(p1[0]) + " " + nr2_n(p1[1]) + " " + nr2_n(p2[0]) + " " + nr2_n(p2[1]) + " " + nr2_n(e[0]) + " " + nr2_n(e[1])
+  return "M" + nr2_n(p0[0]) + " " + nr2_n(p0[1]) + "C" + nr2_n(p1[0]) + " " + nr2_n(p1[1]) + " " + nr2_n(p2[0]) + " " + nr2_n(p2[1]) + " " + nr2_n(e[0]) + " " + nr2_n(e[1])
+}
+
+// With signals off, only the axon is drawn: a caller times its own.
+fn nr2_axon(from: Number, to: Number, region: Number, glow: Number, delay: Number, signals: Bool) -> Text {
+  let a = nr2_place(from)
+  let b = nr2_place(to)
+  let dx = a[0] - b[0]
+  let dy = a[1] - b[1]
+  let dl = (dx * dx + dy * dy).sqrt().max(1)
+  let e = [b[0] + dx / dl * 44, b[1] + dy / dl * 44 + 16]
+  let d = nr2_axon_d(from, to)
   let colour = pl_region_hex(region)
   let o = (0.3 + 0.7 * glow).to_fixed(2)
   let dur = 2.6
@@ -413,7 +425,8 @@ fn nr2_axon(from: Number, to: Number, region: Number, glow: Number, delay: Numbe
   }
   let fire = "<circle cx=\"" + nr2_n(b[0]) + "\" cy=\"" + nr2_n(b[1]) + "\" r=\"18\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"1.4\" opacity=\"0\"><animate attributeName=\"opacity\" values=\"0;0;.9;0\" keyTimes=\"0;.9;.94;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/><animate attributeName=\"r\" values=\"18;18;22;40\" keyTimes=\"0;.9;.94;1\" dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\"/></circle>"
   let spark = "<g class=\"pl-move\" opacity=\"0\"><set attributeName=\"opacity\" to=\"1\" begin=\"" + begin + "\" fill=\"freeze\"/><circle r=\"9\" fill=\"#f5b942\" fill-opacity=\".18\"/><circle r=\"3.6\" fill=\"#f5b942\"/><animateMotion dur=\"" + dur.to_text() + "s\" begin=\"" + begin + "\" repeatCount=\"indefinite\" path=\"" + d + "\"/></g>"
-  return "<g opacity=\"" + o + "\"><path class=\"pl-draw\" d=\"" + d + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"1\"/><path" + stream + " d=\"" + d + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"4.4\" stroke-dasharray=\"18 6\" stroke-dashoffset=\"-10\" stroke-linecap=\"round\" opacity=\".8\"/>" + ends.join("") + "</g>" + vesicles.join("") + fire + spark
+  let moving = if signals { vesicles.join("") + fire + spark } else { "" }
+  return "<g opacity=\"" + o + "\"><path class=\"pl-draw\" d=\"" + d + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"1\"/><path" + stream + " d=\"" + d + "\" fill=\"none\" stroke=\"#f4f1ea\" stroke-width=\"4.4\" stroke-dasharray=\"18 6\" stroke-dashoffset=\"-10\" stroke-linecap=\"round\" opacity=\".8\"/>" + ends.join("") + "</g>" + moving
 }
 
 fn neuron2d_figure(lit: Text[]) -> PlFigure {
@@ -435,7 +448,7 @@ fn neuron2d_figure(lit: Text[]) -> PlFigure {
   var axons: Text[] = []
   var n = 0
   for link in neuron3d_links() {
-    axons = axons.append(nr2_axon(link[0], link[1], regions[link[0]], glow[link[0]], 0.45 * n))
+    axons = axons.append(nr2_axon(link[0], link[1], regions[link[0]], glow[link[0]], 0.45 * n, true))
     n += 1
   }
   let w = 1100

@@ -28,7 +28,7 @@
 // Programs opt in by importing this module and running with
 // `--memory FOLDER`.
 
-export [BrainThought, BrainEpisode, BrainWorking, BrainContext, BrainDone, BrainRecorded, BrainAnswer, BrainCheck, brain_sense, brain_record, brain_think, bc_words, bc_near_enough, bc_context, bc_working_of, bc_next_working, bc_episode, bc_episode_key, bc_working_key, bc_check, bc_done, bc_prompt, bc_timeline_lines, bc_outcomes]
+export [BrainEpisodes, brain_recent, BrainThought, BrainEpisode, BrainWorking, BrainContext, BrainDone, BrainRecorded, BrainAnswer, BrainCheck, brain_sense, brain_record, brain_think, bc_words, bc_near_enough, bc_context, bc_working_of, bc_next_working, bc_episode, bc_episode_key, bc_working_key, bc_check, bc_done, bc_prompt, bc_timeline_lines, bc_outcomes]
 
 // ask: what was asked, in the person's words. part: which Kosika part is
 // asking (ai, swarm, kosi, chat, designs, studio). session: one talk, so
@@ -205,6 +205,18 @@ fn bc_answer(said: BrainThinkerSaid, c: BrainCheck, ctx: BrainContext, rec: Brai
 // The timeline as lines a page can show, oldest first.
 fn bc_timeline_lines(episodes: BrainEpisode[]) -> Text[] { return for e in episodes { (if e.at.is_empty() { "" } else { e.at + " " }) + bc_episode_line(e) } }
 
+// The episodes a recall found, oldest first.
+record BrainEpisodes { episodes: BrainEpisode[] }
+
+fn bc_recent(found: TimelineLike) -> BrainEpisodes {
+  let all = for m in found.matches { m.value }
+  return {episodes: all.sort_by("seq").sort_by("at")}
+}
+
+// What to recall by: the ask, or with none, all three outcomes, which
+// every episode carries, so every episode matches.
+fn bc_recent_about(ask: Text) -> Text { return if ask.is_empty() { "passed failed unchecked" } else { ask } }
+
 // ---------------------------------------------------------------- the workflows
 
 // Sense: the talk so far and the nearest past episodes, above the floor.
@@ -212,6 +224,12 @@ workflow brain_sense(t: BrainThought) -> BrainContext {
   had   = recall working under bc_working_key(t.session)
   found = recall timeline like t.ask
   out   = bc_context(t, bc_working_of(had, t.session), found)
+}
+
+// Recent: the episodes nearest an ask (at most ten), or any ten.
+workflow brain_recent(t: BrainThought) -> BrainEpisodes {
+  found = recall timeline like bc_recent_about(t.ask)
+  out   = bc_recent(found)
 }
 
 // Learn: keep what a part did on the timeline and move the talk on.
