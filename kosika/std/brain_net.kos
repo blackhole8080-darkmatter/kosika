@@ -1,0 +1,300 @@
+// Kosika Brain, as a network of neurons: the same Brain, seen up close.
+//
+// Every Kosika part is a hub neuron (Kosika AI, Chat, Kosi, Designs, the
+// coder swarm, Studio), working memory sits beside the timeline at the
+// core, and every episode on the timeline is a neuron in its part's
+// cluster. The links are real: an episode is wired to the part that did
+// it, two episodes are wired when their asks share topic words (the
+// Brain's own bc_words, as recall uses), and the latest episode's round
+// runs core, working memory, part, episode.
+//
+// It is drawn in 2.5D, in Kosika maths' white lines: each neuron has a
+// depth, so far ones are smaller and fainter and drawn first. Kosika
+// computes every soma, every branching dendrite and every curved axon;
+// the page only plays the small motions on them: spikes along the axons
+// (green passed, red failed, grey unchecked, white for a shared idea),
+// the somas' slow pulse and the dendrites' sway. With reduced motion asked
+// for, nothing moves.
+//
+// bn_network gives the network itself, for any part to read; bn_view draws
+// it (svg) and puts it on a page (page). Colours are the 3D brain's
+// (std/brain_view.kos), so a part looks the same in both.
+
+import "brain_core.kos"
+import "brain_view.kos"
+
+export [BrainNeuron, BrainSynapse, BrainNetwork, BrainNetAsk, BrainNet, bn_network, bn_rand, bn_link_weight, bn_svg, bn_view, brain_net]
+
+// kind: "core" (the timeline), "working", "part" or "episode". x and y on
+// a plane from -1 to 1; z, depth, from -1 (far) to 1 (near).
+record BrainNeuron { id: Number part: Text region: Number kind: Text label: Text outcome: Text x: Number y: Number z: Number }
+
+// why: "part" (an episode and its part), "words" (two episodes share
+// topic words), "round" (the latest episode's round), "record" (a part
+// keeps its episodes on the timeline). weight: 0 to 1.
+record BrainSynapse { from: Number to: Number weight: Number why: Text }
+
+record BrainNetwork { neurons: BrainNeuron[] synapses: BrainSynapse[] }
+
+// The timeline's episodes, oldest first; the talk so far; the drawing's size.
+record BrainNetAsk { episodes: BrainEpisode[] working: Text[] width: Number height: Number }
+
+record BrainNet { svg: Text page: Text network: BrainNetwork problems: Text[] }
+
+record BnItem { key: Number svg: Text }
+
+// ---------------------------------------------------------------- the network
+
+// A number from 0 to 1 that looks random but is the same for the same seed.
+fn bn_rand(seed: Number) -> Number {
+  let v = (seed * 12.9898 + 78.233).sin() * 43758.5453
+  return v - v.floor()
+}
+
+// The parts, round a ring, in the 3D brain's region order.
+fn bn_parts() -> Number[] { return [1, 2, 3, 4, 5, 6] }
+
+fn bn_hub_at(k: Number) -> Number[] {
+  let a = -90 + k * 60
+  return [0.62 * a.cos(), 0.62 * a.sin()]
+}
+
+// How alike two asks are, by their topic words: shared over all, 0 to 1.
+fn bn_link_weight(a: Text[], b: Text[]) -> Number {
+  if a.is_empty() or b.is_empty() { return 0 }
+  let shared = (for w in a where b.contains(w) { w }).length()
+  let all = a.length() + b.length() - shared
+  return shared / all
+}
+
+fn bn_short(t: Text, n: Number) -> Text { return if t.length() > n { t.slice(0, n) + "…" } else { t } }
+
+// The newest 40 episodes, each beside its part, with links. Neuron ids:
+// 0 the core, 1 working memory, 2 to 7 the parts, then the episodes.
+fn bn_network(episodes: BrainEpisode[], working: Text[]) -> BrainNetwork {
+  let regions = bv_regions()
+  var neurons: BrainNeuron[] = [{id: 0, part: "timeline", region: 7, kind: "core", label: "timeline", outcome: "", x: 0, y: 0.04, z: 0.2}, {id: 1, part: "working", region: 0, kind: "working", label: "working memory", outcome: "", x: 0.17, y: -0.12, z: 0.5}]
+  let parts = bn_parts()
+  for k in 0 until parts.length() {
+    let at = bn_hub_at(k)
+    let r = parts[k]
+    neurons = neurons.append({id: 2 + k, part: regions[r].part, region: r, kind: "part", label: regions[r].part, outcome: "", x: at[0], y: at[1], z: bn_rand(k + 3) - 0.5})
+  }
+  var synapses: BrainSynapse[] = []
+  let from = (episodes.length() - 40).max(0)
+  var counts = for k in 0 until parts.length() { 0 }
+  var words: Text[][] = []
+  for e in episodes.slice(from, episodes.length()) {
+    let r = bv_region_of(e.part)
+    let k = (for i in 0 until parts.length() where parts[i] == r { i })[0]
+    let n = counts[k]
+    counts = for i in 0 until counts.length() { if i == k { counts[i] + 1 } else { counts[i] } }
+    let hub = bn_hub_at(k)
+    let a = n * 137.5 + k * 60
+    let d = 0.17 + 0.05 * (n + 1).sqrt()
+    let id = neurons.length()
+    let o = if ["passed", "failed", "unchecked"].contains(e.outcome) { e.outcome } else { "unchecked" }
+    neurons = neurons.append({id: id, part: e.part, region: r, kind: "episode", label: bn_short(e.ask, 90), outcome: o, x: hub[0] + d * a.cos(), y: hub[1] + d * a.sin(), z: bn_rand(id * 7.1) * 2 - 1})
+    synapses = synapses.append({from: id, to: 2 + k, weight: 0.6, why: "part"})
+    words = words.append(bc_words(e.ask))
+  }
+  // Two episodes whose asks share topic words are wired, each to at most
+  // its three nearest.
+  let first = 8
+  for i in 0 until words.length() {
+    var near: BrainSynapse[] = []
+    for j in 0 until words.length() {
+      if j != i {
+        let w = bn_link_weight(words[i], words[j])
+        if w >= 0.3 { near = near.append({from: first + i, to: first + j, weight: w, why: "words"}) }
+      }
+    }
+    let best = for s in near.sort_by("weight").reverse().take(3) where s.from < s.to { s }
+    synapses = synapses.concat(best)
+  }
+  // A part with episodes keeps them on the timeline.
+  for k in 0 until parts.length() {
+    if counts[k] > 0 { synapses = synapses.append({from: 2 + k, to: 0, weight: (0.3 + 0.1 * counts[k]).min(1), why: "record"}) }
+  }
+  // The latest episode's round: the core senses, working memory holds,
+  // the part thinks, the episode is the result.
+  if not episodes.is_empty() {
+    let last = neurons[neurons.length() - 1]
+    let k = (for i in 0 until parts.length() where parts[i] == last.region { i })[0]
+    synapses = synapses.concat([{from: 0, to: 1, weight: 1, why: "round"}, {from: 1, to: 2 + k, weight: 1, why: "round"}, {from: 2 + k, to: last.id, weight: 1, why: "round"}])
+  }
+  if not working.is_empty() { synapses = synapses.append({from: 1, to: 0, weight: 0.5, why: "record"}) }
+  return {neurons: neurons, synapses: synapses}
+}
+
+// ---------------------------------------------------------------- drawing
+
+// Where a neuron lands: nearer ones spread a little wider and grow.
+fn bn_screen(n: BrainNeuron, w: Number, h: Number) -> Number[] {
+  let persp = 1 + 0.1 * n.z
+  return [w / 2 + n.x * w * 0.4 * persp, h * 0.5 + n.y * h * 0.42 * persp, 0.72 + 0.28 * (n.z + 1) / 2]
+}
+
+fn bn_hex(o: Text) -> Text {
+  if o == "passed" { return "#59d98e" }
+  if o == "failed" { return "#ff5d5d" }
+  return "#a3a8b0"
+}
+
+fn bn_f(v: Number) -> Text { return v.to_fixed(1) }
+
+// One neuron in white lines: a soma, its nucleus, and dendrites that fork
+// twice, each a gentle curve. Kosika computes every point; the browser
+// only sways the dendrites and pulses the soma.
+fn bn_neuron_svg(n: BrainNeuron, at: Number[], ink: Text, lit: Number) -> Text {
+  let size = at[2] * (if n.kind == "episode" { 1.2 } else if n.kind == "part" { 1.8 } else { 2 })
+  let soma = 5.5 * size
+  let fade = (0.35 + 0.65 * (n.z + 1) / 2).to_fixed(2)
+  var d: Text[] = []
+  let arms = if n.kind == "episode" { 4 } else { 6 }
+  for i in 0 until arms {
+    let a0 = i * 360 / arms + bn_rand(n.id * 31 + i) * 40
+    let l0 = (14 + 10 * bn_rand(n.id * 17 + i)) * size
+    let x0 = at[0] + soma * a0.cos()
+    let y0 = at[1] + soma * a0.sin()
+    let x1 = x0 + l0 * a0.cos()
+    let y1 = y0 + l0 * a0.sin()
+    let bend = 18 * (bn_rand(n.id + i * 5) - 0.5)
+    d = d.append(f"M{bn_f(x0)} {bn_f(y0)}Q{bn_f((x0 + x1) / 2 + bend * a0.sin())} {bn_f((y0 + y1) / 2 - bend * a0.cos())} {bn_f(x1)} {bn_f(y1)}")
+    for side in [-1, 1] {
+      let a1 = a0 + side * (24 + 14 * bn_rand(n.id * 3 + i + side))
+      let l1 = l0 * (0.55 + 0.15 * bn_rand(n.id + i * 9 + side))
+      let x2 = x1 + l1 * a1.cos()
+      let y2 = y1 + l1 * a1.sin()
+      d = d.append(f"M{bn_f(x1)} {bn_f(y1)}Q{bn_f((x1 + x2) / 2 + 4 * side * a1.sin())} {bn_f((y1 + y2) / 2 - 4 * side * a1.cos())} {bn_f(x2)} {bn_f(y2)}")
+      let a2 = a1 + side * 22
+      let l2 = l1 * 0.5
+      d = d.append(f"M{bn_f(x2)} {bn_f(y2)}L{bn_f(x2 + l2 * a2.cos())} {bn_f(y2 + l2 * a2.sin())}")
+    }
+  }
+  let sway = (6 + 4 * bn_rand(n.id * 13)).to_fixed(1)
+  let turn = (1.5 + 2 * bn_rand(n.id * 19)).to_fixed(1)
+  let centre = bn_f(at[0]) + " " + bn_f(at[1])
+  let tip = bv_esc_net(if n.kind == "episode" { n.part + ", " + n.outcome + ": " + n.label } else { n.label })
+  let width = if n.kind == "episode" { ".8" } else { "1.1" }
+  let pulse = (2.6 + 2 * bn_rand(n.id * 23)).to_fixed(1)
+  let glow = if lit > 0 { f"<circle cx=\"{bn_f(at[0])}\" cy=\"{bn_f(at[1])}\" r=\"{bn_f(soma * 2.4)}\" fill=\"{ink}\" fill-opacity=\"{(0.06 + 0.1 * lit).to_fixed(2)}\"/>" } else { "" }
+  let dendrites = d.join("")
+  let nucleus = if n.kind == "episode" { f"<circle cx=\"{bn_f(at[0])}\" cy=\"{bn_f(at[1])}\" r=\"{bn_f(soma * 0.38)}\" fill=\"{bn_hex(n.outcome)}\"/>" } else { f"<circle cx=\"{bn_f(at[0])}\" cy=\"{bn_f(at[1])}\" r=\"{bn_f(soma * 0.42)}\" fill=\"none\" stroke=\"{ink}\" stroke-width=\".8\"/>" }
+  return f"<g class=\"bn-neuron\" opacity=\"{fade}\"><title>{tip}</title>{glow}<g><path d=\"{dendrites}\" fill=\"none\" stroke=\"{ink}\" stroke-width=\"{width}\" stroke-linecap=\"round\"/><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0 {centre};{turn} {centre};0 {centre};-{turn} {centre};0 {centre}\" dur=\"{sway}s\" repeatCount=\"indefinite\"/></g><circle cx=\"{bn_f(at[0])}\" cy=\"{bn_f(at[1])}\" r=\"{bn_f(soma)}\" fill=\"#07080d\" stroke=\"{ink}\" stroke-width=\"1.3\"><animate attributeName=\"stroke-opacity\" values=\"1;.45;1\" dur=\"{pulse}s\" repeatCount=\"indefinite\"/></circle>{nucleus}</g>"
+}
+
+fn bv_esc_net(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+// One synapse: a curved axon from one soma to the other, a bulb where it
+// meets, and a spike that runs along it.
+fn bn_synapse_svg(s: BrainSynapse, a: Number[], b: Number[], colour: Text, spike: Text, k: Number) -> Text {
+  let dx = b[0] - a[0]
+  let dy = b[1] - a[1]
+  let len = (dx * dx + dy * dy).sqrt().max(0.001)
+  let bend = (0.12 + 0.12 * bn_rand(k * 3.3)) * len * (if k % 2 == 0 { 1 } else { -1 })
+  let cx = (a[0] + b[0]) / 2 - dy / len * bend
+  let cy = (a[1] + b[1]) / 2 + dx / len * bend
+  // Stop short of the target soma, where the bulb sits.
+  let stop = 1 - 9 * b[2] / len
+  let ex = a[0] + dx * stop
+  let ey = a[1] + dy * stop
+  let path = f"M{bn_f(a[0])} {bn_f(a[1])}Q{bn_f(cx)} {bn_f(cy)} {bn_f(ex)} {bn_f(ey)}"
+  let op = (0.18 + 0.5 * s.weight * (a[2] + b[2]) / 2).min(0.85).to_fixed(2)
+  let dash = if s.why == "words" { " stroke-dasharray=\"3 4\"" } else { "" }
+  let dur = (2.2 + 2.4 * bn_rand(k * 7.7) + len / 260).to_fixed(1)
+  let begin = (bn_rand(k * 5.1) * 4).to_fixed(1)
+  let r = if s.why == "round" { "3" } else { "2.1" }
+  let thick = if s.why == "round" { "1.4" } else { ".9" }
+  return f"<path d=\"{path}\" fill=\"none\" stroke=\"{colour}\" stroke-opacity=\"{op}\" stroke-width=\"{thick}\"{dash}/><circle cx=\"{bn_f(ex)}\" cy=\"{bn_f(ey)}\" r=\"2\" fill=\"#07080d\" stroke=\"{colour}\" stroke-opacity=\"{op}\"/><circle class=\"bn-move\" r=\"{r}\" fill=\"{spike}\" opacity=\"0\"><set attributeName=\"opacity\" to=\".95\" begin=\"{begin}s\"/><animateMotion dur=\"{dur}s\" begin=\"{begin}s\" repeatCount=\"indefinite\" path=\"{path}\"/></circle>"
+}
+
+// The whole network in white lines: far neurons first, the links between
+// them, the parts named, and a key.
+fn bn_svg(net: BrainNetwork, w: Number, h: Number) -> Text {
+  let regions = bv_regions()
+  let at = for n in net.neurons { bn_screen(n, w, h) }
+  // How much each part has done, so its hub glows in its colour.
+  var done = for r in 0 until regions.length() { 0 }
+  for n in net.neurons where n.kind == "episode" { done = for r in 0 until done.length() { if r == n.region { done[r] + 1 } else { done[r] } } }
+  let total = (for n in net.neurons where n.kind == "episode" { 1 }).length()
+  let lit = for n in net.neurons { if n.kind == "core" { (total / 6).min(1) } else if n.kind == "working" { 0 } else { (done[n.region] / 4).min(1) } }
+  let inks = for n in net.neurons { if lit[n.id] > 0 or n.kind == "episode" { regions[n.region].hex } else { "#f4f1ea" } }
+  var links: Text[] = []
+  for k in 0 until net.synapses.length() {
+    let s = net.synapses[k]
+    let src = net.neurons[s.from]
+    let colour = if s.why == "words" { "#f4f1ea" } else { inks[s.to] }
+    let spike = if s.why == "words" { "#f4f1ea" } else if s.why == "round" { "#f2d24b" } else if src.kind == "episode" { bn_hex(src.outcome) } else { inks[s.from] }
+    links = links.append(bn_synapse_svg(s, at[s.from], at[s.to], colour, spike, k))
+  }
+  let drawn: BnItem[] = for n in net.neurons { {key: n.z, svg: bn_neuron_svg(n, at[n.id], inks[n.id], lit[n.id])} }
+  let order = drawn.sort_by("key")
+  let cells = (for o in order { o.svg }).join("")
+  let names = (for n in net.neurons where n.kind != "episode" { f"<text x=\"{bn_f(at[n.id][0])}\" y=\"{bn_f(at[n.id][1] + 52 * at[n.id][2] + 14)}\" fill=\"{inks[n.id]}\" fill-opacity=\".9\" font-size=\"12\" text-anchor=\"middle\" font-family=\"system-ui,sans-serif\">{n.label}</text>" }).join("")
+  let key = f"<text x=\"16\" y=\"{h - 16}\" fill=\"#f4f1ea\" fill-opacity=\".55\" font-size=\"12\" font-family=\"system-ui,sans-serif\">{total} episode neuron(s) · spikes: green passed, red failed, grey unchecked, white a shared idea, yellow the latest round</text>"
+  let style = "<style>@media (prefers-reduced-motion: reduce){.bn-move{display:none}}</style><script>if(matchMedia('(prefers-reduced-motion: reduce)').matches){const s=document.currentScript&&document.currentScript.closest('svg');if(s&&s.pauseAnimations)s.pauseAnimations()}</script>"
+  let axons = links.join("")
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w} {h}\" width=\"{w}\" height=\"{h}\" role=\"img\" aria-label=\"Kosika's Brain as a network of neurons\"><rect width=\"{w}\" height=\"{h}\" fill=\"#07080d\"/>{style}{axons}{cells}{names}{key}</svg>"
+}
+
+fn bn_view(a: BrainNetAsk) -> BrainNet {
+  var problems: Text[] = []
+  if a.width < 320 or a.height < 240 { problems = problems.append("the drawing needs at least 320 by 240") }
+  let w = a.width.max(320)
+  let h = a.height.max(240)
+  let net = bn_network(a.episodes, a.working)
+  let svg = bn_svg(net, w, h)
+  let page = "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Kosika Brain network</title><style>body{margin:0;background:#07080d;color:#f4f1ea;font:14px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:0 auto;padding:20px 16px 32px}h1{font-weight:600;font-size:22px;margin:0 0 4px}p{opacity:.7;margin:0 0 14px}svg{width:100%;height:auto;display:block;border-radius:14px}</style></head><body><main><h1>Kosika Brain network</h1><p>Every soma, dendrite and axon was computed by Kosika. Hubs are Kosika's parts, small neurons are episodes on the Brain's timeline, and the links are real: an episode to its part, and episodes whose asks share topic words. Point at a neuron to read it.</p>" + svg + "</main></body></html>"
+  return {svg: svg, page: page, network: net, problems: problems}
+}
+
+// Draw the network from the timeline's episodes (oldest first) and the talk
+// so far. It reads no memory itself: the host passes what to draw.
+workflow brain_net(a: BrainNetAsk) -> BrainNet {
+  out = bn_view(a)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn bn_test_ep(part: Text, ask: Text, outcome: Text) -> BrainEpisode { return {part: part, session: "default", seq: 1, at: "", ask: ask, did: "did it", outcome: outcome, checked_by: "tests", words: ""} }
+
+test "every part is a hub, every episode a neuron beside its part" {
+  net = bn_network([bn_test_ep("ai", "What is 18% of 2450?", "passed"), bn_test_ep("designs", "Plot y = sin(x)", "failed")], [])
+  expect net.neurons.length() == 10
+  expect net.neurons[0].kind == "core" and net.neurons[1].kind == "working"
+  expect (for n in net.neurons where n.kind == "part" { n.part }) == ["ai", "chat", "kosi", "designs", "swarm", "studio"]
+  expect net.neurons[8].part == "ai" and net.neurons[8].outcome == "passed"
+  expect net.neurons[9].region == 4 and net.neurons[9].outcome == "failed"
+  // Each episode is wired to its part.
+  expect (for s in net.synapses where s.why == "part" { [s.from, s.to] }) == [[8, 2], [9, 5]]
+  // Depth stays in -1 to 1.
+  expect (for n in net.neurons where n.z < -1 or n.z > 1 { n }).is_empty()
+}
+
+test "episodes are wired when their asks share topic words" {
+  expect bn_link_weight(["18%", "2450"], ["18%", "2600"]) > 0.3
+  expect bn_link_weight(["sort", "list"], ["water", "cycle"]) == 0
+  expect bn_link_weight([], ["x"]) == 0
+  net = bn_network([bn_test_ep("ai", "What is 18% of 2450?", "passed"), bn_test_ep("ai", "What is 18% of 2600?", "passed"), bn_test_ep("kosi", "Tell me about the water cycle", "unchecked")], [])
+  expect (for s in net.synapses where s.why == "words" { [s.from, s.to] }) == [[8, 9]]
+}
+
+test "the latest episode's round runs core, working memory, part, episode" {
+  net = bn_network([bn_test_ep("ai", "one", "passed"), bn_test_ep("swarm", "two", "failed")], ["ai: 'one' → did (passed)"])
+  expect (for s in net.synapses where s.why == "round" { [s.from, s.to] }) == [[0, 1], [1, 6], [6, 9]]
+  expect (for s in net.synapses where s.why == "record" { s.to }).contains(0)
+  // No episodes: hubs only, no round.
+  expect (for s in bn_network([], []).synapses where s.why == "round" { s }).is_empty()
+}
+
+test "the network is drawn in white lines, with motion that can be stilled" {
+  v = bn_view({episodes: [bn_test_ep("ai", "What is 18% of 2450? <b>", "passed")], working: [], width: 640, height: 420})
+  expect v.problems.is_empty()
+  expect v.svg.starts_with("<svg") and v.svg.contains("animateMotion") and v.svg.contains("prefers-reduced-motion")
+  expect v.svg.contains("#f4f1ea") and v.svg.contains("#4f9dff")
+  expect not v.svg.contains("<b>") and v.svg.contains("&lt;b&gt;")
+  expect v.page.contains("<title>Kosika Brain network</title>")
+  expect bn_view({episodes: [], working: [], width: 100, height: 100}).problems == ["the drawing needs at least 320 by 240"]
+  expect bn_rand(3) == bn_rand(3) and bn_rand(3) >= 0 and bn_rand(3) < 1
+}
