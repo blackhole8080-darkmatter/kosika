@@ -1,0 +1,596 @@
+// Kosika Brain, seen: a 3D human brain whose parts are Kosika's parts.
+//
+// Every point of the brain is computed here, in Kosika, and drawn with
+// Kosika Designs' own camera (the same projection std/designs_plot uses):
+// two hemispheres folded into gyri and sulci, the cerebellum with its fine
+// folia, the brainstem, and the hippocampus inside each temporal lobe.
+//
+// Each region is one Kosika part, in its own colour:
+//
+//   prefrontal   working memory    the talk so far (brain_core's `working`)
+//   frontal      Kosika AI         plans, decides, checks
+//   parietal     Chat              puts what is said together
+//   temporal     Kosi              voice: hearing and speaking
+//   occipital    Designs           sight: everything Kosika draws
+//   cerebellum   coder swarm       practised, coordinated work
+//   brainstem    Studio            keeps every part running
+//   hippocampus  timeline          every episode, kept for good
+//
+// A region glows by how much its part has done on the Brain's timeline,
+// and each recent episode is drawn as a round: sense (timeline to working
+// memory), think (working memory to the part), check (at the part), record
+// (the part back to the timeline), coloured by how it went: green passed,
+// red failed, grey unchecked. Nothing is guessed: a region with no
+// episodes stays dim.
+//
+// bv_view gives a still drawing (svg), a live one to turn and zoom, with a
+// region named under the pointer (live), and a whole page (page).
+
+import "brain_core.kos"
+
+export [BrainRegion, BrainGrid, BrainCurve, BrainModel, BrainActivity, BrainRound, BrainViewAsk, BrainView, bv_regions, bv_region_of, bv_model, bv_activity, bv_rounds, bv_svg, bv_live, bv_view, brain_view]
+
+// One region: what it is in a brain, which Kosika part it is, what that
+// part does, and its colour.
+record BrainRegion { name: Text part: Text role: Text hex: Text r: Number g: Number b: Number }
+
+// A surface as a grid of (nu + 1) by (nv + 1) points, each [x, y, z];
+// normals: one outward unit normal per point, for smooth light; regions:
+// the region of each of its nu * nv quads; shade: how much light each quad
+// keeps, less deep in a sulcus.
+record BrainGrid { name: Text nu: Number nv: Number points: Number[][] normals: Number[][] regions: Number[] shade: Number[] }
+
+// A line inside the brain (the hippocampus), drawn through the surface.
+record BrainCurve { region: Number pts: Number[][] }
+
+record BrainModel { grids: BrainGrid[] curves: BrainCurve[] quads: Number }
+
+// What a region's part has done: episodes and how they went. glow: 0 (none)
+// to 1, with the newest episodes counting most.
+record BrainActivity { region: Number count: Number passed: Number failed: Number unchecked: Number glow: Number last: Text }
+
+// One episode as a round through the brain: the path, each [x, y, z];
+// marks: where on the path each of sense, think, check and record begins.
+record BrainRound { part: Text region: Number outcome: Text ask: Text did: Text pts: Number[][] marks: Number[] }
+
+// What to draw: the timeline's episodes, oldest first; the talk so far;
+// detail 0.05 to 1 (how fine the mesh is); the view, in degrees.
+record BrainViewAsk { episodes: BrainEpisode[] working: Text[] detail: Number yaw: Number pitch: Number }
+
+record BrainView { svg: Text live: Text page: Text legend: Text[] quads: Number rounds: Number problems: Text[] }
+
+// ---------------------------------------------------------------- regions
+
+fn bv_regions() -> BrainRegion[] {
+  return [
+    {name: "prefrontal cortex", part: "working", role: "working memory: the talk so far", hex: "#f2d24b", r: 242, g: 210, b: 75},
+    {name: "frontal lobe", part: "ai", role: "Kosika AI: plans, decides and checks", hex: "#4f9dff", r: 79, g: 157, b: 255},
+    {name: "parietal lobe", part: "chat", role: "Chat: puts what is said together", hex: "#a77bff", r: 167, g: 123, b: 255},
+    {name: "temporal lobe", part: "kosi", role: "Kosi: the voice, hearing and speaking", hex: "#38d1a6", r: 56, g: 209, b: 166},
+    {name: "occipital lobe", part: "designs", role: "Designs: sight, everything Kosika draws", hex: "#ff6f91", r: 255, g: 111, b: 145},
+    {name: "cerebellum", part: "swarm", role: "the coder swarm: practised, coordinated work", hex: "#ff9a3c", r: 255, g: 154, b: 60},
+    {name: "brainstem", part: "studio", role: "Studio: keeps every part running", hex: "#8ea4bd", r: 142, g: 164, b: 189},
+    {name: "hippocampus", part: "timeline", role: "the timeline: every episode, kept for good", hex: "#fff2b0", r: 255, g: 242, b: 176}
+  ]
+}
+
+// The region a part thinks in; a part the Brain does not know yet is shown
+// in the frontal lobe, with Kosika AI.
+fn bv_region_of(part: Text) -> Number {
+  let regions = bv_regions()
+  for i in 0 until regions.length() {
+    if regions[i].part == part.trim().lower() { return i }
+  }
+  return 1
+}
+
+// Where each region sits, for the rounds: a point just off its surface.
+fn bv_centre(region: Number) -> Number[] {
+  let c = [[0, 1.02, 0.12], [0, 0.42, 0.78], [0, -0.42, 0.74], [0.9, 0.2, -0.36], [0, -1.04, 0.16], [0, -0.86, -0.62], [0, -0.32, -1.02], [0.42, -0.02, -0.3]]
+  return c[region]
+}
+
+// ---------------------------------------------------------------- the shape
+
+fn bv_gauss(t: Number) -> Number { return (0 - t * t).exp() }
+
+// The folds of the cortex: where three bent waves sum to nought a sulcus
+// runs, so the grooves wind like a brain's, never in straight rows. 1 deep
+// in a sulcus, 0 on a gyrus. Angles are in degrees, as all Kosika's are.
+fn bv_sulcus(x: Number, y: Number, z: Number) -> Number {
+  let a = (y * 860 + 120 * (z * 520 + x * 230).sin()).sin()
+  let b = (z * 940 + 110 * (y * 610 - x * 200).sin() + 40).sin()
+  let c = ((x + y) * 680 + 90 * (z * 450).sin() + 75).sin()
+  return (0 - ((a + b + c) / 0.75) * ((a + b + c) / 0.75)).exp()
+}
+
+// One hemisphere point: side -1 is the left, 1 the right; t from the top
+// (0) to the bottom (180), f round the side (90 is the front).
+fn bv_cortex(side: Number, t: Number, f: Number) -> Number[] {
+  let dx = t.sin() * f.cos()
+  let dy = t.sin() * f.sin()
+  let dz = t.cos()
+  let lateral = dx * side
+  // A long egg, flat where the hemispheres meet, narrower at the front.
+  var x = dx * 0.62 * (if lateral < 0 { 0.24 } else { 1 }) * (1 - 0.1 * dy.max(0))
+  var y = dy * 0.94
+  var z = dz * (if dz < 0 { 0.36 } else { 0.62 })
+  // The temporal lobe hangs low at the side, toward the front.
+  let temporal = lateral.max(0) * (0 - ((dy - 0.12) / 0.4) * ((dy - 0.12) / 0.4)).exp() * (0 - dz).max(0).sqrt()
+  z = z - 0.34 * temporal
+  x = x + 0.06 * temporal * side
+  // The frontal pole dips; the occipital pole reaches back.
+  z = z - 0.08 * dy.max(0).power(3)
+  y = y - 0.07 * (0 - dy).max(0) * (dz + 0.4).max(0)
+  // The Sylvian fissure: the deep cleft above the temporal lobe.
+  let sylvian = lateral.max(0) * (0 - ((dz + 0.08 - 0.22 * dy) / 0.07) * ((dz + 0.08 - 0.22 * dy) / 0.07)).exp() * (0 - ((dy - 0.05) / 0.45) * ((dy - 0.05) / 0.45)).exp()
+  // The folds, shallow on the flat inner face and deeper outside.
+  let groove = bv_sulcus(dx, dy, dz) * (if lateral < 0 { 0.4 } else { 1 })
+  let sink = 1 - 0.05 * groove - 0.07 * sylvian
+  return [side * 0.17 + x * sink, y * sink, z * sink]
+}
+
+// Which region a hemisphere point belongs to, by where it lies.
+fn bv_cortex_region(side: Number, t: Number, f: Number) -> Number {
+  let dx = t.sin() * f.cos()
+  let dy = t.sin() * f.sin()
+  let dz = t.cos()
+  if dx * side > 0.3 and dz < 0.02 - 0.2 * dy and dy > -0.62 { return 3 }
+  if dy < -0.66 + 0.1 * dz { return 4 }
+  if dy > 0.7 { return 0 }
+  if dy > 0.08 - 0.22 * dz { return 1 }
+  return 2
+}
+
+// A grid round a centre: (nv + 1) rows from the top to the bottom, each of
+// (nu + 1) points all the way round. Every list is made in one pass.
+
+fn bv_hemisphere(side: Number, nu: Number, nv: Number) -> BrainGrid {
+  let points = for k in 0 until (nv + 1) * (nu + 1) { bv_cortex(side, (k / (nu + 1)).floor() * 180 / nv, (k % (nu + 1)) * 360 / nu) }
+  let regions = for k in 0 until nv * nu { bv_cortex_region(side, ((k / nu).floor() + 0.5) * 180 / nv, (k % nu + 0.5) * 360 / nu) }
+  let shade = for k in 0 until nv * nu { bv_cortex_shade(((k / nu).floor() + 0.5) * 180 / nv, (k % nu + 0.5) * 360 / nu) }
+  return bv_grid(if side < 0 { "left hemisphere" } else { "right hemisphere" }, nu, nv, points, regions, shade)
+}
+
+// Less light deep in a sulcus, so the folds read even from far off.
+fn bv_cortex_shade(t: Number, f: Number) -> Number { return 1 - 0.5 * bv_sulcus(t.sin() * f.cos(), t.sin() * f.sin(), t.cos()) }
+
+// The cerebellum, tucked under the back of the brain, with its fine folia
+// running side to side and a notch where its halves meet.
+fn bv_cerebellum_point(t: Number, f: Number) -> Number[] {
+  let dx = t.sin() * f.cos()
+  let dy = t.sin() * f.sin()
+  let dz = t.cos()
+  let notch = 1 - 0.22 * (0 - (dx / 0.12) * (dx / 0.12)).exp() * (dy.max(0) * 0.4 + (0 - dy).max(0))
+  let folia = 1 - 0.035 * (0 - ((t * 13 + 30 * dx).sin() / 0.5) * ((t * 13 + 30 * dx).sin() / 0.5)).exp()
+  return [dx * 0.6 * folia, -0.66 + dy * 0.34 * notch * folia, -0.44 + dz * (if dz > 0 { 0.2 } else { 0.24 }) * folia]
+}
+
+fn bv_cerebellum(nu: Number, nv: Number) -> BrainGrid {
+  let points = for k in 0 until (nv + 1) * (nu + 1) { bv_cerebellum_point((k / (nu + 1)).floor() * 180 / nv, (k % (nu + 1)) * 360 / nu) }
+  let regions = for k in 0 until nv * nu { 5 }
+  let shade = for k in 0 until nv * nu { 1 - 0.45 * (0 - ((((k / nu).floor() + 0.5) * 180 / nv * 13).sin() / 0.5) * ((((k / nu).floor() + 0.5) * 180 / nv * 13).sin() / 0.5)).exp() }
+  return bv_grid("cerebellum", nu, nv, points, regions, shade)
+}
+
+// The brainstem: a tapering stalk with the pons swelling at its front.
+fn bv_stem_point(h: Number, f: Number) -> Number[] {
+  let pons = 0.07 * (0 - ((h - 0.32) / 0.14) * ((h - 0.32) / 0.14)).exp() * f.sin().max(0)
+  let r = 0.16 - 0.05 * h + pons
+  return [f.cos() * r, -0.2 - 0.12 * h + f.sin() * r, -0.22 - 0.86 * h]
+}
+
+fn bv_brainstem(nu: Number, nv: Number) -> BrainGrid {
+  let points = for k in 0 until (nv + 1) * (nu + 1) { bv_stem_point((k / (nu + 1)).floor() * 180 / nv / 180, (k % (nu + 1)) * 360 / nu) }
+  let regions = for k in 0 until nv * nu { 6 }
+  let shade = for k in 0 until nv * nu { 1 }
+  return bv_grid("brainstem", nu, nv, points, regions, shade)
+}
+
+// A grid with a smooth normal at every point: the cross of its two
+// neighbours' differences, round the columns (which close on themselves)
+// and along the rows, turned to face away from the grid's middle. Worked
+// in one loop: a run's trace keeps every call's arguments, so no call per
+// point is handed the whole grid.
+fn bv_grid(name: Text, nu: Number, nv: Number, points: Number[][], regions: Number[], shade: Number[]) -> BrainGrid {
+  let n = points.length()
+  let mx = (for p in points { p[0] }).sum() / n
+  let my = (for p in points { p[1] }).sum() / n
+  let mz = (for p in points { p[2] }).sum() / n
+  let row = nu + 1
+  var normals: Number[][] = []
+  for k in 0 until n {
+    let i = (k / row).floor()
+    let j = k % row
+    let l = points[i * row + (if j == 0 { nu - 1 } else { j - 1 })]
+    let r = points[i * row + (if j == nu { 1 } else { j + 1 })]
+    let u = points[(if i == 0 { 0 } else { i - 1 }) * row + j]
+    let d = points[(if i == nv { nv } else { i + 1 }) * row + j]
+    let p = points[k]
+    let ax = r[0] - l[0]
+    let ay = r[1] - l[1]
+    let az = r[2] - l[2]
+    let bx = d[0] - u[0]
+    let by = d[1] - u[1]
+    let bz = d[2] - u[2]
+    var nx = ay * bz - az * by
+    var ny = az * bx - ax * bz
+    var nz = ax * by - ay * bx
+    // At a pole the neighbours meet: face straight out from the middle.
+    if (nx * nx + ny * ny + nz * nz).sqrt() < 0.0000001 {
+      nx = p[0] - mx
+      ny = p[1] - my
+      nz = p[2] - mz
+    }
+    let sign = if nx * (p[0] - mx) + ny * (p[1] - my) + nz * (p[2] - mz) < 0 { -1 } else { 1 }
+    let size = (nx * nx + ny * ny + nz * nz).sqrt().max(0.0000001)
+    normals = normals.append([sign * nx / size, sign * ny / size, sign * nz / size])
+  }
+  return {name: name, nu: nu, nv: nv, points: points, normals: normals, regions: regions, shade: shade}
+}
+
+// The light a quad gets: its corners' normals, turned with the view, read
+// against a lamp above and to the left of the eye. Below 0 the quad faces
+// away and is not drawn.
+fn bv_light(na: Number[], nb: Number[], nc: Number[], nd: Number[], view: Number[]) -> Number {
+  let nx = na[0] + nb[0] + nc[0] + nd[0]
+  let ny = na[1] + nb[1] + nc[1] + nd[1]
+  let nz = na[2] + nb[2] + nc[2] + nd[2]
+  let x1 = nx * view[0].cos() - ny * view[0].sin()
+  let y1 = nx * view[0].sin() + ny * view[0].cos()
+  let up = nz * view[1].cos() + y1 * view[1].sin()
+  let depth = y1 * view[1].cos() - nz * view[1].sin()
+  let len = (x1 * x1 + up * up + depth * depth).sqrt().max(0.0000001)
+  if depth / len > 0.45 { return -1 }
+  let lamp = ((0 - 0.42 * x1 + 0.56 * up - 0.71 * depth) / len).max(0)
+  return 0.2 + 0.9 * lamp
+}
+
+// The hippocampus: a curled ridge deep in each temporal lobe.
+fn bv_hippocampus(side: Number) -> BrainCurve {
+  return {region: 7, pts: for k in 0 to 24 { [side * (0.44 - 0.14 * k / 24), 0.22 - 0.7 * k / 24, -0.4 + 0.36 * (k / 24) * (k / 24)] }}
+}
+
+// The whole brain. detail 1 is fine enough to see the folds clearly; 0.05
+// is enough for a test.
+fn bv_model(detail: Number) -> BrainModel {
+  let d = detail.max(0.05).min(1)
+  let nu = (128 * d).round().max(8)
+  let nv = (72 * d).round().max(4)
+  let cu = (72 * d).round().max(6)
+  let cv = (40 * d).round().max(3)
+  let grids = [bv_hemisphere(-1, nu, nv), bv_hemisphere(1, nu, nv), bv_cerebellum(cu, cv), bv_brainstem((24 * d).round().max(6), (12 * d).round().max(3))]
+  return {grids: grids, curves: [bv_hippocampus(-1), bv_hippocampus(1)], quads: (for g in grids { g.nu * g.nv }).sum()}
+}
+
+// ---------------------------------------------------------------- what the timeline says
+
+fn bv_outcome(o: Text) -> Text { return if ["passed", "failed", "unchecked"].contains(o) { o } else { "unchecked" } }
+
+// Each region's activity. The newest of n episodes counts 1 and the oldest
+// a third as much; a region reaches full glow at four such counts.
+fn bv_activity(episodes: BrainEpisode[], working: Text[]) -> BrainActivity[] {
+  let n = episodes.length()
+  var out: BrainActivity[] = []
+  for r in 0 until bv_regions().length() {
+    var count = 0
+    var passed = 0
+    var failed = 0
+    var unchecked = 0
+    var weight = 0
+    var last = ""
+    for k in 0 until n {
+      let e = episodes[k]
+      // The timeline holds every episode; working memory, this talk's.
+      let mine = if r == 7 { true } else if r == 0 { false } else { bv_region_of(e.part) == r }
+      if mine {
+        count += 1
+        let o = bv_outcome(e.outcome)
+        if o == "passed" { passed += 1 } else if o == "failed" { failed += 1 } else { unchecked += 1 }
+        weight += 1 / 3 + (2 / 3) * (k + 1) / n
+        last = e.ask
+      }
+    }
+    if r == 0 {
+      count = working.length()
+      weight = working.length() * 0.7
+      last = if working.is_empty() { "" } else { working[working.length() - 1] }
+    }
+    out = out.append({region: r, count: count, passed: passed, failed: failed, unchecked: unchecked, glow: (weight / 4).min(1), last: last})
+  }
+  return out
+}
+
+// A path from a to b, bowed outward so it rides over the surface.
+fn bv_arc(a: Number[], b: Number[], steps: Number) -> Number[][] {
+  return for k in 0 to steps { bv_arc_point(a, b, k / steps) }
+}
+
+fn bv_arc_point(a: Number[], b: Number[], s: Number) -> Number[] {
+  let lift = 1 + 0.42 * (s * 180).sin()
+  return [(a[0] + (b[0] - a[0]) * s) * lift, (a[1] + (b[1] - a[1]) * s) * lift, (a[2] + (b[2] - a[2]) * s) * lift]
+}
+
+// The last few episodes, oldest first, each as a round: sense, think,
+// check, record.
+fn bv_rounds(episodes: BrainEpisode[], most: Number) -> BrainRound[] {
+  let from = (episodes.length() - most).max(0)
+  var out: BrainRound[] = []
+  for k in from until episodes.length() {
+    let e = episodes[k]
+    let r = bv_region_of(e.part)
+    let sense = bv_arc(bv_centre(7), bv_centre(0), 12)
+    let think = bv_arc(bv_centre(0), bv_centre(r), 16)
+    let p = bv_centre(r)
+    let check = [p, p, p]
+    let record = bv_arc(bv_centre(r), bv_centre(7), 16)
+    let a = sense.length()
+    let b = a + think.length()
+    let c = b + 3
+    out = out.append({part: e.part, region: r, outcome: bv_outcome(e.outcome), ask: e.ask, did: e.did, pts: sense.concat(think).concat(check).concat(record), marks: [0, a, b, c]})
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- drawing it still
+
+fn bv_hex(o: Text) -> Text {
+  if o == "passed" { return "#59d98e" }
+  if o == "failed" { return "#ff5d5d" }
+  return "#a3a8b0"
+}
+
+// A region's line colour: Kosika maths' white, turning to the region's own
+// colour as its part does more.
+fn bv_ink(reg: BrainRegion, glow: Number) -> Text {
+  let m = if glow > 0 { 0.6 + 0.4 * glow } else { 0 }
+  return f"rgb({(244 + (reg.r - 244) * m).round()},{(241 + (reg.g - 241) * m).round()},{(234 + (reg.b - 234) * m).round()})"
+}
+
+// A region's colour at a light level: dim and greyed when its part has done
+// nothing, full and bright as it glows.
+fn bv_fill(reg: BrainRegion, glow: Number, light: Number) -> Text {
+  let mix = 0.32 + 0.68 * glow
+  let lift = 0.7 + 0.45 * glow
+  let r = ((70 + (reg.r - 70) * mix) * light * lift).max(0).min(255)
+  let g = ((74 + (reg.g - 74) * mix) * light * lift).max(0).min(255)
+  let b = ((84 + (reg.b - 84) * mix) * light * lift).max(0).min(255)
+  return f"rgb({r.round()},{g.round()},{b.round()})"
+}
+
+fn bv_view_of(yaw: Number, pitch: Number, width: Number, height: Number) -> Number[] { return [yaw, pitch, width, height] }
+
+// x, y, z to screen x, screen y, depth: Designs' own camera
+// (std/designs_plot's pl_project_all), scaled for a brain.
+fn bv_project(points: Number[][], view: Number[]) -> Number[][] {
+  let cam = [view[0].cos(), view[0].sin(), view[1].cos(), view[1].sin(), view[2] * 0.3, view[2], view[3]]
+  return for p in points { bv_project_one(p, cam) }
+}
+
+fn bv_project_one(p: Number[], cam: Number[]) -> Number[] {
+  let x1 = p[0] * cam[0] - p[1] * cam[1]
+  let y1 = p[0] * cam[1] + p[1] * cam[0]
+  let up = p[2] * cam[2] + y1 * cam[3]
+  let depth = y1 * cam[2] - p[2] * cam[3]
+  let f = 4 / (4 + depth)
+  return [cam[5] / 2 + x1 * cam[4] * f, cam[6] * 0.5 - up * cam[4] * f, depth]
+}
+
+record BvItem { key: Number svg: Text }
+
+fn bv_xy(p: Number[]) -> Text { return p[0].to_fixed(1) + " " + p[1].to_fixed(1) }
+
+// Each quad, in Kosika maths' white lines: filled with the ground so it
+// hides what lies behind it, and drawn with its top and left edges on every
+// other row and column. A quad that faces away is left out. One loop, for
+// the reason bv_grid gives.
+fn bv_grid_items(g: BrainGrid, acts: BrainActivity[], regions: BrainRegion[], view: Number[]) -> BvItem[] {
+  let p = bv_project(g.points, view)
+  let inks = for r in 0 until regions.length() { bv_ink(regions[r], acts[r].glow) }
+  let row = g.nu + 1
+  var out: BvItem[] = []
+  for k in 0 until g.nu * g.nv {
+    let i = (k / g.nu).floor()
+    let j = k % g.nu
+    let a = i * row + j
+    let b = a + 1
+    let c = a + row + 1
+    let d = a + row
+    let lit = bv_light(g.normals[a], g.normals[b], g.normals[c], g.normals[d], view)
+    if lit >= 0 {
+      let depth = (p[a][2] + p[b][2] + p[c][2] + p[d][2]) / 4
+      let light = lit * g.shade[k] - 0.1 * (depth + 1).max(0)
+      let op = (light * 0.95).max(0.06).min(1).to_fixed(2)
+      let xa = p[a][0].to_fixed(1) + " " + p[a][1].to_fixed(1)
+      let xb = p[b][0].to_fixed(1) + " " + p[b][1].to_fixed(1)
+      let xc = p[c][0].to_fixed(1) + " " + p[c][1].to_fixed(1)
+      let xd = p[d][0].to_fixed(1) + " " + p[d][1].to_fixed(1)
+      let top = if i % 2 == 0 { "M" + xa + "L" + xb } else { "" }
+      let left = if j % 2 == 0 { "M" + xa + "L" + xd } else { "" }
+      let ink = inks[g.regions[k]]
+      let lines = if top.is_empty() and left.is_empty() { "" } else { f"<path d=\"{top}{left}\" stroke=\"{ink}\" stroke-opacity=\"{op}\" stroke-width=\".75\"/>" }
+      let pts = xa + " " + xb + " " + xc + " " + xd
+      out = out.append({key: 0 - depth, svg: f"<polygon points=\"{pts}\" fill=\"#07080d\" stroke=\"#07080d\" stroke-width=\".5\"/>" + lines})
+    }
+  }
+  return out
+}
+
+// The brain, still, in Kosika maths' white lines, far quads first, so a
+// near fold hides what lies behind it. A line is as bright as the light on
+// it, and takes its region's colour as its part works.
+fn bv_svg(model: BrainModel, acts: BrainActivity[], rounds: BrainRound[], view: Number[]) -> Text {
+  let regions = bv_regions()
+  var items: BvItem[] = []
+  for g in model.grids { items = items.concat(bv_grid_items(g, acts, regions, view)) }
+  let drawn = (for it in items.sort_by("key") { it.svg }).join("")
+  // The hippocampus shows through the cortex, and the rounds ride over it.
+  let inner = (for cv in model.curves { bv_curve_svg(cv, regions[cv.region].hex, 0.3 + 0.45 * acts[cv.region].glow, view) }).join("")
+  let paths = (for r in rounds { bv_round_svg(r, view) }).join("")
+  let w = view[2]
+  let h = view[3]
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w} {h}\" width=\"{w}\" height=\"{h}\" role=\"img\" aria-label=\"Kosika's Brain: a 3D brain, each region one Kosika part\"><rect width=\"{w}\" height=\"{h}\" fill=\"#07080d\"/>{drawn}{inner}{paths}</svg>"
+}
+
+fn bv_curve_svg(cv: BrainCurve, hex: Text, opacity: Number, view: Number[]) -> Text {
+  let d = bv_path(bv_project(cv.pts, view))
+  return f"<path d=\"{d}\" fill=\"none\" stroke=\"{hex}\" stroke-opacity=\"{opacity.to_fixed(2)}\" stroke-width=\"2.4\" stroke-linecap=\"round\"/>"
+}
+
+fn bv_round_svg(r: BrainRound, view: Number[]) -> Text {
+  let d = bv_path(bv_project(r.pts, view))
+  return f"<path d=\"{d}\" fill=\"none\" stroke=\"{bv_hex(r.outcome)}\" stroke-opacity=\".8\" stroke-width=\"1.6\" stroke-dasharray=\"5 4\"/>"
+}
+
+fn bv_path(q: Number[][]) -> Text {
+  return (for k in 0 until q.length() { (if k == 0 { "M" } else { "L" }) + bv_xy(q[k]) }).join("")
+}
+
+// ---------------------------------------------------------------- drawing it live
+
+// Text made safe inside a single-quoted script string.
+fn bv_js(t: Text) -> Text { return t.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ").replace("\r", " ").replace("<", "\\u003c").replace(">", "\\u003e") }
+
+fn bv_nums2(xs: Number[]) -> Text { return "[" + (for v in xs { if v.is_whole() { v.to_text() } else { v.to_fixed(2) } }).join(",") + "]" }
+
+// Points as one flat list for the page: x, y, z, x, y, z, ...
+fn bv_points(ps: Number[][], places: Number) -> Text { return "[" + (for p in ps { p[0].to_fixed(places) + "," + p[1].to_fixed(places) + "," + p[2].to_fixed(places) }).join(",") + "]" }
+
+fn bv_nums(xs: Number[]) -> Text { return "[" + (for v in xs { if v.is_whole() { v.to_text() } else { v.to_fixed(3) } }).join(",") + "]" }
+
+fn bv_data(model: BrainModel, acts: BrainActivity[], rounds: BrainRound[], view: Number[]) -> Text {
+  let regions = bv_regions()
+  let grids = "[" + (for g in model.grids { "{nu:" + g.nu.to_text() + ",nv:" + g.nv.to_text() + ",p:" + bv_points(g.points, 3) + ",n:" + bv_points(g.normals, 2) + ",r:" + bv_nums(g.regions) + ",sh:" + bv_nums2(g.shade) + "}" }).join(",") + "]"
+  let curves = "[" + (for c in model.curves { "{r:" + c.region.to_text() + ",p:" + bv_points(c.pts, 3) + "}" }).join(",") + "]"
+  var regs: Text[] = []
+  for i in 0 until regions.length() {
+    let g = regions[i]
+    let a = acts[i]
+    regs = regs.append("{name:'" + bv_js(g.name) + "',part:'" + g.part + "',role:'" + bv_js(g.role) + "',hex:'" + g.hex + "',rgb:[" + g.r.to_text() + "," + g.g.to_text() + "," + g.b.to_text() + "],glow:" + a.glow.to_fixed(3) + ",count:" + a.count.to_text() + ",passed:" + a.passed.to_text() + ",failed:" + a.failed.to_text() + ",unchecked:" + a.unchecked.to_text() + ",last:'" + bv_js(bv_short(a.last, 160)) + "'}")
+  }
+  let rs = "[" + (for r in rounds { "{part:'" + bv_js(r.part) + "',region:" + r.region.to_text() + ",outcome:'" + r.outcome + "',hex:'" + bv_hex(r.outcome) + "',ask:'" + bv_js(bv_short(r.ask, 160)) + "',did:'" + bv_js(bv_short(r.did, 200)) + "',p:" + bv_points(r.pts, 3) + ",m:" + bv_nums(r.marks) + "}" }).join(",") + "]"
+  return "{grids:" + grids + ",curves:" + curves + ",regions:[" + regs.join(",") + "],rounds:" + rs + ",yaw:" + view[0].to_text() + ",pitch:" + view[1].to_text() + ",W:" + view[2].to_text() + ",H:" + view[3].to_text() + "}"
+}
+
+fn bv_short(t: Text, n: Number) -> Text { return if t.length() > n { t.slice(0, n) + "…" } else { t } }
+
+// The live view: drag to turn, scroll or pinch to zoom, point at a region
+// to see its part and what that part has done, click a part in the key to
+// pick it out. The browser draws what Kosika computed with the same camera;
+// it computes no shape of its own.
+fn bv_live(model: BrainModel, acts: BrainActivity[], rounds: BrainRound[], view: Number[]) -> Text {
+  let css = "<style>.bv{position:relative;max-width:100%;color:#f4f1ea;font:13px/1.45 system-ui,sans-serif}.bv canvas{width:100%;height:auto;display:block;background:#07080d;border-radius:14px;touch-action:none;cursor:grab}.bv canvas:active{cursor:grabbing}.bv-tip{position:absolute;pointer-events:none;background:rgba(10,12,20,.92);border:1px solid rgba(244,241,234,.18);border-radius:10px;padding:8px 10px;max-width:280px;display:none}.bv-tip b{display:block;font-size:14px}.bv-cap{position:absolute;left:14px;bottom:12px;right:14px;font-size:12.5px;opacity:.9;pointer-events:none}.bv-cap i{font-style:normal;padding:1px 6px;border-radius:6px;margin-right:4px}.bv-ctl{position:absolute;top:10px;right:12px;display:flex;gap:6px}.bv-ctl button{background:rgba(244,241,234,.08);color:#f4f1ea;border:1px solid rgba(244,241,234,.2);border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}.bv-key{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.bv-key button{display:flex;align-items:center;gap:7px;background:rgba(244,241,234,.05);color:#f4f1ea;border:1px solid rgba(244,241,234,.14);border-radius:999px;padding:4px 11px 4px 6px;font:inherit;cursor:pointer}.bv-key button[aria-pressed=true]{border-color:#f4f1ea;background:rgba(244,241,234,.14)}.bv-key s{width:12px;height:12px;border-radius:50%;display:inline-block}.bv-key small{opacity:.65}</style>"
+  let html = "<div class='bv'><canvas width='" + view[2].to_text() + "' height='" + view[3].to_text() + "' tabindex='0' aria-label='Kosika Brain in 3D. Drag to turn, scroll to zoom, point at a region to name it.'></canvas><div class='bv-ctl'><button type='button' data-spin>Stop</button><button type='button' data-lines>Solid</button><button type='button' data-reset>Reset</button></div><div class='bv-tip'></div><div class='bv-cap'></div><div class='bv-key'></div></div>"
+  let js = "<script>(()=>{const D=" + bv_data(model, acts, rounds, view) + ";const root=document.currentScript.previousElementSibling,cv=root.querySelector('canvas'),g=cv.getContext('2d'),tip=root.querySelector('.bv-tip'),cap=root.querySelector('.bv-cap'),key=root.querySelector('.bv-key');if(!g)return;const W=D.W,H=D.H,R=D.regions,CALM=matchMedia('(prefers-reduced-motion: reduce)').matches;let cam={yaw:D.yaw,pitch:D.pitch,zoom:1},spin=!CALM,lines=true,focus=-1,hover=-1,drag=null,pinch=0,last=0,items=[],still=null,stale=true;const sb=root.querySelector('[data-spin]');sb.textContent=spin?'Stop':'Turn';function P(x,y,z){const a=cam.yaw*Math.PI/180,p=cam.pitch*Math.PI/180,x1=x*Math.cos(a)-y*Math.sin(a),y1=x*Math.sin(a)+y*Math.cos(a),up=z*Math.cos(p)+y1*Math.sin(p),d=y1*Math.cos(p)-z*Math.sin(p),f=4/(4+d),s=W*.3*cam.zoom;return [W/2+x1*s*f,H*.5-up*s*f,d]}function col(r,lt){const G=R[r],gl=G.glow,on=focus<0||focus===r,mix=on?.32+.68*gl:.12,lift=(.7+.45*gl)*(on?1:.55)*(hover===r?1.25:1),c=[70,74,84].map((b,i)=>Math.max(0,Math.min(255,(b+(G.rgb[i]-b)*mix)*lt*lift)));return 'rgb('+c.map(Math.round).join(',')+')'}function ink(r){const G=R[r],m=G.glow>0?.6+.4*G.glow:0;return 'rgb('+[244,241,234].map((w,i)=>Math.round(w+(G.rgb[i]-w)*m)).join(',')+')'}function build(){items=[];const ya=cam.yaw*Math.PI/180,pa=cam.pitch*Math.PI/180,cy=Math.cos(ya),sy=Math.sin(ya),cp=Math.cos(pa),sp=Math.sin(pa);for(const G of D.grids){const pr=[];for(let k=0;k<G.p.length;k+=3)pr.push(P(G.p[k],G.p[k+1],G.p[k+2]));const row=G.nu+1,N=G.n;for(let i=0;i<G.nv;i++)for(let j=0;j<G.nu;j++){const ia=(i*row+j),ib=ia+1,ic=ia+row+1,id=ia+row,nx=N[ia*3]+N[ib*3]+N[ic*3]+N[id*3],ny=N[ia*3+1]+N[ib*3+1]+N[ic*3+1]+N[id*3+1],nz=N[ia*3+2]+N[ib*3+2]+N[ic*3+2]+N[id*3+2],x1=nx*cy-ny*sy,y1=nx*sy+ny*cy,up=nz*cp+y1*sp,dp=y1*cp-nz*sp,len=Math.max(1e-7,Math.hypot(x1,up,dp));if(dp/len>.45)continue;const a=pr[ia],b=pr[ib],c=pr[ic],d=pr[id],dep=(a[2]+b[2]+c[2]+d[2])/4,lamp=Math.max(0,(-.42*x1+.56*up-.71*dp)/len);items.push({k:dep,q:[a,b,c,d],e:(i%2===0?1:0)+(j%2===0?2:0),lt:(.2+.9*lamp)*G.sh[i*G.nu+j]-.1*Math.max(0,dep+1),r:G.r[i*G.nu+j]})}}items.sort((m,n)=>n.k-m.k)}function paint(){const box=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1,w=Math.max(1,Math.round(box.width*dpr)),h=Math.max(1,Math.round(box.width*dpr*H/W));if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;still=null}if(!still){still=document.createElement('canvas');stale=true}if(still.width!==w||still.height!==h){still.width=w;still.height=h;stale=true}if(stale){const s=still.getContext('2d');s.setTransform(w/W,0,0,h/H,0,0);s.fillStyle='#07080d';s.fillRect(0,0,W,H);s.lineJoin='round';for(const it of items){const q=it.q;s.beginPath();s.moveTo(q[0][0],q[0][1]);for(let j=1;j<4;j++)s.lineTo(q[j][0],q[j][1]);s.closePath();if(!lines){const c=col(it.r,it.lt);s.fillStyle=c;s.fill();s.strokeStyle=c;s.lineWidth=.6;s.stroke();continue}s.fillStyle='#07080d';s.fill();s.strokeStyle='#07080d';s.lineWidth=.5;s.stroke();if(!it.e)continue;s.strokeStyle=ink(it.r);s.globalAlpha=Math.max(.06,Math.min(1,it.lt*.95))*(focus<0||focus===it.r?1:.25)*(hover===it.r?1.3:1);s.lineWidth=.75;s.beginPath();if(it.e&1){s.moveTo(q[0][0],q[0][1]);s.lineTo(q[1][0],q[1][1])}if(it.e&2){s.moveTo(q[0][0],q[0][1]);s.lineTo(q[3][0],q[3][1])}s.stroke();s.globalAlpha=1}stale=false}g.setTransform(1,0,0,1,0,0);g.drawImage(still,0,0);g.setTransform(w/W,0,0,h/H,0,0)}function trace(p,from,to){g.beginPath();for(let k=from;k<=to&&k*3+2<p.length;k++){const q=P(p[k*3],p[k*3+1],p[k*3+2]);k===from?g.moveTo(q[0],q[1]):g.lineTo(q[0],q[1])}g.stroke()}function frame(now){paint();for(const c of D.curves){const G=R[c.r];g.strokeStyle=G.hex;g.globalAlpha=.3+.45*G.glow;g.lineWidth=2.4;g.lineCap='round';trace(c.p,0,c.p.length/3);g.globalAlpha=1}const n=D.rounds.length;let said='No episodes on the timeline yet: every region is dim.';if(n){const per=4200,t=CALM?per-1:(now%(per*n)),ri=Math.floor(t/per),r=D.rounds[ri],u=(t%per)/per,m=r.m,total=r.p.length/3-1,at=Math.min(total,Math.floor(u*total)),step=at>=m[3]?3:at>=m[2]?2:at>=m[1]?1:0,names=['sense','think','check','record'];g.strokeStyle=r.hex;g.globalAlpha=.35;g.lineWidth=1.4;g.setLineDash([5,4]);trace(r.p,0,total);g.setLineDash([]);g.globalAlpha=1;g.lineWidth=2.6;trace(r.p,Math.max(0,at-6),at);const q=P(r.p[at*3],r.p[at*3+1],r.p[at*3+2]);g.beginPath();g.arc(q[0],q[1],step===2?11+4*Math.sin(now/90):9,0,7);g.fillStyle=r.hex+'44';g.fill();g.beginPath();g.arc(q[0],q[1],4.5,0,7);g.fillStyle=r.hex;g.fill();said='<i style=\"background:'+r.hex+';color:#07080d\">'+r.outcome+'</i> round '+(ri+1)+' of '+n+': <b>'+names[step]+'</b> · '+R[r.region].name+' ('+r.part+') · '+r.ask}cap.innerHTML=said}function tick(now){if(spin&&last){cam.yaw+=(now-last)*.012;build();stale=true}last=now;frame(now);requestAnimationFrame(tick)}function pick(mx,my){for(let i=items.length-1;i>=0;i--){const q=items[i].q;let inside=false;for(let a=0,b=3;a<4;b=a++){if((q[a][1]>my)!==(q[b][1]>my)&&mx<(q[b][0]-q[a][0])*(my-q[a][1])/(q[b][1]-q[a][1])+q[a][0])inside=!inside}if(inside)return items[i].r}return -1}function show(r,x,y){if(r!==hover){hover=r;stale=true}if(r<0){tip.style.display='none';return}const G=R[r],ran=G.part==='working'?G.count+' turn(s) in this talk':G.count+' episode(s): '+G.passed+' passed, '+G.failed+' failed, '+G.unchecked+' unchecked';tip.innerHTML='<b style=\"color:'+G.hex+'\">'+G.name+'</b>'+G.role+'<br><small>'+ran+'</small>'+(G.last?'<br><small>latest: '+G.last+'</small>':'');tip.style.display='block';tip.style.left=Math.min(x+14,root.clientWidth-290)+'px';tip.style.top=(y+14)+'px'}cv.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId);spin=false;sb.textContent='Turn'});cv.addEventListener('pointermove',e=>{const b=cv.getBoundingClientRect();if(drag){cam.yaw+=(e.clientX-drag[0])*.5;cam.pitch=Math.max(-80,Math.min(89,cam.pitch+(e.clientY-drag[1])*.4));drag=[e.clientX,e.clientY];build();stale=true;return}show(pick((e.clientX-b.left)*W/b.width,(e.clientY-b.top)*H/b.height),e.clientX-b.left,e.clientY-b.top)});cv.addEventListener('pointerup',()=>drag=null);cv.addEventListener('pointerleave',()=>show(-1,0,0));cv.addEventListener('wheel',e=>{e.preventDefault();cam.zoom=Math.max(.5,Math.min(3,cam.zoom*(e.deltaY>0?.92:1.08)));build();stale=true},{passive:false});cv.addEventListener('touchmove',e=>{if(e.touches.length!==2)return;const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinch){cam.zoom=Math.max(.5,Math.min(3,cam.zoom*d/pinch));build();stale=true}pinch=d},{passive:true});cv.addEventListener('touchend',()=>pinch=0);cv.addEventListener('keydown',e=>{const k=e.key;if(k==='ArrowLeft')cam.yaw-=6;else if(k==='ArrowRight')cam.yaw+=6;else if(k==='ArrowUp')cam.pitch=Math.min(89,cam.pitch+6);else if(k==='ArrowDown')cam.pitch=Math.max(-80,cam.pitch-6);else return;e.preventDefault();build();stale=true});sb.addEventListener('click',()=>{spin=!spin;sb.textContent=spin?'Stop':'Turn'});root.querySelector('[data-lines]').addEventListener('click',e=>{lines=!lines;e.target.textContent=lines?'Solid':'Lines';stale=true});root.querySelector('[data-reset]').addEventListener('click',()=>{cam={yaw:D.yaw,pitch:D.pitch,zoom:1};build();stale=true});R.forEach((G,i)=>{const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed','false');b.innerHTML='<s style=\"background:'+G.hex+';opacity:'+(.35+.65*G.glow)+'\"></s>'+G.name+' <small>'+G.part+' · '+G.count+'</small>';b.addEventListener('click',()=>{focus=focus===i?-1:i;key.querySelectorAll('button').forEach((x,j)=>x.setAttribute('aria-pressed',String(j===focus)));stale=true});key.appendChild(b)});window.addEventListener('resize',()=>{still=null});build();requestAnimationFrame(tick)})();</script>"
+  return css + html + js
+}
+
+// ---------------------------------------------------------------- the whole view
+
+fn bv_legend(acts: BrainActivity[]) -> Text[] {
+  let regions = bv_regions()
+  return for i in 0 until regions.length() { f"{regions[i].hex} {regions[i].name}: {regions[i].role} ({acts[i].count})" }
+}
+
+fn bv_page(live: Text, rounds: BrainRound[], acts: BrainActivity[]) -> Text {
+  let total = acts[7].count
+  let head = "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Kosika Brain</title><style>body{margin:0;background:#07080d;color:#f4f1ea;font:14px/1.5 system-ui,sans-serif}main{max-width:1080px;margin:0 auto;padding:20px 16px 40px}h1{font-weight:600;font-size:22px;margin:0 0 4px}p.sub{opacity:.7;margin:0 0 14px}ol{padding-left:20px}li{margin:4px 0}li i{font-style:normal;padding:0 6px;border-radius:6px;color:#07080d;margin-right:6px}</style></head><body><main>"
+  let sub = f"<h1>Kosika Brain</h1><p class='sub'>Every point of this brain was computed by Kosika. Each region is one Kosika part; it glows by what that part has done. {total} episode(s) on the timeline.</p>"
+  let list = if rounds.is_empty() { "" } else { "<h2 style='font-size:15px;margin:22px 0 6px'>The latest rounds: sense, think, check, record</h2><ol>" + (for r in rounds { f"<li><i style='background:{bv_hex(r.outcome)}'>{r.outcome}</i>{bv_esc(r.part)}: {bv_esc(bv_short(r.ask, 160))}</li>" }).join("") + "</ol>" }
+  return head + sub + live + list + "</main></body></html>"
+}
+
+fn bv_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+fn bv_view(a: BrainViewAsk) -> BrainView {
+  if a.detail < 0.05 or a.detail > 1 {
+    let none: Text[] = []
+    return {svg: "", live: "", page: "", legend: none, quads: 0, rounds: 0, problems: ["detail is kept between 0.05 and 1"]}
+  }
+  return bv_view_of_model(a, bv_model(a.detail))
+}
+
+fn bv_view_of_model(a: BrainViewAsk, model: BrainModel) -> BrainView {
+  let problems: Text[] = []
+  let acts = bv_activity(a.episodes, a.working)
+  let rounds = bv_rounds(a.episodes, 6)
+  let view = bv_view_of(a.yaw, a.pitch, 960, 680)
+  let live = bv_live(model, acts, rounds, view)
+  return {svg: bv_svg(model, acts, rounds, view), live: live, page: bv_page(live, rounds, acts), legend: bv_legend(acts), quads: model.quads, rounds: rounds.length(), problems: problems}
+}
+
+// Draw the Brain from its timeline (the episodes, oldest first) and the
+// talk so far. It reads no memory itself: the host passes what to draw.
+workflow brain_view(a: BrainViewAsk) -> BrainView {
+  out = bv_view(a)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn bv_test_ep(part: Text, ask: Text, outcome: Text) -> BrainEpisode { return {part: part, session: "default", seq: 1, at: "", ask: ask, did: "did it", outcome: outcome, checked_by: "tests", words: ""} }
+
+test "every Kosika part has its own region and colour" {
+  regions = bv_regions()
+  expect regions.length() == 8
+  expect bv_region_of("ai") == 1 and bv_region_of("kosi") == 3 and bv_region_of("designs") == 4
+  expect bv_region_of("swarm") == 5 and bv_region_of("studio") == 6 and bv_region_of("Chat") == 2
+  expect bv_region_of("something new") == 1
+  expect (for r in regions { r.hex }).length() == 8
+  expect regions[0].part == "working" and regions[7].part == "timeline"
+}
+
+test "the brain is computed whole: two hemispheres, cerebellum, brainstem" {
+  m = bv_model(0.05)
+  expect m.grids.length() == 4
+  expect m.grids[0].points.length() == (m.grids[0].nu + 1) * (m.grids[0].nv + 1)
+  expect m.grids[0].normals.length() == m.grids[0].points.length()
+  expect m.grids[0].regions.length() == m.grids[0].nu * m.grids[0].nv
+  expect m.quads == (for g in m.grids { g.nu * g.nv }).sum()
+  // The hemispheres mirror each other across the midline.
+  expect (m.grids[0].points[1][0] + m.grids[1].points[1][0]).abs() < 0.000001
+  // The front is the frontal lobe, the very back the occipital, the low side the temporal.
+  expect bv_cortex_region(1, 90, 90) == 0
+  expect bv_cortex_region(1, 40, 90) == 1
+  expect bv_cortex_region(1, 90, 270) == 4
+  expect bv_cortex_region(1, 120, 20) == 3
+  expect bv_cortex_region(1, 20, 250) == 2
+  // A sulcus sinks the surface; a gyrus does not.
+  expect bv_sulcus(0.1, 0.2, 0.3) >= 0 and bv_sulcus(0.1, 0.2, 0.3) <= 1
+}
+
+test "a region glows only by what its part did on the timeline" {
+  eps = [bv_test_ep("ai", "add 2 and 3", "passed"), bv_test_ep("ai", "sort a list", "failed"), bv_test_ep("kosi", "say hello", "unchecked")]
+  acts = bv_activity(eps, ["ai: 'add 2 and 3' → 5 (passed)"])
+  expect acts[1].count == 2 and acts[1].passed == 1 and acts[1].failed == 1
+  expect acts[3].count == 1 and acts[3].unchecked == 1
+  expect acts[4].count == 0 and acts[4].glow == 0
+  expect acts[7].count == 3
+  expect acts[0].count == 1
+  expect acts[1].glow > acts[3].glow
+  expect acts[1].last == "sort a list"
+}
+
+test "each episode is a round: sense, think, check, record" {
+  eps = [bv_test_ep("ai", "one", "passed"), bv_test_ep("designs", "two", "failed"), bv_test_ep("kosi", "three", "maybe")]
+  rs = bv_rounds(eps, 2)
+  expect rs.length() == 2
+  expect rs[0].ask == "two" and rs[0].region == 4 and rs[0].outcome == "failed"
+  expect rs[1].outcome == "unchecked"
+  expect rs[0].marks[0] == 0 and rs[0].marks[1] < rs[0].marks[2] and rs[0].marks[2] < rs[0].marks[3]
+  expect rs[0].pts[0].length() == 3 and rs[0].pts.length() == rs[0].marks[3] + 17
+}
+
+test "the view is drawn still and live, and says what it shows" {
+  // A tiny brain, so the test stays small: one quad of each of two regions.
+  tiny: BrainModel = {grids: [bv_grid("patch", 2, 1, [[0, 0, 0], [0.5, 0.1, 0], [1, 0, 0], [0, 0, 0.5], [0.5, 0.1, 0.5], [1, 0, 0.5]], [1, 4], [1, 0.6])], curves: [bv_hippocampus(1)], quads: 2}
+  v = bv_view_of_model({episodes: [bv_test_ep("ai", "What is 18% of 2450? It's <441>", "passed")], working: [], detail: 0.05, yaw: 35, pitch: 18}, tiny)
+  expect v.problems.is_empty()
+  expect v.svg.starts_with("<svg") and v.svg.contains("<polygon")
+  expect v.quads == 2
+  expect v.live.contains("<canvas") and v.live.contains("frontal lobe")
+  expect not v.live.contains("<441>")
+  expect v.page.contains("<title>Kosika Brain</title>") and v.page.contains("&lt;441&gt;")
+  expect v.rounds == 1
+  expect v.legend[1].contains("Kosika AI") and v.legend[1].ends_with("(1)")
+  expect bv_view({episodes: [], working: [], detail: 5, yaw: 0, pitch: 0}).problems == ["detail is kept between 0.05 and 1"]
+}
