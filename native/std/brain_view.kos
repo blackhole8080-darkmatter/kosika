@@ -1,0 +1,169 @@
+// Kosika's network, fired by what the Brain really did.
+//
+// Every episode on the Brain's timeline (std/brain_core.kos) becomes a
+// path through the white-line network of neurons (std/designs_neurons.kos):
+// the ask comes in through sense, goes to think, then to check; a
+// passed or unchecked episode goes on to act and is kept in memory, a
+// failed one stops at check. A later turn of the same talk starts with
+// memory feeding think. Episodes play one after another, by date and
+// then by turn within each talk, and loop. Know does not fire yet: the
+// timeline does not record which facts an episode used.
+//
+//   passed     green: a named checker said yes
+//   unchecked  amber: nothing checked it
+//   failed     red:   a checker said no
+//
+// Each neuron glows by how often it fired. Nothing here is scripted: a
+// page shows exactly the episodes it was given, and an empty timeline
+// shows a quiet network and says so.
+//
+//   kosika run std/brain_view.kos --memory FOLDER
+//   brain_view_figure(episodes)            the figure, from episodes
+
+import "brain_core.kos"
+import "designs_neurons.kos"
+import "designs_plot.kos"
+
+export [BrainViewAsk, BrainView, brain_view, brain_view_figure, bv_path, bv_colour]
+
+record BrainViewAsk { about: Text }
+record BrainView { title: Text page: Text svg: Text episodes: Number }
+
+// The links an episode fires, in order, as (from, to) neuron numbers:
+// 0 sense, 1 think, 2 check, 3 act, 4 memory, 5 know.
+fn bv_path(e: BrainEpisode) -> Number[][] {
+  var path: Number[][] = []
+  if e.seq > 1 { path = path.append([4, 1]) }
+  path = path.concat([[0, 1], [1, 2]])
+  if e.outcome != "failed" { path = path.concat([[2, 3], [3, 4]]) }
+  return path
+}
+
+fn bv_colour(outcome: Text) -> Text {
+  if outcome == "passed" { return "#6ee7a0" }
+  if outcome == "failed" { return "#ff5f6d" }
+  return "#f5b942"
+}
+
+fn bv_clip(t: Text, n: Number) -> Text { return if t.length() > n { t.slice(0, n - 1) + "…" } else { t } }
+
+fn bv_t(x: Number) -> Text { return x.to_fixed(4) }
+
+fn brain_view_figure(episodes: BrainEpisode[]) -> PlFigure {
+  let names = neuron3d_parts()
+  let step = 0.9
+  let gap = 0.8
+  // When each episode starts, and how long the whole loop lasts.
+  var starts: Number[] = []
+  var total = 0
+  var fired = [0, 0, 0, 0, 0, 0]
+  for e in episodes {
+    starts = starts.append(total)
+    let path = bv_path(e)
+    for link in path {
+      fired = (for k in 0 until 6 { if k == link[1] or k == link[0] { fired[k] + 1 } else { fired[k] } })
+    }
+    total = total + path.length() * step + gap
+  }
+  let cycle = total.max(1)
+  var most = 1
+  for f in fired { most = most.max(f) }
+  let glow = for k in 0 until 6 { if episodes.is_empty() { 0.12 } else { 0.15 + 0.75 * fired[k] / most } }
+  var regions: Number[] = []
+  var defs: Text[] = []
+  var cells: Text[] = []
+  for k in 0 until names.length() {
+    let region = pl_regions().index_of(names[k]).or(0) + 1
+    regions = regions.append(region)
+    defs = defs.append("<radialGradient id=\"nr-glow-" + region.to_text() + "\"><stop offset=\"0\" stop-color=\"" + pl_region_hex(region) + "\" stop-opacity=\".55\"/><stop offset=\"1\" stop-color=\"" + pl_region_hex(region) + "\" stop-opacity=\"0\"/></radialGradient>")
+    cells = cells.append(nr2_neuron(k, region, glow[k], 4321 + 613 * k).svg)
+  }
+  var axons: Text[] = []
+  for link in neuron3d_links() {
+    axons = axons.append(nr2_axon(link[0], link[1], regions[link[0]], glow[link[0]], 0, false))
+  }
+  // Every firing: a spark along its axon in its window of the loop, and
+  // a ring at the neuron it reaches as it arrives.
+  var sparks: Text[] = []
+  var rows: Text[] = []
+  let dur = cycle.to_fixed(2) + "s"
+  let top = 840
+  var i = 0
+  for e in episodes {
+    let colour = bv_colour(e.outcome)
+    var j = 0
+    for link in bv_path(e) {
+      let t0 = (starts[i] + j * step) / cycle
+      let t1 = (starts[i] + (j + 1) * step - 0.05) / cycle
+      let t2 = (t1 + 0.01).min(1)
+      let d = nr2_axon_d(link[0], link[1])
+      let b = nr2_place(link[1])
+      sparks = sparks.append("<g opacity=\"0\"><animate attributeName=\"opacity\" values=\"0;0;1;1;0;0\" keyTimes=\"0;" + bv_t(t0) + ";" + bv_t((t0 + 0.002).min(t1)) + ";" + bv_t(t1) + ";" + bv_t(t2) + ";1\" dur=\"" + dur + "\" repeatCount=\"indefinite\"/><circle r=\"10\" fill=\"" + colour + "\" fill-opacity=\".22\"/><circle r=\"4\" fill=\"" + colour + "\"/><animateMotion path=\"" + d + "\" keyPoints=\"0;0;1;1\" keyTimes=\"0;" + bv_t(t0) + ";" + bv_t(t1) + ";1\" calcMode=\"linear\" dur=\"" + dur + "\" repeatCount=\"indefinite\"/></g>")
+      sparks = sparks.append("<circle cx=\"" + nr2_n(b[0]) + "\" cy=\"" + nr2_n(b[1]) + "\" r=\"18\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"1.6\" opacity=\"0\"><animate attributeName=\"opacity\" values=\"0;0;.95;0;0\" keyTimes=\"0;" + bv_t(t1) + ";" + bv_t(t2) + ";" + bv_t((t2 + 0.5 / cycle).min(1)) + ";1\" dur=\"" + dur + "\" repeatCount=\"indefinite\"/><animate attributeName=\"r\" values=\"18;18;20;42;42\" keyTimes=\"0;" + bv_t(t1) + ";" + bv_t(t2) + ";" + bv_t((t2 + 0.5 / cycle).min(1)) + ";1\" dur=\"" + dur + "\" repeatCount=\"indefinite\"/></circle>")
+      j += 1
+    }
+    // The episode's line below the network, bright while it plays.
+    let a0 = starts[i] / cycle
+    let a1 = (starts[i] + bv_path(e).length() * step) / cycle
+    let by = if e.checked_by.is_empty() or e.checked_by == "none" { "" } else { " by " + e.checked_by }
+    let y = top + 28 * i
+    rows = rows.append("<g opacity=\".4\"><animate attributeName=\"opacity\" values=\".4;.4;1;1;.4;.4\" keyTimes=\"0;" + bv_t(a0) + ";" + bv_t((a0 + 0.002).min(a1)) + ";" + bv_t(a1) + ";" + bv_t((a1 + 0.002).min(1)) + ";1\" dur=\"" + dur + "\" repeatCount=\"indefinite\"/><circle cx=\"40\" cy=\"" + (y - 5).to_text() + "\" r=\"5\" fill=\"" + colour + "\"/><text x=\"56\" y=\"" + y.to_text() + "\" fill=\"#f4f1ea\" font-family=\"system-ui,sans-serif\" font-size=\"15\"><tspan fill=\"#9aa0b4\">" + pl_esc(e.at) + " " + pl_esc(e.part) + "</tspan>  " + pl_esc(bv_clip(e.ask, 70)) + "  <tspan fill=\"" + colour + "\">" + e.outcome + pl_esc(by) + "</tspan></text></g>")
+    i += 1
+  }
+  let empty = if episodes.is_empty() { "<text x=\"40\" y=\"" + top.to_text() + "\" fill=\"#9aa0b4\" font-family=\"system-ui,sans-serif\" font-size=\"15\">The Brain's timeline is empty: nothing has run through it yet.</text>" } else { "" }
+  let w = 1100
+  let h = top + 28 * episodes.length().max(1) + 20
+  let title = "Kosika network: what the Brain did"
+  let legend = "<g font-family=\"system-ui,sans-serif\" font-size=\"13\"><circle cx=\"40\" cy=\"" + (top - 44).to_text() + "\" r=\"5\" fill=\"#6ee7a0\"/><text x=\"52\" y=\"" + (top - 40).to_text() + "\" fill=\"#9aa0b4\">passed</text><circle cx=\"122\" cy=\"" + (top - 44).to_text() + "\" r=\"5\" fill=\"#f5b942\"/><text x=\"134\" y=\"" + (top - 40).to_text() + "\" fill=\"#9aa0b4\">unchecked</text><circle cx=\"222\" cy=\"" + (top - 44).to_text() + "\" r=\"5\" fill=\"#ff5f6d\"/><text x=\"234\" y=\"" + (top - 40).to_text() + "\" fill=\"#9aa0b4\">failed</text></g>"
+  let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"pl-svg\" width=\"" + w.to_text() + "\" height=\"" + h.to_text() + "\" viewBox=\"0 0 " + w.to_text() + " " + h.to_text() + "\" role=\"img\" aria-label=\"" + pl_esc(title) + "\"><defs>" + defs.join("") + "</defs><rect width=\"" + w.to_text() + "\" height=\"" + h.to_text() + "\" fill=\"#07080d\"/>" + axons.join("") + cells.join("") + "<g class=\"pl-move\">" + sparks.join("") + "</g>" + legend + rows.join("") + empty + "</svg>"
+  var counts: Text[] = []
+  for o in bc_outcomes() {
+    let n = (for e in episodes where e.outcome == o { 1 }).length()
+    if n > 0 { counts = counts.append(n.to_text() + " " + o) }
+  }
+  var notes: Text[] = []
+  notes = notes.append(if episodes.is_empty() { "No episodes yet. Each time a part thinks through the Brain, its episode will play here." } else { f"{episodes.length()} episodes from the Brain's timeline, ordered by date and then by turn within each talk: " + counts.join(", ") + "." })
+  notes = notes.append("Each episode enters at sense, goes to think and then check. Passed and unchecked ones go on to act and into memory; a failed one stops at check. A later turn of the same talk starts with memory feeding think. Each neuron glows by how often it fired.")
+  let fig: PlFigure = {kind: "neurons", title: title, formula: "episodes on the timeline", notation: "", svg: svg, live: "", page: "", notes: notes, problems: []}
+  return pl_paged(fig, "Kosika Brain &#183; live activity")
+}
+
+fn bv_view(seen: BrainEpisodes) -> BrainView {
+  let f = brain_view_figure(seen.episodes)
+  return {title: f.title, page: f.page, svg: f.svg, episodes: seen.episodes.length()}
+}
+
+fn bv_thought(q: BrainViewAsk) -> BrainThought { return {ask: q.about, part: "view", session: "", at: ""} }
+
+// The view of the timeline: any ten episodes, or the ten nearest to
+// what you ask about, oldest first.
+workflow brain_view(q: BrainViewAsk) -> BrainView {
+  seen = call brain_recent(bv_thought(q))
+  out  = bv_view(seen)
+}
+
+fn bv_test_episode(seq: Number, outcome: Text) -> BrainEpisode {
+  return {part: "kosi", session: "s1", seq: seq, at: "2026-11-18", ask: "add two numbers", did: "wrote add", outcome: outcome, checked_by: if outcome == "unchecked" { "" } else { "tests" }, words: "add two numbers"}
+}
+
+test "an episode fires its path through the network by outcome" {
+  expect bv_path(bv_test_episode(1, "passed")) == [[0, 1], [1, 2], [2, 3], [3, 4]]
+  expect bv_path(bv_test_episode(1, "failed")) == [[0, 1], [1, 2]]
+  expect bv_path(bv_test_episode(2, "unchecked")) == [[4, 1], [0, 1], [1, 2], [2, 3], [3, 4]]
+  expect bv_colour("failed") == "#ff5f6d"
+}
+
+test "the view plays exactly the episodes it was given" {
+  f = brain_view_figure([bv_test_episode(1, "passed"), bv_test_episode(2, "failed")])
+  expect f.svg.contains("keyPoints=\"0;0;1;1\"")
+  expect f.svg.contains("#6ee7a0")
+  expect f.svg.contains("#ff5f6d")
+  expect not f.svg.contains("#f5b942\"/><circle r")
+  expect f.page.contains("2 episodes")
+}
+
+test "an empty timeline shows a quiet network and says so" {
+  f = brain_view_figure([])
+  expect f.svg.contains("timeline is empty")
+  expect not f.svg.contains("<animateMotion")
+}

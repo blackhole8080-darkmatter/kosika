@@ -1,0 +1,339 @@
+// Kosika Brain, drawn by Kosika maths in white lines.
+//
+// The same renderer that draws a surface or a solid of revolution
+// (std/designs_plot.kos) draws the Brain: every point below is worked
+// out by Kosika from a formula, joined into faces with white edges, and
+// each face is tinted by the part of the Brain it belongs to.
+//
+//   import "std/designs_brain.kos"
+//
+//   brain3d_figure([])                    every part shown softly
+//   brain3d_figure(["think", "memory"])   those parts lit, the rest dim
+//   brain3d_scene(["check"])              the scene alone, to put in
+//                                         another drawing
+//
+// Parts and their places, the same as the Mind view and the 3D model:
+//   think   prefrontal cortex      act      motor cortex
+//   check   parietal lobe          sense    occipital lobe
+//   know    temporal lobe          memory   hippocampus (seen through)
+//   you     amygdala (seen through) learn   cerebellum
+//   curious midbrain (seen through)
+//
+// How a hemisphere is made: a sphere, direction d = (cos v, sin v cos u,
+// sin v sin u) in degrees, stretched long front to back, flattened on its
+// inner wall and base, with the temporal lobe hanging down at the side.
+// Folds are where f = sin(300x + 40 sin 260y) + sin(300y + 40 sin 260z)
+// + sin(300z + 40 sin 260x) is near zero: the surface sinks there, so
+// the light picks out the gyri and sulci.
+
+import "designs_plot.kos"
+
+export [brain3d_scene, brain3d_figure, brain3d_parts, brain3d_where, brain3d_roles]
+
+// The parts, in the renderer's region order (1 to 9).
+fn brain3d_parts() -> Text[] { return pl_regions() }
+
+fn brain3d_where() -> Text[] {
+  return ["prefrontal cortex", "motor cortex", "parietal lobe", "occipital lobe", "temporal lobe", "hippocampus", "amygdala", "cerebellum", "midbrain"]
+}
+
+// What each part does in the Kosika Brain, in the same order.
+fn brain3d_roles() -> Text[] {
+  return ["plans the steps and decides what to do", "does the work: tools, code and replies", "checks every answer before it goes out", "reads the ask and what is around it", "the facts Kosika has learnt and keeps", "the timeline: every episode, kept for good", "what Kosika knows about you", "turns Keep and Drop into lessons", "notices gaps and asks its own questions"]
+}
+
+// How strongly each part glows, by region number (index 0 unused).
+fn br_glow(lit: Text[]) -> Number[] {
+  var out: Number[] = [0]
+  for name in pl_regions() {
+    let on = lit.index_of(name).or(-1) >= 0
+    out = out.append(if lit.is_empty() { 0.42 } else if on { 0.92 } else { 0.1 })
+  }
+  return out
+}
+
+// One ring of a hemisphere, at latitude v (0 at the front pole, 180 at
+// the back), for side s (1 left, -1 right). Each point is x, y, z and
+// its region: x front, y to the side, z up.
+fn br_ring(v: Number, s: Number, nu: Number) -> Number[] {
+  var out: Number[] = []
+  for i in 0 until nu + 1 {
+    let u = 360 * i / nu
+    let x = v.cos()
+    let sd = v.sin() * u.cos()
+    let y = v.sin() * u.sin()
+    var bx = x * 1.32
+    var up = y * 0.9
+    var side = sd * 0.56
+    if sd * s < 0 { side = side * 0.08 }
+    if up < 0 { up = up * 0.62 }
+    let t = (0 - y - 0.15).max(0) * (1 - (x - 0.15).abs() / 0.75).max(0)
+    up = up - t * 0.3
+    side = side + s * t * 0.18 * (sd * s).max(0)
+    up = up - 0.1 * x.max(0) * (0 - y).max(0)
+    if x < -0.6 { bx = bx * (1 + 0.06 * (0 - x - 0.6)) }
+    side = side * (1 - 0.12 * y.max(0))
+    // Folds: sink the surface where f is near zero.
+    let w = (360 * x + 60 * (250 * y).sin()).sin() + (360 * y + 60 * (250 * sd).sin()).sin() + (360 * sd + 60 * (250 * x).sin()).sin()
+    let f = (w * 210).sin()
+    let sink = 0.012 * (1 - (f.abs() / 0.6).min(1))
+    let len = (bx * bx + up * up + side * side).sqrt().max(0.0001)
+    let k = 1 - sink / len
+    // Which lobe the point lies in, from where it sits on the sphere.
+    let central = x - (0.16 - 0.32 * y)
+    let lateral = y - (-0.3 + 0.2 * x)
+    let occ = x + 0.58 + 0.12 * y
+    let region = if lateral < 0 and x > -0.6 and sd.abs() > 0.2 { 5 } else if occ < 0 { 4 } else if central > 0.24 { 1 } else if central > 0 { 2 } else { 3 }
+    out = out.concat([bx * k, side * k + s * 0.06, up * k, region, f])
+  }
+  return out
+}
+
+// The model's own coordinates (x front, up, out to the side) placed in
+// the drawing: scaled to fit and lifted so the brainstem clears the floor.
+fn br_place(flat: Number[]) -> Number[] {
+  var out: Number[] = []
+  var k = 0
+  while k + 2 < flat.length() {
+    out = out.concat([flat[k] * 0.72, flat[k + 2] * 0.72, flat[k + 1] * 0.72 + 0.12])
+    k += 3
+  }
+  return out
+}
+
+// Rows of points joined into faces: style 1 (white edges, shaded), the
+// fifteenth number the region, the sixteenth its glow.
+fn br_faces(rows: Number[][], width: Number, step: Number, glow: Number[], fixed: Number, style: Number) -> Number[][] {
+  var quads: Number[][] = []
+  for r in 0 until rows.length() - 1 {
+    let a = rows[r]
+    let b = rows[r + 1]
+    for i in 0 until width {
+      let p = i * step
+      let q = (i + 1) * step
+      let region = if fixed > 0 { fixed } else { a[p + 3] }
+      let g = if region > 0 { glow[region] } else { 0 }
+      quads = quads.append([a[p] * 0.72, a[p + 2] * 0.72, a[p + 1] * 0.72 + 0.12, a[q] * 0.72, a[q + 2] * 0.72, a[q + 1] * 0.72 + 0.12, b[q] * 0.72, b[q + 2] * 0.72, b[q + 1] * 0.72 + 0.12, b[p] * 0.72, b[p + 2] * 0.72, b[p + 1] * 0.72 + 0.12, style, 0, region, g])
+    }
+  }
+  return quads
+}
+
+// A hemisphere: rings from the front pole to the back, shaded smooth,
+// and its folds drawn as white lines where f crosses zero.
+fn br_hemisphere(s: Number, glow: Number[]) -> PlScene {
+  let nu = 72
+  let nv = 44
+  let rows = for j in 0 until nv + 1 { br_ring(0.5 + 179 * j / nv, s, nu) }
+  // br_ring gives x, side, up, region, f; faces want x, up, side.
+  var turned: Number[][] = []
+  for row in rows {
+    var t: Number[] = []
+    var k = 0
+    while k + 4 < row.length() {
+      t = t.concat([row[k], row[k + 2], row[k + 1], row[k + 3], row[k + 4]])
+      k += 5
+    }
+    turned = turned.append(t)
+  }
+  // Each cell's corners in order; where f changes sign along an edge,
+  // the fold crosses it there. Two crossings make one piece of line.
+  var folds: Number[] = []
+  for r in 0 until nv {
+    let a = turned[r]
+    let b = turned[r + 1]
+    for i in 0 until nu {
+      let c = [a[i * 5], a[i * 5 + 1], a[i * 5 + 2], a[i * 5 + 4], a[i * 5 + 5], a[i * 5 + 6], a[i * 5 + 7], a[i * 5 + 9], b[i * 5 + 5], b[i * 5 + 6], b[i * 5 + 7], b[i * 5 + 9], b[i * 5], b[i * 5 + 1], b[i * 5 + 2], b[i * 5 + 4]]
+      var cut: Number[] = []
+      for e in 0 until 4 {
+        let m = e * 4
+        let n = ((e + 1) % 4) * 4
+        if (c[m + 3] < 0) != (c[n + 3] < 0) {
+          let w = c[m + 3] / (c[m + 3] - c[n + 3])
+          cut = cut.concat([c[m] + (c[n] - c[m]) * w, c[m + 1] + (c[n + 1] - c[m + 1]) * w, c[m + 2] + (c[n + 2] - c[m + 2]) * w])
+        }
+      }
+      if cut.length() == 6 {
+        folds = folds.concat([cut[0] * 0.72, cut[2] * 0.72, cut[1] * 0.72 + 0.12, cut[3] * 0.72, cut[5] * 0.72, cut[4] * 0.72 + 0.12])
+      }
+    }
+  }
+  let lines: PlLine[] = [{pts: folds, tone: "pairs", width: 1, dash: false}]
+  return {quads: br_faces(turned, nu, 5, glow, 0, 2), lines: lines, labels: []}
+}
+
+// The cerebellum: rings stacked from top to bottom, so every ring is a
+// folium, every other one sunk a little, tilted back 16 degrees.
+fn br_cerebellum(glow: Number[]) -> Number[][] {
+  let nu = 40
+  let nv = 26
+  let tilt = 16
+  var rows: Number[][] = []
+  for j in 0 until nv + 1 {
+    let v = 2 + 176 * j / nv
+    let fold = if j % 2 == 0 { 1 } else { 0.94 }
+    var row: Number[] = []
+    for i in 0 until nu + 1 {
+      let u = 360 * i / nu
+      let side = v.sin() * u.sin()
+      let pinch = 1 - 0.3 * (0 - side * side * 30).exp()
+      let x = v.sin() * u.cos() * 0.44 * fold
+      let up = v.cos() * 0.3 * fold
+      let sd = side * 0.62 * pinch * fold
+      row = row.concat([-0.82 + x * tilt.cos() - up * tilt.sin(), -0.5 + x * tilt.sin() + up * tilt.cos(), sd, 8])
+    }
+    rows = rows.append(row)
+  }
+  return br_faces(rows, nu, 4, glow, 8, 1)
+}
+
+// The brainstem: a tube down a gentle curve, no region of its own.
+fn br_stem() -> Number[][] {
+  let spine = [[-0.25, -0.2], [-0.34, -0.6], [-0.4, -0.95], [-0.42, -1.3]]
+  let around = 14
+  var rows: Number[][] = []
+  for j in 0 until 13 {
+    let t = j / 12 * 3
+    let seg = t.floor().min(2)
+    let f = t - seg
+    let cx = spine[seg][0] * (1 - f) + spine[seg + 1][0] * f
+    let cy = spine[seg][1] * (1 - f) + spine[seg + 1][1] * f
+    let r = 0.14 - 0.02 * j / 12
+    var row: Number[] = []
+    for i in 0 until around + 1 {
+      let a = 360 * i / around
+      row = row.concat([cx + r * a.cos(), cy, r * a.sin(), 0])
+    }
+    rows = rows.append(row)
+  }
+  return br_faces(rows, around, 4, [0], 0, 1)
+}
+
+// A ring of points about a centre, in the plane named by axis (0 x, 1 up, 2 side).
+fn br_circle(c: Number[], r: Number[], axis: Number) -> Number[] {
+  var pts: Number[] = []
+  for i in 0 until 33 {
+    let a = 360 * i / 32
+    let p = if axis == 0 { [c[0], c[1] + r[1] * a.cos(), c[2] + r[2] * a.sin()] } else if axis == 1 { [c[0] + r[0] * a.cos(), c[1], c[2] + r[2] * a.sin()] } else { [c[0] + r[0] * a.cos(), c[1] + r[1] * a.sin(), c[2]] }
+    pts = pts.concat(p)
+  }
+  return br_place(pts)
+}
+
+// The deep parts, seen through the cortex: the hippocampus curling along
+// the floor of each temporal lobe, the amygdala at its tip, the midbrain
+// at the centre.
+fn br_deep(glow: Number[]) -> PlLine[] {
+  var lines: PlLine[] = []
+  let wide = for k in 0 until 10 { if k > 0 and glow[k] > 0.4 { 2.6 } else { 1.1 } }
+  for s in [1, -1] {
+    let hip = [[0.22, -0.36, 0.38], [0.02, -0.34, 0.44], [-0.2, -0.26, 0.42], [-0.36, -0.1, 0.32], [-0.32, 0.04, 0.22]]
+    var pts: Number[] = []
+    var inner: Number[] = []
+    for k in 0 until 4 {
+      for j in 0 until 6 {
+        let f = j / 6
+        let a = hip[k]
+        let b = hip[k + 1]
+        pts = pts.concat([a[0] * (1 - f) + b[0] * f, a[1] * (1 - f) + b[1] * f, s * (a[2] * (1 - f) + b[2] * f)])
+        inner = inner.concat([a[0] * (1 - f) + b[0] * f, a[1] * (1 - f) + b[1] * f - 0.05, s * (a[2] * (1 - f) + b[2] * f - 0.04)])
+      }
+    }
+    pts = pts.concat([-0.32, 0.04, s * 0.22])
+    inner = inner.concat([-0.32, -0.01, s * 0.18])
+    lines = lines.append({pts: br_place(pts), tone: "x-memory", width: wide[6], dash: false})
+    lines = lines.append({pts: br_place(inner), tone: "x-memory", width: wide[6] * 0.6, dash: false})
+    for axis in [0, 1, 2] {
+      lines = lines.append({pts: br_circle([0.3, -0.38, 0.36 * s], [0.085, 0.08, 0.085], axis), tone: "x-you", width: wide[7], dash: false})
+    }
+  }
+  for axis in [0, 1, 2] {
+    lines = lines.append({pts: br_circle([-0.3, -0.3, 0], [0.17, 0.13, 0.17], axis), tone: "x-curious", width: wide[9], dash: false})
+  }
+  return lines
+}
+
+// Where each part's name is written, in the model's coordinates.
+fn br_labels(glow: Number[]) -> PlLabel[] {
+  let at = [[1.32, 0.42, 0.45], [0.3, 0.95, 0.5], [-0.55, 0.92, 0.5], [-1.45, 0.15, 0.4], [0.6, -0.8, 0.78], [-0.15, -0.42, 0.66], [0.32, -0.62, 0.3], [-1.15, -0.9, 0.35], [-0.3, -0.62, 0]]
+  var out: PlLabel[] = []
+  let names = pl_regions()
+  for k in 0 until 9 {
+    if glow[k + 1] > 0.4 {
+      let p = br_place(at[k])
+      out = out.append({x: p[0], y: p[1], z: p[2], text: names[k], tone: names[k]})
+    }
+  }
+  return out
+}
+
+fn brain3d_scene(lit: Text[]) -> PlScene {
+  let glow = br_glow(lit)
+  let quads = br_cerebellum(glow).concat(br_stem())
+  let body: PlScene = {quads: quads, lines: br_deep(glow), labels: br_labels(glow)}
+  return pl_merge(pl_merge(pl_floor(0.95), pl_merge(br_hemisphere(1, glow), br_hemisphere(-1, glow))), body)
+}
+
+fn brain3d_figure(lit: Text[]) -> PlFigure {
+  var problems: Text[] = []
+  for name in lit {
+    if pl_regions().index_of(name).or(-1) < 0 { problems = problems.append("the Brain has no part called " + name) }
+  }
+  let scene = brain3d_scene(lit)
+  let view: PlView = {yaw: -38, pitch: 16, width: 960, height: 680}
+  let title = if lit.is_empty() { "Kosika Brain" } else { "Kosika Brain: " + lit.join(", ") }
+  let notation = "<math display=\"block\"><mi>d</mi><mo>=</mo><mo>(</mo><mi>cos</mi><mi>v</mi><mo>,</mo><mi>sin</mi><mi>v</mi><mi>cos</mi><mi>u</mi><mo>,</mo><mi>sin</mi><mi>v</mi><mi>sin</mi><mi>u</mi><mo>)</mo><mspace width=\"1em\"/><mi>f</mi><mo>=</mo><munder><mo>&#8721;</mo><mi>i</mi></munder><mi>sin</mi><mo>(</mo><mn>300</mn><msub><mi>d</mi><mi>i</mi></msub><mo>+</mo><mn>40</mn><mi>sin</mi><mn>260</mn><msub><mi>d</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>)</mo></math>"
+  let places = brain3d_where()
+  let glow = br_glow(lit)
+  var notes: Text[] = []
+  notes = notes.append(f"Kosika worked out {scene.quads.length()} faces from the formulas above: two folded hemispheres, the cerebellum with its folia, and the brainstem. The hippocampus, amygdala and midbrain are drawn through the cortex.")
+  let names = pl_regions()
+  for k in 0 until 9 {
+    let state = if glow[k + 1] > 0.4 { (if lit.is_empty() { "shown" } else { "lit" }) } else { "resting" }
+    notes = notes.append("<span style=\"color:" + pl_region_hex(k + 1) + "\">&#9679;</span> " + names[k] + ", the " + places[k] + ": " + state)
+  }
+  let roles = brain3d_roles()
+  let tips = for k in 0 until 9 { "the " + places[k] + ": " + roles[k] + (if glow[k + 1] > 0.4 and not lit.is_empty() { " (lit now)" } else { "" }) }
+  let heads = for k in 0 until 9 { names[k] }
+  let fig: PlFigure = {kind: "brain", title: title, formula: "folded sphere", notation: notation, svg: pl_scene_svg(scene, view, title), live: pl_scene_live_parts(scene, view, [], true, heads, tips), page: "", notes: notes, problems: problems}
+  return pl_paged(fig, "Kosika math &#183; the Brain in 3D")
+}
+
+test "every part of the Brain has a place and a colour" {
+  expect brain3d_parts().length() == 9
+  expect brain3d_where().length() == 9
+  expect brain3d_roles().length() == 9
+  expect br_glow([]).length() == 10
+  expect br_glow(["think"])[1] > 0.9
+  expect br_glow(["think"])[2] < 0.2
+}
+
+test "a hemisphere ring is closed and stays on its own side" {
+  r = br_ring(90, 1, 8)
+  expect r.length() == 45
+  expect (r[0] - r[40]).abs() < 0.000001
+  expect (r[1] - r[41]).abs() < 0.000001
+  expect br_ring(90, 1, 8)[1] > 0
+  expect br_ring(90, -1, 8)[1] < 0
+}
+
+test "the lobes fall where the brain has them" {
+  expect br_ring(10, 1, 4)[3] == 1
+  expect br_ring(178, 1, 4)[3] == 4
+}
+
+test "the Brain is drawn with every region tinted and the deep parts seen through" {
+  f = brain3d_figure(["think", "memory"])
+  expect f.problems.is_empty()
+  expect f.kind == "brain"
+  expect f.svg.contains("<polygon")
+  expect f.live.contains("data-solid")
+  expect f.live.contains("hippocampus")
+  expect f.svg.contains("#3fe0c5")
+  expect f.live.contains("PAL=")
+  expect f.page.contains("Kosika Brain: think, memory")
+}
+
+test "a part the Brain does not have is named, not drawn" {
+  expect not brain3d_figure(["dream"]).problems.is_empty()
+}

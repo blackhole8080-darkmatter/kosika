@@ -1,0 +1,336 @@
+// Kosika Brain core: the one place every Kosika part thinks through.
+//
+// Kosika AI, the coder swarm, Kosi's voice, Chat and Designs each do their
+// own work, but they share one Brain, so what one part learns the others
+// can use. The core keeps two memories:
+//
+//   working    the talk so far in one session: the last few asks and what
+//              was made of them, so a part never starts from nothing
+//   timeline   every episode, in order, kept for good: which part was asked
+//              what, what it did, and how it went (passed, failed, or
+//              unchecked), and what checked it
+//
+// Every ask runs the same loop: sense (brain_sense recalls the session's
+// working memory and the nearest past episodes, above a floor), think and
+// check in the part that does the work, then learn (brain_record keeps the
+// episode on the timeline and moves the working memory on).
+//
+// A part with its own way of thinking calls brain_sense before it thinks,
+// puts the context's prompt ahead of its own, and calls brain_record when
+// it is done, saying what checked the result. brain_think is the whole loop
+// for a plain ask, with one free model.
+//
+// How it went comes from checks, never from the model's say-so: an answer
+// no code could prove is kept as "unchecked", one that failed a check as
+// "failed", and only a part's real checker (tests run, maths computed,
+// quotes matched) makes it "passed".
+//
+// Programs opt in by importing this module and running with
+// `--memory FOLDER`.
+
+export [BrainEpisodes, brain_recent, BrainThought, BrainEpisode, BrainWorking, BrainContext, BrainDone, BrainRecorded, BrainAnswer, BrainCheck, brain_sense, brain_record, brain_think, bc_words, bc_near_enough, bc_context, bc_working_of, bc_next_working, bc_episode, bc_episode_key, bc_working_key, bc_check, bc_done, bc_prompt, bc_timeline_lines, bc_outcomes]
+
+// ask: what was asked, in the person's words. part: which Kosika part is
+// asking (ai, swarm, kosi, chat, designs, studio). session: one talk, so
+// working memory stays with it; "" is the default talk. at: when, as the
+// host gives it (the language has no clock of its own).
+record BrainThought { ask: Text part: Text session: Text at: Text }
+
+// One thing that happened. seq: its place in its session's order.
+// outcome: passed, failed or unchecked. checked_by: what checked it
+// ("tests", "maths", "quotes", "none"). words: the ask's topic words,
+// for recall by words.
+record BrainEpisode { part: Text session: Text seq: Number at: Text ask: Text did: Text outcome: Text checked_by: Text words: Text }
+
+// The talk so far: the last few turns, newest last.
+record BrainWorking { session: Text seq: Number turns: Text[] }
+
+// What the Brain hands a part before it thinks. prompt: the same, written
+// for a model to read ahead of its own task; "" when there is nothing.
+record BrainContext { session: Text seq: Number working: Text[] episodes: BrainEpisode[] by: Text prompt: Text }
+
+// What a part did, to keep.
+record BrainDone { part: Text session: Text at: Text ask: Text did: Text outcome: Text checked_by: Text }
+
+record BrainRecorded { key: Text seq: Number entries: Number said: Text }
+
+record BrainCheck { outcome: Text why: Text }
+
+record BrainAnswer { text: Text outcome: Text why: Text recalled: Number said: Text }
+
+memory timeline of BrainEpisode
+memory working of BrainWorking
+
+record BrainThinkerBrief { task: Text context: Text ask: Text }
+record BrainThinkerSaid { text: Text }
+
+model brain_thinker {
+  input: BrainThinkerBrief
+  output: BrainThinkerSaid
+  parameters: {
+    max_output_tokens: 700
+  }
+}
+
+// ---------------------------------------------------------------- words
+
+fn bc_common() -> Text[] { return ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which", "does", "explain", "show", "tell", "about", "make", "please", "again", "me", "a", "an", "is", "do", "of", "to", "in", "on", "it", "my", "i", "kosika", "kosi"] }
+
+// The words that carry an ask's topic, cut to five letters so "sorting"
+// and "sorts" meet. Numbers are kept whole.
+fn bc_words(text: Text) -> Text[] {
+  let common = bc_common()
+  var out: Text[] = []
+  for w in text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").replace("'", " ").replace("\"", " ").words() {
+    let number = w.to_number().exists()
+    let stem = if w.length() > 5 and not number { w.slice(0, 5) } else { w }
+    if (number or (w.length() >= 3 and not common.contains(w))) and not out.contains(stem) { out = out.append(stem) }
+  }
+  return out
+}
+
+fn bc_clip(t: Text, n: Number) -> Text { return if t.length() > n { t.slice(0, n) + "…" } else { t } }
+
+fn bc_session(s: Text) -> Text { return if s.trim().is_empty() { "default" } else { s.trim() } }
+
+fn bc_working_key(session: Text) -> Text { return "working:" + bc_session(session) }
+
+// Every episode has its own key, so the timeline only ever grows.
+fn bc_episode_key(e: BrainEpisode) -> Text { return "episode:" + e.part + ":" + e.session + ":" + e.seq.to_text() }
+
+// ---------------------------------------------------------------- sense
+
+// Near enough to use. By meaning, the embedding model's score must reach
+// 0.6 (0.53 was measured for a half-fit) and share a word; by words, the
+// episode must hold most of the ask's topic words.
+fn bc_near_enough(by: Text, score: Number, asked: Text[], words: Text) -> Bool {
+  if asked.is_empty() { return false }
+  let theirs = words.words()
+  let shared = (for w in asked where theirs.contains(w) { w }).length()
+  if by == "meaning" { return score >= 0.6 and shared >= 1 }
+  return shared >= asked.length().min(2) and shared >= asked.length() * 0.5
+}
+
+fn bc_working_of(had: WorkingRecalled, session: Text) -> BrainWorking {
+  let none: Text[] = []
+  return if had.value.exists() { had.value.value() } else { {session: bc_session(session), seq: 0, turns: none} }
+}
+
+fn bc_outcomes() -> Text[] { return ["passed", "failed", "unchecked"] }
+
+fn bc_episode_line(e: BrainEpisode) -> Text {
+  let by = if e.checked_by.is_empty() or e.checked_by == "none" { "" } else { " by " + e.checked_by }
+  return f"[{e.part}, {e.outcome}{by}] asked '{bc_clip(e.ask, 120)}': {bc_clip(e.did, 200)}"
+}
+
+// The context, written for a model: the talk so far, then what Kosika did
+// before on asks like this and how it went, failures included, so the same
+// mistake is not made twice.
+fn bc_prompt(working: Text[], episodes: BrainEpisode[]) -> Text {
+  var parts: Text[] = []
+  if not working.is_empty() { parts = parts.append("Earlier in this talk:\n" + (for t in working { "- " + t }).join("\n")) }
+  if not episodes.is_empty() { parts = parts.append("What Kosika did before on asks like this, and how it went (passed and failed were checked by code; unchecked was not proven):\n" + (for e in episodes { "- " + bc_episode_line(e) }).join("\n")) }
+  return parts.join("\n\n")
+}
+
+fn bc_context(t: BrainThought, w: BrainWorking, found: TimelineLike) -> BrainContext {
+  let asked = bc_words(t.ask)
+  var episodes: BrainEpisode[] = []
+  for m in found.matches {
+    // This session's turns are already in working memory.
+    let same_talk = m.value.session == bc_session(t.session) and w.seq - m.value.seq < w.turns.length()
+    if not same_talk and episodes.length() < 3 and bc_near_enough(found.by, m.score, asked, m.value.words) { episodes = episodes.append(m.value) }
+  }
+  return {session: bc_session(t.session), seq: w.seq, working: w.turns, episodes: episodes, by: found.by, prompt: bc_prompt(w.turns, episodes)}
+}
+
+// ---------------------------------------------------------------- learn
+
+// An outcome the Brain does not know is kept as unchecked, never as passed.
+fn bc_outcome(o: Text) -> Text { return if bc_outcomes().contains(o.trim().lower()) { o.trim().lower() } else { "unchecked" } }
+
+fn bc_episode(d: BrainDone, w: BrainWorking) -> BrainEpisode {
+  let checked = if d.checked_by.trim().is_empty() { "none" } else { d.checked_by.trim() }
+  // Passed means a real check ran: with nothing checking it, it is unchecked.
+  let o = bc_outcome(d.outcome)
+  let outcome = if o == "passed" and checked == "none" { "unchecked" } else { o }
+  return {part: d.part, session: bc_session(d.session), seq: w.seq + 1, at: d.at, ask: d.ask, did: d.did, outcome: outcome, checked_by: checked, words: bc_words(d.ask).join(" ")}
+}
+
+fn bc_turns_kept() -> Number { return 6 }
+
+fn bc_next_working(w: BrainWorking, d: BrainDone) -> BrainWorking {
+  let turn = f"{d.part}: '{bc_clip(d.ask, 160)}' → {bc_clip(d.did, 240)} ({bc_outcome(d.outcome)})"
+  let turns = w.turns.append(turn)
+  let over = turns.length() - bc_turns_kept()
+  return {session: bc_session(d.session), seq: w.seq + 1, turns: if over > 0 { turns.drop(over) } else { turns }}
+}
+
+fn bc_recorded(saved: MemorySaved, e: BrainEpisode) -> BrainRecorded {
+  return {key: saved.key, seq: e.seq, entries: saved.entries, said: f"Kosika kept episode {e.seq} of '{e.session}' on its timeline, {e.outcome}."}
+}
+
+// ---------------------------------------------------------------- think and check
+
+fn bc_task() -> Text {
+  return "You are Kosika's Brain. Answer the ask plainly and briefly. Use the context only where it helps, and say so when you rely on it. Never say you did something you were not seen to do: you cannot install, send, change or delete anything. Do not rate your own confidence."
+}
+
+fn bc_no_answer() -> BrainThinkerSaid { return {text: ""} }
+
+// The checks code can make of a plain answer. They can fail an answer;
+// they cannot prove one, so the best a plain answer gets is unchecked.
+fn bc_check(text: Text) -> BrainCheck {
+  let t = text.trim().lower()
+  if t.is_empty() { return {outcome: "failed", why: "no answer came back"} }
+  let claims = ["i have installed", "i installed", "i've installed", "i have sent", "i've sent", "i sent the", "i have deleted", "i deleted", "i've deleted", "i have changed", "i've changed", "i have pushed", "i pushed", "i have merged", "i merged"]
+  for c in claims { if t.contains(c) { return {outcome: "failed", why: f"it claimed an action no part took ('{c}')"} } }
+  return {outcome: "unchecked", why: "no code could prove a plain answer"}
+}
+
+fn bc_done(t: BrainThought, text: Text, c: BrainCheck) -> BrainDone {
+  let did = if c.outcome == "failed" { "answer refused: " + c.why } else { "answered: " + bc_clip(text.trim(), 300) }
+  return {part: t.part, session: t.session, at: t.at, ask: t.ask, did: did, outcome: c.outcome, checked_by: "brain_check"}
+}
+
+fn bc_answer(said: BrainThinkerSaid, c: BrainCheck, ctx: BrainContext, rec: BrainRecorded) -> BrainAnswer {
+  let n = ctx.episodes.length()
+  let recalled = if n == 0 { "nothing from before reached the floor" } else { f"it recalled {n} past episode" + (if n == 1 { "" } else { "s" }) }
+  let text = if c.outcome == "failed" { "" } else { said.text.trim() }
+  let k = ctx.working.length()
+  let talk = if k == 0 { "a fresh talk" } else if k == 1 { "1 earlier turn in mind" } else { f"{k} earlier turns in mind" }
+  return {text: text, outcome: c.outcome, why: c.why, recalled: n, said: f"Kosika's Brain answered with {talk}; {recalled}. {rec.said}"}
+}
+
+// The timeline as lines a page can show, oldest first.
+fn bc_timeline_lines(episodes: BrainEpisode[]) -> Text[] { return for e in episodes { (if e.at.is_empty() { "" } else { e.at + " " }) + bc_episode_line(e) } }
+
+// The episodes a recall found, oldest first.
+record BrainEpisodes { episodes: BrainEpisode[] }
+
+fn bc_recent(found: TimelineLike) -> BrainEpisodes {
+  let all = for m in found.matches { m.value }
+  return {episodes: all.sort_by("seq").sort_by("at")}
+}
+
+// What to recall by: the ask, or with none, all three outcomes, which
+// every episode carries, so every episode matches.
+fn bc_recent_about(ask: Text) -> Text { return if ask.is_empty() { "passed failed unchecked" } else { ask } }
+
+// ---------------------------------------------------------------- the workflows
+
+// Sense: the talk so far and the nearest past episodes, above the floor.
+workflow brain_sense(t: BrainThought) -> BrainContext {
+  had   = recall working under bc_working_key(t.session)
+  found = recall timeline like t.ask
+  out   = bc_context(t, bc_working_of(had, t.session), found)
+}
+
+// Recent: the episodes nearest an ask (at most ten), or any ten.
+workflow brain_recent(t: BrainThought) -> BrainEpisodes {
+  found = recall timeline like bc_recent_about(t.ask)
+  out   = bc_recent(found)
+}
+
+// Learn: keep what a part did on the timeline and move the talk on.
+workflow brain_record(d: BrainDone) -> BrainRecorded {
+  had  = recall working under bc_working_key(d.session)
+  kept = remember bc_episode(d, bc_working_of(had, d.session)) in timeline under bc_episode_key(bc_episode(d, bc_working_of(had, d.session)))
+  moved = remember bc_next_working(bc_working_of(had, d.session), d) in working under bc_working_key(d.session)
+  out  = bc_recorded(kept, bc_episode(d, bc_working_of(had, d.session)))
+}
+
+// The whole loop for a plain ask: sense, think with one free model, check
+// what code can check, keep the episode.
+workflow brain_think(t: BrainThought) -> BrainAnswer {
+  budget 3 model calls, 180 seconds
+  ctx   = call brain_sense(t)
+  said  = use_model brain_thinker(bc_task(), ctx.prompt, t.ask) retry 1 otherwise bc_no_answer()
+  check = bc_check(said.text)
+  rec   = call brain_record(bc_done(t, said.text, check))
+  out   = bc_answer(said, check, ctx, rec)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn bc_test_done(ask: Text, did: Text, outcome: Text, by: Text) -> BrainDone { return {part: "ai", session: "s1", at: "2026-11-18 18:00", ask: ask, did: did, outcome: outcome, checked_by: by} }
+
+fn bc_test_empty() -> BrainWorking {
+  let none: Text[] = []
+  return {session: "s1", seq: 0, turns: none}
+}
+
+fn bc_test_turns() -> BrainWorking {
+  var w = bc_test_empty()
+  for i in [1, 2, 3, 4, 5, 6, 7, 8] { w = bc_next_working(w, bc_test_done(f"ask {i}", f"did {i}", "unchecked", "")) }
+  return w
+}
+
+test "the Brain reads an ask's topic words" {
+  expect bc_words("How does Kosika sort 3 1 2?") == ["sort", "3", "1", "2"]
+  expect bc_words("Explain the water cycle, please") == ["water", "cycle"]
+  expect bc_working_key("") == "working:default"
+}
+
+test "an episode is checked by code, never by the model's say-so" {
+  e = bc_episode(bc_test_done("add 2 and 3", "5", "passed", "maths"), bc_test_empty())
+  expect e.outcome == "passed" and e.checked_by == "maths" and e.seq == 1
+  // Passed with nothing checking it is only unchecked.
+  expect bc_episode(bc_test_done("add 2 and 3", "5", "passed", ""), bc_test_empty()).outcome == "unchecked"
+  expect bc_episode(bc_test_done("add 2 and 3", "5", "very sure", "maths"), bc_test_empty()).outcome == "unchecked"
+  expect bc_episode_key(e) == "episode:ai:s1:1"
+  expect bc_check("").outcome == "failed"
+  expect bc_check("Done! I have installed Ollama for you.").outcome == "failed"
+  expect bc_check("Ollama runs models on your laptop.").outcome == "unchecked"
+}
+
+test "working memory keeps the last six turns of the talk" {
+  w = bc_test_turns()
+  expect w.seq == 8
+  expect w.turns.length() == 6
+  expect w.turns[0] == "ai: 'ask 3' → did 3 (unchecked)"
+  expect w.turns[5] == "ai: 'ask 8' → did 8 (unchecked)"
+}
+
+fn bc_test_ep(session: Text, seq: Number, ask: Text, outcome: Text) -> BrainEpisode { return {part: "swarm", session: session, seq: seq, at: "", ask: ask, did: "wrote it", outcome: outcome, checked_by: "tests", words: bc_words(ask).join(" ")} }
+
+test "past episodes are recalled only above the floor" {
+  sort = bc_test_ep("old", 4, "write a function that sorts a list of numbers", "failed")
+  tree = bc_test_ep("old", 5, "insert into a binary tree", "passed")
+  t: BrainThought = {ask: "sort a list of numbers in Kosika", part: "ai", session: "s1", at: ""}
+  by_words: TimelineLike = {matches: [{key: "a", value: sort, score: 0.3}, {key: "b", value: tree, score: 0.3}], by: "words"}
+  ctx = bc_context(t, bc_test_empty(), by_words)
+  expect ctx.episodes == [sort]
+  expect ctx.prompt.contains("[swarm, failed by tests] asked 'write a function that sorts a list of numbers': wrote it")
+  // By meaning: a half-fit is left out, and so is a near score with no shared word.
+  half: TimelineLike = {matches: [{key: "a", value: sort, score: 0.53}], by: "meaning"}
+  expect bc_context(t, bc_test_empty(), half).episodes.is_empty()
+  wordless: TimelineLike = {matches: [{key: "b", value: tree, score: 0.8}], by: "meaning"}
+  expect bc_context(t, bc_test_empty(), wordless).episodes.is_empty()
+  // Nothing recalled and nothing said: no prompt at all.
+  none: TimelineLike = {matches: [], by: "words"}
+  expect bc_context(t, bc_test_empty(), none).prompt == ""
+}
+
+test "the talk's own turns come from working memory, not twice from the timeline" {
+  w = bc_next_working(bc_test_empty(), bc_test_done("sort 3 1 2", "1 2 3", "passed", "tests"))
+  mine = bc_episode(bc_test_done("sort 3 1 2", "1 2 3", "passed", "tests"), bc_test_empty())
+  t: BrainThought = {ask: "sort 3 1 2 again", part: "ai", session: "s1", at: ""}
+  found: TimelineLike = {matches: [{key: "a", value: mine, score: 0.9}], by: "words"}
+  ctx = bc_context(t, w, found)
+  expect ctx.episodes.is_empty()
+  expect ctx.working == ["ai: 'sort 3 1 2' → 1 2 3 (passed)"]
+  expect ctx.prompt.starts_with("Earlier in this talk:\n- ai: 'sort 3 1 2'")
+}
+
+test "a refused answer is kept as failed and never shown as true" {
+  t: BrainThought = {ask: "install ollama", part: "kosi", session: "", at: "2026-11-18"}
+  c = bc_check("I have installed it.")
+  d = bc_done(t, "I have installed it.", c)
+  expect d.outcome == "failed" and d.did.starts_with("answer refused: it claimed an action")
+  ctx: BrainContext = {session: "default", seq: 0, working: [], episodes: [], by: "words", prompt: ""}
+  rec: BrainRecorded = {key: "k", seq: 1, entries: 1, said: "kept"}
+  a = bc_answer({text: "I have installed it."}, c, ctx, rec)
+  expect a.text == "" and a.outcome == "failed"
+  expect bc_timeline_lines([bc_episode(d, bc_test_empty())]) == ["2026-11-18 [kosi, failed by brain_check] asked 'install ollama': answer refused: it claimed an action no part took ('i have installed')"]
+}

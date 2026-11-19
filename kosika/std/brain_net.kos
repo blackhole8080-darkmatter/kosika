@@ -1,0 +1,182 @@
+// Kosika's Brain as a network, built from its real timeline and drawn as
+// simple neurons in 2.5D (std/designs_network.kos).
+//
+// The timeline stands at the core with working memory beside it. Each
+// Kosika part is a hub neuron on a ring around them (Kosika AI, Chat,
+// Kosi, Designs, the coder swarm, Studio), and every episode on the
+// timeline is a small neuron in its part's cluster, its nucleus green if
+// it passed, red if it failed, amber if no checker passed it. The links
+// are real:
+//
+//   part     an episode to the part that did it
+//   words    two episodes whose asks share topic words (bc_words, the
+//            words the Brain's own recall uses), each to its 3 nearest
+//   record   a part with episodes keeps them on the timeline
+//   round    the latest episode's round: timeline, working memory, part,
+//            episode
+//
+//   import "std/brain_net.kos"
+//
+//   bn_network(episodes, working)   the network as data, for any part to read
+//   bn_figure(episodes, working)    the drawing and its page
+//   brain_net({about: ""})          the workflow: the newest episodes
+//                                   (or those near what you ask about)
+//
+// First built on the laptop as a separate drawing; here it is drawn by
+// the same 2.5D drawer as every other Kosika network.
+
+import "brain_core.kos"
+import "designs_plot.kos"
+import "designs_network.kos"
+
+export [BrainNetAsk, BrainNetView, BrainNetwork, BrainNetLink, bn_parts, bn_part_names, bn_network, bn_net, bn_figure, bn_link_weight, brain_net]
+
+record BrainNetAsk { about: Text }
+record BrainNetView { title: Text page: Text svg: Text episodes: Number links: Number }
+
+// why: "part", "words", "record" or "round" (see above).
+record BrainNetLink { from: Number to: Number weight: Number why: Text }
+record BrainNetwork { nodes: NetNode[] links: BrainNetLink[] }
+
+// The parts that do episodes, and their colours (Brain regions, 1 to 9).
+fn bn_parts() -> Text[] { return ["ai", "chat", "kosi", "designs", "swarm", "studio"] }
+fn bn_part_names() -> Text[] { return ["Kosika AI", "Chat", "Kosi", "Designs", "Coder swarm", "Studio"] }
+fn bn_part_regions() -> Number[] { return [1, 9, 4, 5, 2, 7] }
+
+fn bn_outcome_hex(o: Text) -> Text {
+  if o == "passed" { return "#6ee7a0" }
+  if o == "failed" { return "#ff5f6d" }
+  return "#f5b942"
+}
+
+// How alike two asks are, by their topic words: shared over all, 0 to 1.
+fn bn_link_weight(a: Text[], b: Text[]) -> Number {
+  if a.is_empty() or b.is_empty() { return 0 }
+  let shared = (for w in a where b.contains(w) { w }).length()
+  return shared / (a.length() + b.length() - shared)
+}
+
+fn bn_short(t: Text, n: Number) -> Text { return if t.length() > n { t.take(n) + "..." } else { t } }
+
+// The newest 40 episodes, each beside its part. Neurons: 0 the timeline,
+// 1 working memory, 2 to 7 the parts, then the episodes, oldest first.
+fn bn_network(episodes: BrainEpisode[], working: Text[]) -> BrainNetwork {
+  let parts = bn_parts()
+  let names = bn_part_names()
+  let regions = bn_part_regions()
+  var nodes: NetNode[] = [
+    {name: "timeline", region: 6, x: 0, y: 0, z: 1.5, about: "every episode, kept for good", ring: "", size: 1.2},
+    {name: "working memory", region: 8, x: 0.9, y: -0.3, z: 0.9, about: f"the talk so far: {working.length()} turns", ring: "", size: 0.9}
+  ]
+  for k in 0 until parts.length() {
+    let a = -135 + 60 * k
+    nodes = nodes.append({name: names[k], region: regions[k], x: 2.4 * a.cos(), y: 2.4 * a.sin(), z: 1.0, about: "", ring: "", size: 1})
+  }
+  var links: BrainNetLink[] = []
+  var counts = for k in 0 until parts.length() { 0 }
+  var words: Text[][] = []
+  let from = (episodes.length() - 40).max(0)
+  var last = -1
+  var last_k = 0
+  for e in episodes.drop(from) {
+    let found = parts.index_of(e.part).or(-1)
+    let k = if found >= 0 { found } else { 5 }
+    let n = counts[k]
+    counts = for i in 0 until counts.length() { if i == k { counts[i] + 1 } else { counts[i] } }
+    let hub = 0 - 135 + 60 * k
+    let a = n * 137.5 + hub
+    let d = 0.55 + 0.2 * (n + 1).sqrt()
+    let x = (2.4 * hub.cos() + d * a.cos()).max(-3.9).min(3.9)
+    let y = (2.4 * hub.sin() + d * a.sin()).max(-3.9).min(3.9)
+    let id = nodes.length()
+    let outcome = if ["passed", "failed", "unchecked"].contains(e.outcome) { e.outcome } else { "unchecked" }
+    nodes = nodes.append({name: "", region: regions[k], x: x, y: y, z: 0.35 + 0.1 * (n % 4), about: bn_short(e.ask, 90) + " (" + outcome + ")", ring: bn_outcome_hex(outcome), size: 0.5})
+    links = links.append({from: id, to: 2 + k, weight: 0.5, why: "part"})
+    words = words.append(bc_words(e.ask))
+    last = id
+    last_k = k
+  }
+  // Episodes whose asks share topic words, each to its 3 nearest.
+  for i in 0 until words.length() {
+    var near: BrainNetLink[] = []
+    for j in 0 until words.length() {
+      if j != i {
+        let w = bn_link_weight(words[i], words[j])
+        if w >= 0.3 { near = near.append({from: 8 + i, to: 8 + j, weight: w, why: "words"}) }
+      }
+    }
+    let best = for l in near.sort_by("weight").reverse().take(3) where l.from < l.to { l }
+    links = links.concat(best)
+  }
+  for k in 0 until parts.length() {
+    if counts[k] > 0 { links = links.append({from: 2 + k, to: 0, weight: (0.3 + 0.1 * counts[k]).min(1), why: "record"}) }
+  }
+  if last >= 0 {
+    links = links.concat([{from: 0, to: 1, weight: 1, why: "round"}, {from: 1, to: 2 + last_k, weight: 1, why: "round"}, {from: 2 + last_k, to: last, weight: 1, why: "round"}])
+  }
+  return {nodes: nodes, links: links}
+}
+
+// The network as one the drawer takes.
+fn bn_net(b: BrainNetwork, title: Text) -> Net {
+  let links: NetLink[] = for l in b.links { {from: l.from, to: l.to, weight: l.weight} }
+  return {title: title, nodes: b.nodes, links: links, lit: []}
+}
+
+fn bn_figure(episodes: BrainEpisode[], working: Text[]) -> PlFigure {
+  let b = bn_network(episodes, working)
+  let title = if episodes.is_empty() { "Kosika Brain network: no episodes yet" } else { f"Kosika Brain network: {episodes.length()} episodes" }
+  let f = net25_figure(bn_net(b, title))
+  var notes: Text[] = ["The timeline stands at the core with working memory beside it; each Kosika part is a hub, and each episode a small neuron in its part's cluster: green passed, red failed, amber unchecked."]
+  notes = notes.append(f"Every link is real: {b.links.length()} in all, from an episode to its part, between episodes whose asks share topic words, from a part to the timeline, and the latest episode's round. Signals run on the links that are strong enough (weight 0.5 or more).")
+  let fig: PlFigure = {kind: f.kind, title: title, formula: f.formula, notation: f.notation, svg: f.svg, live: "", page: "", notes: notes.concat(f.notes), problems: f.problems}
+  return pl_paged(fig, "Kosika Brain &#183; the network")
+}
+
+fn bn_thought(q: BrainNetAsk) -> BrainThought { return {ask: q.about, part: "view", session: "", at: ""} }
+
+fn bn_view(seen: BrainEpisodes) -> BrainNetView {
+  let f = bn_figure(seen.episodes, [])
+  return {title: f.title, page: f.page, svg: f.svg, episodes: seen.episodes.length(), links: bn_network(seen.episodes, []).links.length()}
+}
+
+// The Brain's network: its newest episodes, or those near what you ask about.
+workflow brain_net(q: BrainNetAsk) -> BrainNetView {
+  seen = call brain_recent(bn_thought(q))
+  out  = bn_view(seen)
+}
+
+fn bn_test_ep(part: Text, ask: Text, outcome: Text) -> BrainEpisode { return {part: part, session: "default", seq: 1, at: "", ask: ask, did: "did it", outcome: outcome, checked_by: "tests", words: ""} }
+
+test "every part is a hub, and every episode a small neuron beside its part" {
+  net = bn_network([bn_test_ep("ai", "What is 18% of 2450?", "passed"), bn_test_ep("designs", "Plot y = sin(x)", "failed")], [])
+  expect net.nodes.length() == 10
+  expect net.nodes[2].name == "Kosika AI"
+  expect net.nodes[8].ring == "#6ee7a0"
+  expect net.nodes[9].ring == "#ff5f6d"
+  expect net.nodes[9].region == 5
+  expect (for l in net.links where l.why == "part" { [l.from, l.to] }) == [[8, 2], [9, 5]]
+}
+
+test "episodes are wired when their asks share topic words" {
+  expect bn_link_weight(["18%", "2450"], ["18%", "2600"]) > 0.3
+  expect bn_link_weight(["sort", "list"], ["water", "cycle"]) == 0
+  expect bn_link_weight([], ["x"]) == 0
+  net = bn_network([bn_test_ep("ai", "What is 18% of 2450?", "passed"), bn_test_ep("ai", "What is 18% of 2600?", "passed"), bn_test_ep("kosi", "Tell me about the water cycle", "unchecked")], [])
+  expect (for l in net.links where l.why == "words" { [l.from, l.to] }) == [[8, 9]]
+}
+
+test "the latest episode's round runs timeline, working memory, part, episode" {
+  net = bn_network([bn_test_ep("ai", "one", "passed"), bn_test_ep("swarm", "two", "failed")], ["one"])
+  expect (for l in net.links where l.why == "round" { [l.from, l.to] }) == [[0, 1], [1, 6], [6, 9]]
+  expect (for l in bn_network([], []).links where l.why == "round" { l }).is_empty()
+}
+
+test "the network is drawn by the 2.5D drawer, its asks escaped" {
+  f = bn_figure([bn_test_ep("ai", "What is 18% of 2450? <b>", "passed"), bn_test_ep("ai", "What is 18% of 2600?", "failed")], [])
+  expect f.problems.is_empty()
+  expect f.svg.contains("animateMotion")
+  expect f.svg.contains("&lt;b&gt;")
+  expect not f.svg.contains("<b>")
+  expect f.page.contains("<svg")
+}
