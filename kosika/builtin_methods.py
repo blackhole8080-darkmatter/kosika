@@ -431,7 +431,17 @@ def _is_hex_colour(text):
     return all(c in valid_chars for c in hex_part)
 
 
+def _truncate(text, most):
+    if isinstance(most, bool) or most != int(most) or most < 1:
+        raise RuntimeError("truncate needs a whole number of at least 1")
+    most = int(most)
+    if len(text) <= most:
+        return text
+    return text[: most - 1] + "…"
+
+
 METHODS: tuple[Method, ...] = (
+    Method("Text", "truncate", (("most", "Number"),), "Text", _truncate),
     Method("Text", "is_upper_letter", (), "Bool", _is_upper_letter),
     Method("Text", "first_word", (), "Text", _first_word),
     Method("Text", "is_hex_colour", (), "Bool", _is_hex_colour),
