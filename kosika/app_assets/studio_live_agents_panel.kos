@@ -1,0 +1,29 @@
+import "std/designs_palette.kos"
+
+export [live_agents_panel_html]
+
+fn live_agents_panel_html(state: Text) -> Text {
+  let bg = palette_named("dark_matter").panel
+  let ink = palette_named("dark_matter").ink
+  let accent = palette_named("dark_matter").accent
+  let border = "1px solid " + accent
+  let radius = "10px"
+  let padding = "16px"
+  let font = "system-ui, sans-serif"
+  let base_style = "background: " + bg + "; color: " + ink + "; border: " + border + "; border-radius: " + radius + "; padding: " + padding + "; font-family: " + font + ";"
+  if state == "empty" {
+    return "<div style=\"" + base_style + "\">No live agents panel yet</div>"
+  }
+  return "<div style=\"" + base_style + "\">Live Agents Panel " + state + "</div>"
+}
+
+test "empty state shows correct words and accent" {
+  html = live_agents_panel_html("empty")
+  expect html.contains("No live agents panel yet")
+  expect html.contains(palette_named("dark_matter").accent)
+}
+
+test "busy state contains busy" {
+  html = live_agents_panel_html("busy")
+  expect html.contains("busy")
+}
