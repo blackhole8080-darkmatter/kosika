@@ -757,9 +757,11 @@ def check_source(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
             program = load_program(path)
         except (ValueError, TypeError, RecursionError, OSError) as exc:
             # OSError: it tried to import a file, and there are none here.
-            problem = (
-                str(exc).replace(str(path) + ": ", "").replace(str(path), "main.kos")
-            )
+            # On Windows the scratch folder can come back as a short name
+            # (RUNNER~1) while the loader reports the long one; strip both.
+            problem = str(exc)
+            for shown in {str(path), str(path.resolve())}:
+                problem = problem.replace(shown + ": ", "").replace(shown, "main.kos")
             return {"ok": False, "problem": problem[:600], "tests": 0, "passed": 0}
         try:
             results = run_tests(program)[:MAX_CHECKED_TESTS]

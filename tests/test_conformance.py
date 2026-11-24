@@ -2080,7 +2080,13 @@ workflow main(t: Ticket) -> Said {
                     return (
                         ran.returncode,
                         ran.stdout.splitlines()[0] if ran.stdout else "",
-                        (lines[-1].replace(str(project), "PROJECT") if lines else ""),
+                        (
+                            lines[-1]
+                            .replace(str(project.resolve()), "PROJECT")
+                            .replace(str(project), "PROJECT")
+                            if lines
+                            else ""
+                        ),
                     )
 
                 outcome: dict[str, Any] = {}
