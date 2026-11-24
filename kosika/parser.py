@@ -1625,6 +1625,10 @@ class Parser:
             step = self.parse_match_step(name)
             if step is not None:
                 return step
+        if self.check("for"):
+            step = self.parse_loop_step(name, written_type)
+            if step is not None:
+                return step
         call = self.parse_step_or_value()
         verify = self.parse_step_call() if self.accept("verify") else None
         votes = self.parse_step_count("vote")
@@ -1646,6 +1650,80 @@ class Parser:
             learns=learns,
             learn_by=learn_by,
             learn_near=learn_near,
+        )
+
+    def parse_loop_step(self, name: str, written_type: str | None) -> Step | None:
+        """`done = for s in plan.steps limit 4 { call do(s) }`: one step made
+        once for each item of a list. The braces hold what may follow `=` in
+        a one-line step: a call, with `verify`, `retry` or `otherwise` after
+        it, or a `match` of calls.
+
+        When the body makes no call, as `sizes = for w in words { w.length() }`,
+        it is the ordinary `for` of a value; None is given back and the
+        parser is where it was."""
+
+        start = self.index
+        self.expect("for")
+        item = self.identifier()
+        self.expect("in")
+        over = self.expression()
+        limit = 0
+        if self.accept("limit"):
+            token = self.advance()
+            if token.kind != "NUMBER" or not token.value.isdigit():
+                raise ParseError(
+                    f"Expected 'count' at {token.line}:{token.column}, "
+                    f"got {token.value!r}"
+                )
+            limit = int(token.value)
+        if not self.accept("{"):
+            self.index = start
+            return None
+        inner = self.parse_short_body(name)
+        if inner is None or not self.accept("}"):
+            self.index = start
+            return None
+        calls = [call for _, call in inner.branches] or [inner.call]
+        if all(_is_value_call(call) for call in calls) and inner.fallback is None:
+            self.index = start
+            return None
+        return replace(
+            inner,
+            binding_type=written_type,
+            each_item=item,
+            each_over=over,
+            each_limit=limit,
+        )
+
+    def parse_short_body(self, name: str) -> Step | None:
+        """What follows `name =` in a one-line step, as a step named `name`."""
+
+        if self.check("match"):
+            step = self.parse_match_step(name)
+            if step is not None:
+                return step
+        if self.check("for"):
+            return None
+        try:
+            call = self.parse_step_or_value()
+        except ParseError:
+            return None
+        verify = self.parse_step_call() if self.accept("verify") else None
+        votes = self.parse_step_count("vote")
+        retries = self.parse_step_count("retry")
+        escalate = self.identifier() if self.accept("escalate") else None
+        fallback = self.parse_step_call() if self.accept("otherwise") else None
+        return Step(
+            name,
+            call,
+            name,
+            None,
+            name,
+            fallback,
+            retries,
+            votes,
+            verify=verify,
+            escalate=escalate,
         )
 
     def parse_match_step(self, name: str) -> Step | None:

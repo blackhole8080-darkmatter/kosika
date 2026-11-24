@@ -1,0 +1,23 @@
+// Refused: a `for` step makes its passes in order, so it is not written
+// in a parallel block.
+
+record Plan { steps: Text[] }
+record Done { text: Text }
+record Report { count: Number }
+
+model doer {
+  input: Done
+  output: Done
+}
+
+fn count(done: Done[], other: Done) -> Report {
+  return {count: done.length()}
+}
+
+workflow main(plan: Plan) -> Report {
+  parallel {
+    done = for s in plan.steps limit 4 { use_model doer(text: s) }
+    other = use_model doer(text: "x")
+  }
+  out = count(done, other)
+}

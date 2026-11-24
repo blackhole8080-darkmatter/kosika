@@ -1,0 +1,97 @@
+name: Kosika conformance
+
+# One program, the same result on every engine and device. Each engine is
+# held to conformance/ (see its README): the Python reference on Linux and
+# Windows, the Go native engine built for Linux and Windows, and the same
+# Go engine built to WebAssembly, the engine the phone app runs.
+
+on:
+  push:
+    branches: [studio, master, "claude/**"]
+    paths:
+      - "kosika/**"
+      - "native/**"
+      - "conformance/**"
+      - "tests/test_conformance.py"
+      - "tests/test_workflow_for.py"
+      - "tests/test_parallel.py"
+      - ".github/workflows/conformance.yml"
+  pull_request:
+    paths:
+      - "kosika/**"
+      - "native/**"
+      - "conformance/**"
+      - "tests/test_conformance.py"
+      - "tests/test_workflow_for.py"
+      - "tests/test_parallel.py"
+      - ".github/workflows/conformance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engines:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - name: Install the reference engine
+        run: python -m pip install -e . pytest
+      - name: The reference prints what the suite expects
+        run: python -m kosika.conformance check
+      - name: The native engine's own tests
+        working-directory: native
+        run: go test -count=1 ./...
+      - name: Build the native engine
+        working-directory: native
+        run: go build -o ../kosika-native${{ runner.os == 'Windows' && '.exe' || '' }} .
+      - name: The native engine prints what the suite expects
+        run: python -m kosika.conformance engine ./kosika-native${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Both engines trace and replay alike
+        run: python -m pytest -q tests/test_conformance.py tests/test_workflow_for.py tests/test_parallel.py
+
+  webassembly:
+    name: webassembly (phone engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install the reference engine
+        run: python -m pip install -e .
+      - name: Build the native engine to WebAssembly
+        working-directory: native
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: go build -o ../kosika-native.wasm .
+      - name: The WebAssembly engine prints what the suite expects
+        run: |
+          # Go's WebAssembly runner refuses a long environment, so the
+          # engine is started with only PATH.
+          cat > kosika-wasm <<SCRIPT
+          #!/bin/sh
+          exec env -i PATH="\$PATH" node "$(go env GOROOT)/lib/wasm/wasm_exec_node.js" "$PWD/kosika-native.wasm" "\$@"
+          SCRIPT
+          chmod +x kosika-wasm
+          python -m kosika.conformance engine ./kosika-wasm

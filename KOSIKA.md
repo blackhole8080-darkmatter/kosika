@@ -751,6 +751,47 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   written order produces. A workflow with no `parallel` block is unchanged
   and keeps its hash.
 
+- A step MAY be made once for each item of a list (proposal 1,
+  `docs/proposals/0001-workflow-for.md`):
+
+  ```kosika
+  done = for s in plan.steps limit 4 {
+    match s.tool {
+      case "calc" { call do_calc(work_of(ask, s, done)) }
+      case _ { skip(s) }
+    }
+  }
+  ```
+
+  ```ebnf
+  step |= identifier [ ":" type ] "=" "for" identifier "in" expression
+          "limit" number "{" ( call-with-endings | match-of-calls ) "}" ;
+  ```
+
+  The braces hold exactly what may follow `=` in a one-line step: one call
+  with its `verify`, `vote`, `retry`, `escalate` and `otherwise`, or a
+  `match` of calls. When the braces hold only a value, the line is the
+  ordinary `for` expression of a value step. The rules:
+  - `limit N`, N from 1 through 1000, MUST be written
+    (`Step 'done' needs a bound`). It is the most passes the step may make,
+    so every call a run can make is known before it starts. A list longer
+    than N fails the run before the first pass, with a message saying to
+    raise the limit or pass `.slice(0, N)`.
+  - The expression after `in` MUST be a list. The item's name MUST NOT be a
+    name already in scope.
+  - Inside the braces, the item has its name and the step's own name holds
+    the results of the passes made before this one, a `T[]` where `T` is
+    the type of the call: the first pass sees `[]`. After the step, its
+    name holds every pass's result, in order, and the item is gone.
+  - Each pass is an ordinary step named `NAME[i]`, from `NAME[0]`: it has
+    its own `step_start`, call and `step_complete` events, counts against
+    the step budget, and is resumed and replayed like any step. An
+    `otherwise` stands in for the one pass that failed. No pass is made
+    for an empty list, and the name then holds `[]`.
+  - A `for` step MUST NOT be a workflow's last step, since it gives a list,
+    and MUST NOT be written in a `parallel` block, since its passes are made
+    in order.
+
 - A model step MAY be followed by `verify CHECK(arguments)`, written after
   the call and before any `vote` or `retry`:
   `found = use_model reader(p.text) verify proven(found, hits) retry 1`.
@@ -1489,8 +1530,9 @@ call = identifier "(" named-arguments ")"                 (* function *)
   that same binding; later steps may use earlier bindings.
 - The final step result MUST have the workflow output type.
 - Workflow calls are acyclic and statically bounded to depth 32.
-- Arbitrary branching and loops belong in pure functions, not at workflow
-  level.
+- Arbitrary branching and loops belong in pure functions. At workflow level
+  a step may choose its call with `match`, and may be made once for each
+  item of a list with a `for` step, below; nothing else loops.
 - `execute agent.tool(...)` is valid only when the tool appears in the agent's
   `can` list and its input/output types match.
 - `ask agent(...)` runs the bounded agent loop against the agent's model and

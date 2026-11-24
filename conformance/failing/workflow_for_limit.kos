@@ -1,0 +1,26 @@
+// A `for` step given more items than its limit stops the run before its
+// first pass, saying how to fix it.
+
+record Plan { steps: Text[] }
+record Done { text: Text }
+record Report { count: Number }
+
+model doer {
+  input: Done
+  output: Done
+}
+
+fn count(done: Done[]) -> Report {
+  return {count: done.length()}
+}
+
+workflow main(plan: Plan) -> Report {
+  done = for s in plan.steps limit 2 { use_model doer(text: s) }
+  out = count(done)
+}
+
+test "three items are more than a limit of two" {
+  answers doer: [{text: "a"}, {text: "b"}, {text: "c"}]
+  r = main({steps: ["a", "b", "c"]})
+  expect r.count == 3
+}
