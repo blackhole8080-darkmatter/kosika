@@ -1,0 +1,615 @@
+// Kosika Designs: the line style.
+//
+// When an agent explains something on the canvas (a workflow, how a system
+// is built, a slide in a deck), it draws in thin lines, the way the white-line
+// maths drawings are drawn: white lines on a dark ground, or black lines on
+// white paper when the light theme is on. Two more looks are kept for
+// variety: Blueprint (white on deep blue) and Chalkboard (cream on slate
+// green).
+//
+//   import "std/designs_line.kos"
+//
+//   ln_svg(figure, ln_look("white"))      a flow, a loop or a tree, drawn
+//   ln_page(figure, "")                   a page that follows the theme:
+//                                         white lines in dark, black in light
+//   ln_slide_svg(slide, ln_look("black")) one slide of a deck
+//   ln_look_in("a blueprint of the build") which look an ask names ("" none)
+//
+// The colour rule. An agent never chooses a colour; it says what things
+// mean, and this file turns meaning into colour:
+//
+//   everything             the line colour (white, black, ...)
+//   quiet words            the look's dim colour
+//   the focus              the one accent: what the picture is about, or
+//                          where the work is now. At most one node.
+//   a step that passed     a small green dot, only when there is a result
+//   a step that failed     red, and its way back is a red dashed line
+//
+// So a picture has at most one accent, and green or red only where a real
+// pass or fail exists. ln_rule says, in plain words, what breaks the rule.
+// Nothing here uses a model: the layout is arithmetic, done by Kosika.
+
+import "designs_palette.kos"
+
+export [LnLook, LnNode, LnEdge, LnFigure, LnPoint, LnSlide, ln_step, ln_part, ln_to, ln_back, ln_figure, ln_looks, ln_look, ln_look_for, ln_look_in, ln_wants, ln_readable, ln_tone, ln_rule, ln_svg, ln_page, ln_slide_svg, ln_slide_page, ln_colours, ln_esc, ln_shapes, ln_catalogue]
+
+record LnLook { name: Text bg: Text ink: Text dim: Text faint: Text accent: Text ok: Text bad: Text }
+// state: "" (nothing known yet), "ok" (passed) or "bad" (failed).
+record LnNode { id: Text label: Text note: Text parent: Text state: Text }
+// back: the way back after a failure, or a step repeated; drawn dashed.
+record LnEdge { from: Text to: Text label: Text back: Bool }
+// shape: "flow" (left to right), "loop" (a cycle) or "tree" (by parent).
+// focus: the id of the one node the picture is about, or "".
+record LnFigure { title: Text kicker: Text sub: Text shape: Text nodes: LnNode[] edges: LnEdge[] focus: Text }
+record LnPoint { head: Text body: Text }
+// series: numbers for one quiet line chart; the last point is the focus.
+record LnSlide { kicker: Text title: Text sub: Text points: LnPoint[] series: Number[] labels: Text[] }
+record LnBox { x: Number y: Number w: Number h: Number }
+
+// Short ways to say a figure, for agents and tests.
+fn ln_step(id: Text, label: Text, note: Text, state: Text) -> LnNode { return {id: id, label: label, note: note, parent: "", state: state} }
+fn ln_part(id: Text, label: Text, note: Text, parent: Text) -> LnNode { return {id: id, label: label, note: note, parent: parent, state: ""} }
+fn ln_to(from: Text, to: Text, label: Text) -> LnEdge { return {from: from, to: to, label: label, back: false} }
+fn ln_back(from: Text, to: Text, label: Text) -> LnEdge { return {from: from, to: to, label: label, back: true} }
+fn ln_figure(title: Text, shape: Text, nodes: LnNode[], edges: LnEdge[], focus: Text) -> LnFigure { return {title: title, kicker: "", sub: "", shape: shape, nodes: nodes, edges: edges, focus: focus} }
+
+// ---------------------------------------------------------------- the looks
+
+fn ln_looks() -> Text[] { return ["white", "black", "blueprint", "chalk"] }
+fn ln_shapes() -> Text[] { return ["flow", "loop", "tree"] }
+
+fn ln_look(name: Text) -> LnLook {
+  let n = name.trim().lower()
+  if n == "black" or n == "light" {
+    return {name: "black", bg: "#fbfaf7", ink: "#111216", dim: "#5f5e66", faint: "#d9d6cf", accent: "#c2410c", ok: "#15803d", bad: "#b91c1c"}
+  }
+  if n == "blueprint" {
+    return {name: "blueprint", bg: "#0b2547", ink: "#e8f1ff", dim: "#9bb3d4", faint: "#2a4a72", accent: "#ffd166", ok: "#7ee2b8", bad: "#ff8a80"}
+  }
+  if n == "chalk" or n == "chalkboard" {
+    return {name: "chalk", bg: "#18241f", ink: "#efeadb", dim: "#a3ae9f", faint: "#34433c", accent: "#f4a7b9", ok: "#a3e4a1", bad: "#ff9b85"}
+  }
+  return {name: "white", bg: "#07080c", ink: "#f1eee6", dim: "#9a98a2", faint: "#26272d", accent: "#f5b13d", ok: "#5fd39a", bad: "#ff6b6b"}
+}
+
+// The look for the app's theme: white lines in dark, black lines in light.
+fn ln_look_for(mode: Text) -> LnLook { return if mode.trim().lower() == "light" { ln_look("black") } else { ln_look("white") } }
+
+// Whether an ask asks for the line style in so many words.
+fn ln_wants(text: Text) -> Bool { return not ln_look_in(text).is_empty() }
+
+// The look an ask names: "white", "black", "blueprint", "chalk", "auto"
+// (line style, following the theme), or "" when it names none.
+fn ln_look_in(text: Text) -> Text {
+  let t = " " + text.lower() + " "
+  if t.contains("blueprint") { return "blueprint" }
+  if t.contains("chalkboard") or t.contains(" chalk ") or t.contains("blackboard") { return "chalk" }
+  if t.contains("black line") or t.contains("black-line") or t.contains("ink line") { return "black" }
+  if t.contains("white line") or t.contains("white-line") { return "white" }
+  for w in [" line style", " line-style", " line art", " line-art", " line drawing", " line diagram", " in lines ", " lines only", " minimal lines", " linework"] {
+    if t.contains(w) { return "auto" }
+  }
+  return ""
+}
+
+// What would be hard to read in a look, said plainly; nothing when all is well.
+fn ln_readable(k: LnLook) -> Text[] {
+  var out: Text[] = []
+  if contrast(k.ink, k.bg) < 7 { out = out.append(k.name + ": lines and words are below 7:1 on the ground") }
+  if contrast(k.dim, k.bg) < 4.5 { out = out.append(k.name + ": quiet words are below 4.5:1") }
+  if contrast(k.accent, k.bg) < 3 { out = out.append(k.name + ": the accent is too faint") }
+  if contrast(k.ok, k.bg) < 3 { out = out.append(k.name + ": the pass colour is too faint") }
+  if contrast(k.bad, k.bg) < 3 { out = out.append(k.name + ": the fail colour is too faint") }
+  return out
+}
+
+// The colour rule: a meaning in, a colour out.
+fn ln_tone(k: LnLook, meaning: Text) -> Text {
+  if meaning == "focus" { return k.accent }
+  if meaning == "ok" { return k.ok }
+  if meaning == "bad" { return k.bad }
+  if meaning == "quiet" { return k.dim }
+  if meaning == "hair" { return k.faint }
+  return k.ink
+}
+
+// Every colour a look may put in a picture.
+fn ln_colours(k: LnLook) -> Text[] { return [k.bg, k.ink, k.dim, k.faint, k.accent, k.ok, k.bad] }
+
+// What breaks the colour rule or the drawing, said plainly.
+fn ln_rule(f: LnFigure) -> Text[] {
+  var out: Text[] = []
+  let ids = for n in f.nodes { n.id }
+  if f.nodes.is_empty() { out = out.append("nothing to draw") }
+  if not ln_shapes().contains(f.shape) { out = out.append("unknown shape " + f.shape + ": use flow, loop or tree") }
+  if not f.focus.is_empty() and not ids.contains(f.focus) { out = out.append("the focus " + f.focus + " is not a node") }
+  for n in f.nodes {
+    if not ["", "ok", "bad"].contains(n.state) { out = out.append(n.id + ": a state is ok, bad or nothing, not " + n.state) }
+    if (for x in ids where x == n.id { x }).length() > 1 { out = out.append(n.id + " is used twice") }
+  }
+  for e in f.edges {
+    if not ids.contains(e.from) { out = out.append("a line starts at " + e.from + ", which is not a node") }
+    if not ids.contains(e.to) { out = out.append("a line ends at " + e.to + ", which is not a node") }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- small pieces
+
+fn ln_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+fn ln_n(v: Number) -> Text { return ((v * 10).round() / 10).to_text() }
+
+fn ln_sans() -> Text { return "Figtree,Inter,'Segoe UI',system-ui,sans-serif" }
+fn ln_serif() -> Text { return "'STIX Two Text',Cambria,Georgia,serif" }
+fn ln_mono() -> Text { return "'JetBrains Mono',Consolas,ui-monospace,monospace" }
+
+fn ln_text(x: Number, y: Number, size: Number, colour: Text, family: Text, anchor: Text, extra: Text, words: Text) -> Text {
+  return "<text x=\"" + ln_n(x) + "\" y=\"" + ln_n(y) + "\" font-size=\"" + ln_n(size) + "\" fill=\"" + colour + "\" font-family=\"" + family + "\" text-anchor=\"" + anchor + "\"" + extra + ">" + ln_esc(words) + "</text>"
+}
+
+fn ln_line(x1: Number, y1: Number, x2: Number, y2: Number, colour: Text, width: Number, dashed: Bool, arrow: Text) -> Text {
+  let dash = if dashed { " stroke-dasharray=\"5 5\"" } else { "" }
+  let head = if arrow.is_empty() { "" } else { " marker-end=\"url(#" + arrow + ")\"" }
+  return "<line x1=\"" + ln_n(x1) + "\" y1=\"" + ln_n(y1) + "\" x2=\"" + ln_n(x2) + "\" y2=\"" + ln_n(y2) + "\" stroke=\"" + colour + "\" stroke-width=\"" + ln_n(width) + "\" stroke-linecap=\"round\"" + dash + head + "/>"
+}
+
+fn ln_path(d: Text, colour: Text, width: Number, dashed: Bool, arrow: Text) -> Text {
+  let dash = if dashed { " stroke-dasharray=\"5 5\"" } else { "" }
+  let head = if arrow.is_empty() { "" } else { " marker-end=\"url(#" + arrow + ")\"" }
+  return "<path d=\"" + d + "\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"" + ln_n(width) + "\" stroke-linejoin=\"round\"" + dash + head + "/>"
+}
+
+// Arrow heads, one per meaning, named after the look so that many pictures
+// can share one page without borrowing each other's colours.
+fn ln_marker(id: Text, colour: Text) -> Text {
+  return "<marker id=\"" + id + "\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto-start-reverse\"><path d=\"M0,1 L9,5 L0,9\" fill=\"none\" stroke=\"" + colour + "\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></marker>"
+}
+
+fn ln_arrow(k: LnLook, meaning: Text) -> Text { return "ln-" + k.name + "-" + meaning }
+
+fn ln_defs(k: LnLook) -> Text {
+  return "<defs>" + ln_marker(ln_arrow(k, "line"), k.ink) + ln_marker(ln_arrow(k, "focus"), k.accent) + ln_marker(ln_arrow(k, "bad"), k.bad) + ln_marker(ln_arrow(k, "quiet"), k.dim)
+    + "<pattern id=\"ln-" + k.name + "-grid\" width=\"40\" height=\"40\" patternUnits=\"userSpaceOnUse\"><path d=\"M40 0H0V40\" fill=\"none\" stroke=\"" + k.faint + "\" stroke-width=\".6\"/></pattern></defs>"
+}
+
+fn ln_open(k: LnLook, w: Number, h: Number, title: Text) -> Text {
+  return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " + ln_n(w) + " " + ln_n(h) + "\" width=\"" + ln_n(w) + "\" height=\"" + ln_n(h) + "\" role=\"img\" aria-label=\"" + ln_esc(title) + "\" data-look=\"" + k.name + "\">" + ln_defs(k)
+    + "<rect width=\"" + ln_n(w) + "\" height=\"" + ln_n(h) + "\" fill=\"" + k.bg + "\"/><rect width=\"" + ln_n(w) + "\" height=\"" + ln_n(h) + "\" fill=\"url(#ln-" + k.name + "-grid)\" opacity=\".55\"/>"
+}
+
+// The heading every figure carries: a small kicker in the accent, a serif
+// title, a hairline, and one quiet line under it.
+fn ln_head(k: LnLook, kicker: Text, title: Text, sub: Text) -> Text {
+  let kick = if kicker.is_empty() { "" } else { ln_text(56, 64, 12, k.accent, ln_mono(), "start", " font-weight=\"600\" letter-spacing=\"2.2\"", kicker.upper()) }
+  let under = if sub.is_empty() { "" } else { ln_text(56, 160, 18, k.dim, ln_serif(), "start", " font-style=\"italic\"", sub) }
+  return kick + ln_text(56, 108, 36, k.ink, ln_serif(), "start", "", title) + ln_line(56, 130, 520, 130, k.faint, 1, false, "") + under
+}
+
+// ---------------------------------------------------------------- nodes
+
+fn ln_node_w(n: LnNode) -> Number {
+  let longest = n.label.length().max((n.note.length() * 0.78).round())
+  return (longest * 10 + 48).max(132).min(240)
+}
+
+fn ln_node_h(n: LnNode) -> Number { return if n.note.is_empty() { 52 } else { 66 } }
+
+fn ln_meaning(f: LnFigure, n: LnNode) -> Text {
+  if n.state == "bad" { return "bad" }
+  return if n.id == f.focus { "focus" } else { "line" }
+}
+
+fn ln_node(k: LnLook, f: LnFigure, n: LnNode, b: LnBox) -> Text {
+  let m = ln_meaning(f, n)
+  let c = ln_tone(k, m)
+  let wide = if m == "line" { 1.3 } else { 2 }
+  let x = b.x - b.w / 2
+  let y = b.y - b.h / 2
+  var s = "<g data-node=\"" + ln_esc(n.id) + "\" data-meaning=\"" + m + "\"><rect x=\"" + ln_n(x) + "\" y=\"" + ln_n(y) + "\" width=\"" + ln_n(b.w) + "\" height=\"" + ln_n(b.h) + "\" rx=\"10\" fill=\"" + k.bg + "\" stroke=\"" + c + "\" stroke-width=\"" + ln_n(wide) + "\"/>"
+  if n.note.is_empty() {
+    s = s + ln_text(b.x, b.y + 6, 17, c, ln_sans(), "middle", " font-weight=\"500\"", n.label)
+  } else {
+    s = s + ln_text(b.x, b.y - 3, 17, c, ln_sans(), "middle", " font-weight=\"500\"", n.label) + ln_text(b.x, b.y + 19, 12.5, k.dim, ln_sans(), "middle", "", n.note)
+  }
+  if n.state == "ok" { s = s + "<circle cx=\"" + ln_n(x + b.w - 12) + "\" cy=\"" + ln_n(y + 12) + "\" r=\"4.5\" fill=\"" + k.ok + "\"/>" }
+  if n.state == "bad" { s = s + ln_line(x + b.w - 17, y + 8, x + b.w - 8, y + 17, k.bad, 1.6, false, "") + ln_line(x + b.w - 8, y + 8, x + b.w - 17, y + 17, k.bad, 1.6, false, "") }
+  return s + "</g>"
+}
+
+// Where a straight line from a box's centre towards (tx, ty) leaves the box.
+fn ln_exit(b: LnBox, tx: Number, ty: Number, gap: Number) -> Number[] {
+  let dx = tx - b.x
+  let dy = ty - b.y
+  let ax = dx.abs().max(0.001)
+  let ay = dy.abs().max(0.001)
+  let t = ((b.w / 2 + gap) / ax).min((b.h / 2 + gap) / ay)
+  return [b.x + dx * t, b.y + dy * t]
+}
+
+// The meaning of a line: the way into the focus from a step that passed is
+// the focus too; the way back from a failed step is red; any other way back,
+// and the way on from a failed step (not taken), is quiet.
+fn ln_edge_meaning(f: LnFigure, e: LnEdge, from: LnNode) -> Text {
+  if e.back { return if from.state == "bad" { "bad" } else { "quiet" } }
+  if from.state == "bad" { return "quiet" }
+  return if e.to == f.focus and not f.focus.is_empty() { "focus" } else { "line" }
+}
+
+fn ln_top(xs: Number[]) -> Number {
+  var m = 0
+  for x in xs { m = m.max(x) }
+  return m
+}
+
+fn ln_sum(xs: Number[]) -> Number {
+  var t = 0
+  for x in xs { t = t + x }
+  return t
+}
+
+fn ln_has_state(f: LnFigure, state: Text) -> Bool { return not (for n in f.nodes where n.state == state { n }).is_empty() }
+
+fn ln_find(f: LnFigure, id: Text) -> Number { return (for n in f.nodes { n.id }).index_of(id).or(-1) }
+
+fn ln_edge_label(k: LnLook, x: Number, y: Number, colour: Text, label: Text) -> Text {
+  return if label.is_empty() { "" } else { ln_text(x, y, 12.5, colour, ln_sans(), "middle", "", label) }
+}
+
+// A straight line between two boxes, or, for a way back, a dashed elbow
+// that runs under them both.
+fn ln_edge(k: LnLook, f: LnFigure, e: LnEdge, boxes: LnBox[], low: Number) -> Text {
+  let i = ln_find(f, e.from)
+  let j = ln_find(f, e.to)
+  if i < 0 or j < 0 { return "" }
+  let a = boxes[i]
+  let b = boxes[j]
+  let m = ln_edge_meaning(f, e, f.nodes[i])
+  let c = ln_tone(k, m)
+  let wide = if m == "focus" { 2 } else { 1.2 }
+  if e.back and f.shape == "flow" {
+    let yb = low + 34
+    let d = "M" + ln_n(a.x) + "," + ln_n(a.y + a.h / 2) + " V" + ln_n(yb) + " H" + ln_n(b.x) + " V" + ln_n(b.y + b.h / 2 + 4)
+    return ln_path(d, c, wide, true, ln_arrow(k, m)) + ln_edge_label(k, (a.x + b.x) / 2, yb + 20, c, e.label)
+  }
+  let p = ln_exit(a, b.x, b.y, 4)
+  let q = ln_exit(b, a.x, a.y, 7)
+  let mx = (p[0] + q[0]) / 2
+  let my = (p[1] + q[1]) / 2
+  return ln_line(p[0], p[1], q[0], q[1], c, wide, e.back, ln_arrow(k, m)) + ln_edge_label(k, mx, my - 9, if m == "line" { k.dim } else { c }, e.label)
+}
+
+// The lines a figure draws: its own, or, when it gives none, each node to
+// the next (and, in a loop, the last back to the first).
+fn ln_edges_of(f: LnFigure) -> LnEdge[] {
+  if not f.edges.is_empty() { return f.edges }
+  if f.shape == "tree" { return [] }
+  let n = f.nodes.length()
+  let last = if f.shape == "loop" { n } else { n - 1 }
+  let made: LnEdge[] = for k in 0 until last.max(0) { {from: f.nodes[k].id, to: f.nodes[(k + 1) % n].id, label: "", back: false} }
+  return made
+}
+
+// ---------------------------------------------------------------- layouts
+
+record LnLaid { boxes: LnBox[] w: Number h: Number low: Number }
+
+// Left to right, up to five in a row, rows under each other.
+fn ln_lay_flow(f: LnFigure) -> LnLaid {
+  let per = 5
+  let ws = for n in f.nodes { ln_node_w(n) }
+  let step = ln_top(ws) + 64
+  let count = f.nodes.length()
+  let cols = count.min(per).max(1)
+  let w = (cols * step + 112).max(760)
+  let left = (w - cols * step) / 2 + step / 2
+  let rows = ((count + per - 1) / per).floor()
+  let boxes: LnBox[] = for k in 0 until count { {x: left + (k % per) * step, y: 250 + (k / per).floor() * 150, w: ws[k], h: ln_node_h(f.nodes[k])} }
+  let low = 250 + (rows - 1) * 150 + 40
+  return {boxes: boxes, w: w, h: low + 110, low: low}
+}
+
+// Around an oval, the first node at the top, going clockwise. Kosika's
+// cos and sin take degrees.
+fn ln_lay_loop(f: LnFigure) -> LnLaid {
+  let count = f.nodes.length().max(1)
+  let rx = (150 + count * 34).min(430)
+  let ry = (110 + count * 18).min(250)
+  let w = rx * 2 + 400
+  let cx = w / 2
+  let cy = 200 + ry + 20
+  let boxes: LnBox[] = for k in 0 until f.nodes.length() { {x: cx + rx * (k * 360 / count - 90).cos(), y: cy + ry * (k * 360 / count - 90).sin(), w: ln_node_w(f.nodes[k]), h: ln_node_h(f.nodes[k])} }
+  return {boxes: boxes, w: w, h: cy + ry + 90, low: cy + ry}
+}
+
+// By parent: each node's depth, then each node's share of the width, from
+// how many leaves hang under it.
+fn ln_depths(f: LnFigure) -> Number[] {
+  let ids = for n in f.nodes { n.id }
+  var depth = for n in f.nodes { if ids.contains(n.parent) { -1 } else { 0 } }
+  var turn = 0
+  while depth.contains(-1) and turn < f.nodes.length() {
+    depth = for k in 0 until f.nodes.length() { if depth[k] >= 0 { depth[k] } else { ln_depth_from(depth, ids.index_of(f.nodes[k].parent).or(-1)) } }
+    turn = turn + 1
+  }
+  return for d in depth { d.max(0) }
+}
+
+fn ln_depth_from(depth: Number[], p: Number) -> Number { return if p >= 0 and depth[p] >= 0 { depth[p] + 1 } else { -1 } }
+
+fn ln_lay_tree(f: LnFigure) -> LnLaid {
+  let ids = for n in f.nodes { n.id }
+  let depth = ln_depths(f)
+  let deepest = ln_top(depth)
+  let count = f.nodes.length()
+  // leaves under each node, counted from the deepest level up
+  var leaves = for k in 0 until count { 1 }
+  var d = deepest
+  while d > 0 {
+    let sums = for k in 0 until count { ln_sum(for j in 0 until count where depth[j] == d and f.nodes[j].parent == ids[k] { leaves[j] }) }
+    leaves = for k in 0 until count { if depth[k] == d - 1 and sums[k] > 0 { sums[k] } else { leaves[k] } }
+    d = d - 1
+  }
+  let roots = for k in 0 until count where depth[k] == 0 { k }
+  let all = ln_sum(for r in roots { leaves[r] }).max(1)
+  let slot = 210
+  let w = (all * slot + 112).max(760)
+  // each node's left edge, level by level: roots side by side, children
+  // side by side inside their parent's share
+  var lefts = for k in 0 until count { 0 }
+  var edge = 56
+  for r in roots {
+    lefts = for k in 0 until count { if k == r { edge } else { lefts[k] } }
+    edge = edge + leaves[r] * slot
+  }
+  var level = 1
+  while level <= deepest {
+    for p in 0 until count where depth[p] == level - 1 {
+      var at = lefts[p]
+      for c in 0 until count where depth[c] == level and f.nodes[c].parent == ids[p] {
+        lefts = for k in 0 until count { if k == c { at } else { lefts[k] } }
+        at = at + leaves[c] * slot
+      }
+    }
+    level = level + 1
+  }
+  let boxes: LnBox[] = for k in 0 until count { {x: lefts[k] + leaves[k] * slot / 2, y: 250 + depth[k] * 140, w: ln_node_w(f.nodes[k]).min(slot - 24), h: ln_node_h(f.nodes[k])} }
+  let low = 250 + deepest * 140 + 40
+  return {boxes: boxes, w: w, h: low + 90, low: low}
+}
+
+fn ln_lay(f: LnFigure) -> LnLaid {
+  if f.shape == "loop" { return ln_lay_loop(f) }
+  if f.shape == "tree" { return ln_lay_tree(f) }
+  return ln_lay_flow(f)
+}
+
+// A tree's joints: down from the parent, across, and down into the child.
+fn ln_tree_links(k: LnLook, f: LnFigure, boxes: LnBox[]) -> Text {
+  let ids = for n in f.nodes { n.id }
+  return (for c in 0 until f.nodes.length() where ids.contains(f.nodes[c].parent) {
+    ln_joint(k, f, boxes[ids.index_of(f.nodes[c].parent).or(0)], boxes[c], f.nodes[c])
+  }).join("")
+}
+
+fn ln_joint(k: LnLook, f: LnFigure, p: LnBox, c: LnBox, child: LnNode) -> Text {
+  let m = if child.id == f.focus { "focus" } else { if child.state == "bad" { "bad" } else { "line" } }
+  let top = p.y + p.h / 2
+  let mid = (top + c.y - c.h / 2) / 2
+  let d = "M" + ln_n(p.x) + "," + ln_n(top) + " V" + ln_n(mid) + " H" + ln_n(c.x) + " V" + ln_n(c.y - c.h / 2)
+  return ln_path(d, ln_tone(k, m), if m == "line" { 1.2 } else { 2 }, false, "")
+}
+
+// The small key in the corner: only the meanings this picture uses.
+fn ln_key(k: LnLook, f: LnFigure, x: Number, y: Number) -> Text {
+  var rows: Text[] = []
+  if not f.focus.is_empty() { rows = rows.append("focus") }
+  if ln_has_state(f, "ok") { rows = rows.append("ok") }
+  if ln_has_state(f, "bad") { rows = rows.append("bad") }
+  if rows.is_empty() { return "" }
+  var s = ln_text(x, y, 10.5, k.dim, ln_mono(), "start", " letter-spacing=\"2\"", "COLOUR = MEANING")
+  for r in 0 until rows.length() {
+    let yy = y + 26 + r * 24
+    let what = rows[r]
+    let mark = if what == "ok" { "<circle cx=\"" + ln_n(x + 14) + "\" cy=\"" + ln_n(yy - 4) + "\" r=\"4.5\" fill=\"" + k.ok + "\"/>" } else { ln_line(x, yy - 4, x + 28, yy - 4, ln_tone(k, what), 2, what == "bad", "") }
+    let words = if what == "focus" { "what this is about" } else { if what == "ok" { "passed" } else { "failed, goes back" } }
+    s = s + mark + ln_text(x + 40, yy, 13, k.ink, ln_sans(), "start", "", words)
+  }
+  return s
+}
+
+// ---------------------------------------------------------------- figures
+
+fn ln_svg(f: LnFigure, k: LnLook) -> Text {
+  let laid = ln_lay(f)
+  let edges = ln_edges_of(f)
+  let lines = if f.shape == "tree" { ln_tree_links(k, f, laid.boxes) } else { "" }
+  let drawn = (for e in edges { ln_edge(k, f, e, laid.boxes, laid.low) }).join("")
+  let nodes = (for i in 0 until f.nodes.length() { ln_node(k, f, f.nodes[i], laid.boxes[i]) }).join("")
+  let has_back = not (for e in edges where e.back { e }).is_empty()
+  let h = if has_back and f.shape == "flow" { laid.h + 50 } else { laid.h }
+  return ln_open(k, laid.w, h + 40, f.title) + ln_head(k, f.kicker, f.title, f.sub) + lines + drawn + nodes + ln_key(k, f, laid.w - 236, 60) + "</svg>"
+}
+
+fn ln_page_style() -> Text {
+  return "html,body{margin:0;background:#07080c}body{display:grid;place-items:center;min-height:100vh}.ln{width:min(100%,1400px)}.ln svg{display:block;width:100%;height:auto}.ln-black{display:none}@media (prefers-color-scheme:light){html,body{background:#fbfaf7}.ln-white{display:none}.ln-black{display:block}}:root[data-theme=dark] .ln-white{display:block}:root[data-theme=dark] .ln-black{display:none}:root[data-theme=light] .ln-white{display:none}:root[data-theme=light] .ln-black{display:block}"
+}
+
+fn ln_wrap_page(title: Text, white: Text, black: Text, named: Text, bg: Text) -> Text {
+  let body = if named.is_empty() { "<div class=\"ln ln-white\">" + white + "</div><div class=\"ln ln-black\">" + black + "</div>" } else { "<div class=\"ln\">" + named + "</div>" }
+  let style = if named.is_empty() { ln_page_style() } else { "html,body{margin:0;background:" + bg + "}body{display:grid;place-items:center;min-height:100vh}.ln{width:min(100%,1400px)}.ln svg{display:block;width:100%;height:auto}" }
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + ln_esc(title) + "</title><style>" + style + "</style></head><body>" + body + "</body></html>"
+}
+
+// A whole page. With look "" or "auto" it follows the theme: white lines
+// in dark, black lines in light. A named look draws only that look.
+fn ln_page(f: LnFigure, look: Text) -> Text {
+  let named = look.trim().lower()
+  if named.is_empty() or named == "auto" { return ln_wrap_page(f.title, ln_svg(f, ln_look("white")), ln_svg(f, ln_look("black")), "", "") }
+  let k = ln_look(named)
+  return ln_wrap_page(f.title, "", "", ln_svg(f, k), k.bg)
+}
+
+// ---------------------------------------------------------------- slides
+
+fn ln_chart(k: LnLook, s: LnSlide, x0: Number, y0: Number, w: Number, h: Number) -> Text {
+  let n = s.series.length()
+  if n < 2 { return "" }
+  let top = ln_top(s.series).max(1)
+  var out = ln_line(x0, y0 + h, x0 + w, y0 + h, k.ink, 1, false, "")
+  for g in 1 until 5 {
+    let yy = y0 + h - g * h / 4
+    out = out + ln_line(x0, yy, x0 + w, yy, k.faint, 1, false, "") + ln_text(x0 - 12, yy + 4, 11, k.dim, ln_mono(), "end", "", ln_n(top * g / 4))
+  }
+  let xs = for i in 0 until n { x0 + i * w / (n - 1) }
+  let ys = for v in s.series { y0 + h - v / top * h }
+  out = out + "<polyline points=\"" + (for i in 0 until n { ln_n(xs[i]) + "," + ln_n(ys[i]) }).join(" ") + "\" fill=\"none\" stroke=\"" + k.ink + "\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/>"
+  for i in 0 until n {
+    let last = i == n - 1
+    out = out + "<circle cx=\"" + ln_n(xs[i]) + "\" cy=\"" + ln_n(ys[i]) + "\" r=\"" + (if last { "6" } else { "4" }) + "\" fill=\"" + k.bg + "\" stroke=\"" + (if last { k.accent } else { k.ink }) + "\" stroke-width=\"" + (if last { "2" } else { "1.4" }) + "\"/>"
+    if i < s.labels.length() { out = out + ln_text(xs[i], y0 + h + 24, 11, k.dim, ln_mono(), "middle", "", s.labels[i]) }
+  }
+  return out + ln_text(xs[n - 1] - 12, ys[n - 1] - 16, 16, k.accent, ln_sans(), "end", "", ln_n(s.series[n - 1]))
+}
+
+// One slide: the claim big on the left, one quiet chart on the right, and
+// up to three short points along the bottom. Only the latest number on the
+// chart wears the accent.
+fn ln_slide_svg(s: LnSlide, k: LnLook) -> Text {
+  let words = s.title.split(" ")
+  let half = (words.length() / 2).floor().max(1)
+  let one = if s.title.length() > 22 and words.length() > 2 { words.slice(0, half).join(" ") } else { s.title }
+  let two = if s.title.length() > 22 and words.length() > 2 { words.slice(half, words.length()).join(" ") } else { "" }
+  var out = ln_open(k, 1600, 900, s.title)
+  if not s.kicker.is_empty() { out = out + ln_text(96, 130, 13, k.accent, ln_mono(), "start", " font-weight=\"600\" letter-spacing=\"2.4\"", s.kicker.upper()) }
+  out = out + ln_text(96, 210, 60, k.ink, ln_serif(), "start", "", one)
+  if not two.is_empty() { out = out + ln_text(96, 282, 60, k.ink, ln_serif(), "start", "", two) }
+  if not s.sub.is_empty() { out = out + ln_text(96, if two.is_empty() { 260 } else { 340 }, 20, k.dim, ln_sans(), "start", "", s.sub) }
+  out = out + ln_chart(k, s, 880, 190, 600, 380)
+  let shown = s.points.slice(0, s.points.length().min(3))
+  for i in 0 until shown.length() {
+    let x = 96 + i * 480
+    out = out + ln_text(x, 660, 12, k.dim, ln_mono(), "start", "", "0" + (i + 1).to_text()) + ln_line(x, 680, x + 400, 680, k.faint, 1, false, "")
+      + ln_text(x, 716, 21, k.ink, ln_sans(), "start", " font-weight=\"500\"", shown[i].head) + ln_text(x, 746, 17, k.dim, ln_sans(), "start", "", shown[i].body)
+  }
+  return out + "</svg>"
+}
+
+fn ln_slide_page(s: LnSlide, look: Text) -> Text {
+  let named = look.trim().lower()
+  if named.is_empty() or named == "auto" { return ln_wrap_page(s.title, ln_slide_svg(s, ln_look("white")), ln_slide_svg(s, ln_look("black")), "", "") }
+  let k = ln_look(named)
+  return ln_wrap_page(s.title, "", "", ln_slide_svg(s, k), k.bg)
+}
+
+// What an agent can ask this file for, one line each.
+fn ln_catalogue() -> Text[] {
+  return [
+    "flow: steps left to right (LnFigure shape \"flow\"); give edges, or each step leads to the next",
+    "loop: a cycle around an oval (shape \"loop\"); the last step leads back to the first",
+    "tree: parts by parent (shape \"tree\"); a node's parent is its parent's id",
+    "slide: a claim, a quiet chart and three points (LnSlide, ln_slide_svg)",
+    "looks: white (dark theme), black (light theme), blueprint, chalk; ln_page with \"\" follows the theme",
+    "colour: name a focus and node states (ok, bad); never a colour. Back edges are dashed"
+  ]
+}
+
+// ---------------------------------------------------------------- tests
+
+fn ln_brain() -> LnFigure {
+  let f = ln_figure("How one thought moves", "loop", [ln_step("sense", "sense", "reads the ask", "ok"), ln_step("recall", "recall", "4 memories", "ok"), ln_step("think", "think", "plans a step", "ok"), ln_step("check", "check", "verifies", ""), ln_step("act", "act", "does the work", ""), ln_step("learn", "learn", "keeps the lesson", "")], [], "check")
+  return {..f, kicker: "Kosika Brain", sub: "sense, recall, think, check, act, learn"}
+}
+
+fn ln_answer_flow() -> LnFigure {
+  return ln_figure("Ask to answer", "flow", [ln_step("ask", "ask", "", "ok"), ln_step("plan", "plan", "", "ok"), ln_step("check", "check", "", "bad"), ln_step("answer", "answer", "", "")],
+                   [ln_to("ask", "plan", ""), ln_to("plan", "check", ""), ln_to("check", "answer", ""), ln_back("check", "ask", "fails, ask again")], "check")
+}
+
+fn ln_platform() -> LnFigure {
+  return ln_figure("What the platform is made of", "tree", [ln_part("kosika", "Kosika", "the language", ""), ln_part("engine", "Engine", "", "kosika"), ln_part("std", "std", "", "kosika"), ln_part("agents", "Agents", "", "kosika"),
+                   ln_part("math", "math.kos", "", "std"), ln_part("line", "designs_line.kos", "", "std"), ln_part("go", "Go", "", "engine"), ln_part("py", "Python", "", "engine")], [], "line")
+}
+
+fn ln_t_loop() -> Text { return ln_svg(ln_brain(), ln_look("white")) }
+fn ln_t_flow() -> Text { return ln_svg(ln_answer_flow(), ln_look("black")) }
+fn ln_t_tree() -> LnLaid { return ln_lay_tree(ln_platform()) }
+fn ln_t_slide() -> LnSlide {
+  return {kicker: "Swarm scorecard", title: "The swarm passes 8 of 8 tasks.", sub: "Checked in both engines.", points: [{head: "Small models fail", body: "when they decide everything."}], series: [1, 0, 3, 4, 6, 8], labels: ["v2", "v3", "r1", "r2", "r3", "now"]}
+}
+
+test "every look is easy to read, by Kosika Designs' own contrast" {
+  expect ln_readable(ln_look("white")) == []
+  expect ln_readable(ln_look("black")) == []
+  expect ln_readable(ln_look("blueprint")) == []
+  expect ln_readable(ln_look("chalk")) == []
+}
+
+test "the theme picks the line colour" {
+  expect ln_look_for("dark").name == "white"
+  expect ln_look_for("light").name == "black"
+  expect ln_look_for("light").ink == "#111216"
+  expect ln_look("chalkboard").name == "chalk"
+}
+
+test "an ask names its look" {
+  expect ln_look_in("draw the build as a blueprint") == "blueprint"
+  expect ln_look_in("explain it on a chalkboard") == "chalk"
+  expect ln_look_in("a white line diagram of the swarm") == "white"
+  expect ln_look_in("show the pipeline in line style") == "auto"
+  expect ln_look_in("why is the sky blue") == ""
+  expect not ln_wants("make me a poster")
+}
+
+test "colour follows meaning, never taste" {
+  expect ln_tone(ln_look("white"), "focus") == "#f5b13d"
+  expect ln_tone(ln_look("white"), "anything") == "#f1eee6"
+  expect ln_edge_meaning(ln_brain(), ln_to("think", "check", ""), ln_brain().nodes[2]) == "focus"
+  expect ln_edge_meaning(ln_brain(), ln_to("act", "learn", ""), ln_brain().nodes[4]) == "line"
+  expect ln_edge_meaning(ln_answer_flow(), ln_back("check", "ask", ""), ln_answer_flow().nodes[2]) == "bad"
+}
+
+test "the rule finds what is wrong" {
+  expect ln_rule(ln_brain()) == []
+  expect ln_rule(ln_answer_flow()) == []
+  expect ln_rule({..ln_brain(), focus: "dream"}) == ["the focus dream is not a node"]
+  expect ln_rule({..ln_brain(), shape: "spiral"}).length() == 1
+  expect ln_rule({..ln_answer_flow(), edges: [ln_to("ask", "nowhere", "")]}) == ["a line ends at nowhere, which is not a node"]
+}
+
+test "a loop draws every node and only the look's colours" {
+  expect ln_t_loop().starts_with("<svg")
+  expect ln_t_loop().contains("data-node=\"learn\"")
+  expect ln_t_loop().contains("data-meaning=\"focus\"")
+  expect ln_t_loop().contains("#f5b13d")
+  expect not ln_t_loop().contains("data-meaning=\"bad\"")
+}
+
+test "a failed step is red and its way back is dashed" {
+  expect ln_t_flow().contains("data-meaning=\"bad\"")
+  expect ln_t_flow().contains("stroke-dasharray")
+  expect ln_t_flow().contains("fails, ask again")
+  expect ln_t_flow().contains("#b91c1c")
+}
+
+test "a tree puts children under their parent" {
+  expect ln_depths(ln_platform()) == [0, 1, 1, 1, 2, 2, 2, 2]
+  expect ln_t_tree().boxes[4].x < ln_t_tree().boxes[5].x
+  expect ln_t_tree().boxes[1].y < ln_t_tree().boxes[6].y
+  expect ln_svg(ln_platform(), ln_look("blueprint")).contains("designs_line.kos")
+}
+
+test "a page follows the theme, or keeps a named look" {
+  expect ln_page(ln_brain(), "").contains("prefers-color-scheme:light")
+  expect ln_page(ln_brain(), "").contains("data-look=\"white\"")
+  expect ln_page(ln_brain(), "").contains("data-look=\"black\"")
+  expect ln_page(ln_brain(), "chalk").contains("data-look=\"chalk\"")
+  expect not ln_page(ln_brain(), "chalk").contains("data-look=\"white\"")
+}
+
+test "a slide has its claim, its chart and its points" {
+  expect ln_slide_svg(ln_t_slide(), ln_look("white")).contains("polyline")
+  expect ln_slide_svg(ln_t_slide(), ln_look("white")).contains("Small models fail")
+  expect ln_slide_svg(ln_t_slide(), ln_look("white")).contains("SWARM SCORECARD")
+  expect ln_slide_page(ln_t_slide(), "").contains("data-look=\"black\"")
+}

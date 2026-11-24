@@ -417,6 +417,19 @@ drawing directly, such as `pl_taylor("sin(x)", 0, 9)`. Each returns a
 `pl_catalogue()` lists every drawing, and docs/KOSIKA_MATH_DRAWINGS.md
 explains them.
 
+## Explaining in lines
+
+To explain a workflow, how something is built, or one slide of a deck,
+import `std/designs_line.kos` and draw it in the line style: white lines on
+dark, black lines on light, or the `blueprint` and `chalk` looks. Build a
+figure with `ln_figure(title, shape, nodes, edges, focus)`, where shape is
+`flow`, `loop` or `tree`, nodes come from `ln_step` or `ln_part`, and edges
+from `ln_to` or `ln_back`. Then call `ln_page(figure, "")` for a page that
+follows the theme, or `ln_svg(figure, ln_look("white"))`. Never pick a
+colour. Name the one `focus` node, and set a node's state to `ok` or `bad`
+only when there is a real result. Check `ln_rule(figure)` is empty before
+showing it. docs/KOSIKA_LINE_STYLE.md explains the rule.
+
 ## Checklist before answering
 
 1. In one call, name every argument or none (then use parameter order).
