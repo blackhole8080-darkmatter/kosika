@@ -101,6 +101,7 @@ CODES: Mapping[str, str] = {
     "check/try": "A try and its otherwise give different types, or fail was given something that is not Text.",
     "check/method": "A record's own function has a name it cannot have.",
     "check/parallel": "A step in a parallel block cannot run apart from the others.",
+    "check/workflow-for": "A workflow `for` step is not written the way it must be.",
     "check/record-update": "A record update does not fit the record it copies.",
     "check/retry": "A step's retry is not allowed or its count is out of range.",
     "check/verify": "A step's verify is not a Text function or is on a step it cannot check.",
@@ -381,6 +382,14 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/try", re.compile(r" try gives | fail expects a Text reason")),
     ("check/method", re.compile(r"^Record '[^']+' method ")),
     ("check/parallel", re.compile(r"cannot run in parallel: ")),
+    (
+        "check/workflow-for",
+        re.compile(
+            r"a `for` step goes through a list|names its item .* already a name"
+            r"|ends with the `for` step|needs a bound: write"
+            r"|^Step '[^']+' limit must be 1 through 1000"
+        ),
+    ),
     ("check/record-update", re.compile(r" record update ")),
     ("check/retry", re.compile(r"cannot retry: ")),
     ("check/verify", re.compile(r"cannot verify: ")),

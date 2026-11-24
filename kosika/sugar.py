@@ -313,6 +313,14 @@ def lower_values(program: Program) -> Program:
             )
             prefix = f"{workflow.name}${step.name}$"
             changes: dict[str, Any] = {}
+            if step.each_item is not None:
+                # Inside a `for` step its item and its own name, the
+                # results of the passes before, may be named too.
+                over = _value_type(program, step.each_over, seen)
+                if over is not None and over.endswith("[]"):
+                    seen[step.each_item] = over[:-2]
+                if known is not None:
+                    seen[step.name] = f"{known}[]"
             if _is_value(step.call) and not step.branches:
                 # `count = before + 1`: a step that is a value. Its type is
                 # the one written, `tally: Tally = ...`, or else the type of
@@ -339,6 +347,10 @@ def lower_values(program: Program) -> Program:
                 if fallback is not step.fallback:
                     changes["fallback"] = fallback
             steps.append(replace(step, **changes) if changes else step)
+            if step.each_item is not None:
+                seen.pop(step.each_item, None)
+                if known is not None:
+                    known = f"{known}[]"
             if known is not None:
                 # From here on, later values may name this step.
                 seen[step.name] = known

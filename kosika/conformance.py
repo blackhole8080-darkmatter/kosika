@@ -3,12 +3,15 @@
     python -m kosika.conformance write         let the reference say what it prints
     python -m kosika.conformance check         is the reference still saying that?
     python -m kosika.conformance capabilities  what this engine reads
+    python -m kosika.conformance engine CMD... does another engine print it?
+                                               (runs `CMD test FILE` for each)
 
 The suite is in `conformance/`. See its README.
 """
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -66,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         for capability in sorted(CAPABILITIES):
             print(capability)
         return 0
+    if command[0] == "engine":
+        return check_engine(command[1:])
     if command[0] not in ("write", "check"):
         print(__doc__)
         return 2
@@ -83,6 +88,41 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"{len(programs()) - wrong} of {len(programs())} programs print what is expected"
         )
+    return 1 if wrong else 0
+
+
+def check_engine(engine: list[str]) -> int:
+    """Hold another engine to the suite: `ENGINE test FILE` must print the
+    expected text and end with the folder's exit code. A program needing a
+    capability the engine does not claim is skipped by name."""
+
+    if not engine:
+        print("give the engine's command, as: engine ./kosika-native")
+        return 2
+    claimed = subprocess.run(
+        [*engine, "capabilities"], capture_output=True, text=True, check=False
+    )
+    capabilities = set(claimed.stdout.split()) if claimed.returncode == 0 else set()
+    wrong = skipped = 0
+    for program in programs():
+        missing = required(program) - capabilities
+        if missing:
+            skipped += 1
+            print(f"SKIPPED {program.relative_to(ROOT)} (needs {', '.join(sorted(missing))})")
+            continue
+        ran = subprocess.run(
+            [*engine, "test", str(program)], capture_output=True, check=False
+        )
+        printed = (ran.stdout + ran.stderr).decode("utf-8").replace("\r\n", "\n")
+        expected = expected_path(program).read_text(encoding="utf-8")
+        code = EXIT_CODES[program.parent.name]
+        if printed != expected or ran.returncode != code:
+            wrong += 1
+            print(f"DIFFERS {program.relative_to(ROOT)} (exit {ran.returncode}, wanted {code})")
+            for line in printed.splitlines()[:6]:
+                print(f"    {line}")
+    total = len(programs()) - skipped
+    print(f"{total - wrong} of {total} programs print what is expected ({skipped} skipped)")
     return 1 if wrong else 0
 
 

@@ -729,6 +729,13 @@ class Step:
     # questions apart by their words alone is wrong often enough that it is
     # a decision the program has to make, not one the runtime makes for it.
     learn_near: bool = False
+    # `done = for s in plan.steps limit 4 { call do(s) }`: the step is made
+    # once for each item of `each_over`, in order, at most `each_limit`
+    # times, with the item named `each_item`. Inside, the step's own name
+    # holds the results of the passes before; after it, all of them.
+    each_item: str | None = None
+    each_over: Any = None
+    each_limit: int = 0
 
 
 @dataclass(frozen=True)
@@ -992,6 +999,9 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "plain": (False,),
     "learn_by": (None,),
     "learn_near": (False,),
+    "each_item": (None,),
+    "each_over": (None,),
+    "each_limit": (0,),
     "config": ((), []),
 }
 

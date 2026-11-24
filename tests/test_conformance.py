@@ -299,6 +299,104 @@ class NativeTests(unittest.TestCase):
                 )
                 self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
 
+    def test_a_workflow_for_step_traces_and_replays_as_the_reference(self) -> None:
+        # Each pass of a `for` step is a step of the trace, `done[0]`,
+        # `done[1]`, ..., written the same by both engines, and each engine
+        # replays the other's trace.
+        ignored = {"timestamp", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        source = """
+record Step { tool: Text what: Text }
+record Plan { steps: Step[] }
+record Work { what: Text before: Number }
+record Done { tool: Text answer: Text }
+record Report { text: Text }
+
+fn sum_of(w: Work) -> Done {
+  return {tool: "calc", answer: f"{w.what} after {w.before}"}
+}
+
+workflow do_calc(w: Work) -> Done {
+  done = sum_of(w)
+}
+
+fn report(done: Done[]) -> Report {
+  return {text: (for d in done { d.answer }).join(" | ")}
+}
+
+workflow main(plan: Plan) -> Report {
+  done = for s in plan.steps limit 3 {
+    match s.tool {
+      case "calc" { call do_calc(w: {what: s.what, before: done.length()}) }
+      case _ { {tool: s.tool, answer: "no hand for " + s.what} }
+    }
+  }
+  out = report(done)
+}
+"""
+        plan = {"plan": {"steps": [
+            {"tool": "calc", "what": "6*7"},
+            {"tool": "draw", "what": "a cat"},
+            {"tool": "calc", "what": "1+1"},
+        ]}}
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            program = folder / "loop.kos"
+            program.write_text(source, encoding="utf-8")
+            (folder / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program),
+                 "--input", str(folder / "plan.json"),
+                 "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertEqual(reference.returncode, 0, reference.stderr)
+            native = self.run_engine(
+                "run", str(program), "--input", str(folder / "plan.json"),
+                "--trace", str(folder / "native.jsonl"),
+            )
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+            self.assertIn("6*7 after 0 | no hand for a cat | 1+1 after 2",
+                          reference.stdout)
+            self.assertEqual(
+                native.stdout.decode("utf-8").splitlines()[0],
+                reference.stdout.splitlines()[0],
+            )
+            steps = [e["step"] for e in events(folder / "reference.jsonl")
+                     if e["event"] == "step_start"]
+            self.assertEqual(steps, ["done[0]", "done[1]", "done[2]", "out"])
+            self.assertEqual(
+                events(folder / "native.jsonl"), events(folder / "reference.jsonl")
+            )
+            for written, reader in (
+                ("native.jsonl", "reference"),
+                ("reference.jsonl", "native"),
+            ):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "replay", trace],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+
     def test_a_choice_model_answer_traces_and_replays_as_the_reference(self) -> None:
         # A model whose output is a choice has that choice's schema in its
         # trace, and the answer is one alternative.

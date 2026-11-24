@@ -22,10 +22,10 @@ func (c *checker) checkValueSteps() {
 			seen[param.Name] = param.Type
 		}
 		for _, step := range workflow.Steps {
-			if !isValueCall(step.Call) {
+			if !isValueCall(step.Call) || step.EachItem != "" {
 				if found := step.BindingType; found != "" {
 					seen[step.Name] = found
-				} else if found := callOutput(c.program, step.Call); found != "" {
+				} else if found := loopOutput(c.program, step); found != "" {
 					seen[step.Name] = found
 				}
 				continue
@@ -112,6 +112,8 @@ func (c *checker) checkParallel() {
 				reason := ""
 				call := member.Call
 				switch {
+				case member.EachItem != "":
+					reason = "a `for` step makes its passes one after another"
 				case len(member.Branches) > 0:
 					reason = "a match step chooses its call as the workflow runs"
 				case call.Kind == "workflow":
@@ -524,6 +526,9 @@ func (c *checker) checkWorkflows() {
 		if len(uniqueNames(stepNames)) != len(stepNames) {
 			checkFail("Workflow %s has duplicate step names", name)
 		}
+		if last := workflow.Steps[len(workflow.Steps)-1]; last.EachItem != "" {
+			checkFail("Workflow %s ends with the `for` step %s, which gives a list; add a step after it that makes the %s the workflow returns", name, pyRepr(last.Name), pyRepr(workflow.Out))
+		}
 		final := workflow.Steps[len(workflow.Steps)-1].Call
 		if out := c.finalOutput(final); out != "" && out != workflow.Out {
 			kind := "call"
@@ -548,7 +553,57 @@ func (c *checker) checkWorkflows() {
 	}
 }
 
+// loopOutput is what a step gives as its name is read after it: its call's
+// type, and a list of them for a `for` step; "" when it cannot be told.
+func loopOutput(program *Program, step *Step) string {
+	calls := []*StepCall{step.Call}
+	for _, branch := range step.Branches {
+		calls = append(calls, branch.Call)
+	}
+	for _, call := range calls {
+		if isValueCall(call) {
+			continue
+		}
+		if found := callOutput(program, call); found != "" {
+			if step.EachItem != "" {
+				return found + "[]"
+			}
+			return found
+		}
+	}
+	return ""
+}
+
+// loopEnv is what a `for` step's call sees: every name before the step,
+// the item, and the step's own name holding the results of earlier
+// passes, as _loop_bindings in kosika/checker.py.
+func (c *checker) loopEnv(step *Step, outer *Env) *Env {
+	if step.EachLimit < 1 || step.EachLimit > 1000 {
+		if step.EachLimit == 0 {
+			checkFail("Step %s needs a bound: write `%s = for %s in ... limit N { ... }`, N from 1 through 1000, the most passes it may make", pyRepr(step.Name), step.Name, step.EachItem)
+		}
+		checkFail("Step %s limit must be 1 through 1000, got %d", pyRepr(step.Name), step.EachLimit)
+	}
+	over := c.typeOf(step.EachOver, outer.child(), step.Name, "")
+	if !strings.HasSuffix(over, "[]") {
+		checkFail("Step %s loops over %s; a `for` step goes through a list, so give it one, as `for s in plan.steps limit 4`", pyRepr(step.Name), pyRepr(over))
+	}
+	if _, taken := outer.types[step.EachItem]; taken || step.EachItem == step.Binding {
+		checkFail("Step %s names its item %s, which is already a name here; choose another name for the item", pyRepr(step.Name), pyRepr(step.EachItem))
+	}
+	inner := outer.child()
+	inner.types[step.EachItem] = strings.TrimSuffix(over, "[]")
+	if found := loopOutput(c.program, step); found != "" {
+		inner.types[step.Binding] = found
+	}
+	return inner
+}
+
 func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
+	outer := env
+	if step.EachItem != "" {
+		env = c.loopEnv(step, outer)
+	}
 	if step.Learns {
 		c.checkLearn(step, env)
 	}
@@ -631,6 +686,11 @@ func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
 		params, output = c.recordFields(model.Input), model.Output
 	}
 	c.checkArguments(resolveUnnamed(call.Args, c.stepParams(call)), params, env, step.Name)
+	if step.EachItem != "" {
+		// After the loop, its name holds every pass's result.
+		output += "[]"
+		env = outer
+	}
 	if step.BindingType != "" {
 		c.validateType(step.BindingType)
 		if step.BindingType != output {
