@@ -1,0 +1,1 @@
+Check failed: Choice 'Chain' can never be built: every alternative needs a value that never ends. Add an alternative that does not hold another Chain, such as `leaf(value: Number)`

@@ -117,15 +117,24 @@ func jsonTypeMatches(value Value, expected string) bool {
 }
 
 func schemaProblem(value, schemaValue Value, path string, root Value) string {
+	return schemaProblemIn(value, schemaValue, path, root, nil)
+}
+
+// schemaProblemIn looks a `$ref` up in the nearest schema around it that
+// carries `$defs` (a type holding itself), then in the root's.
+func schemaProblemIn(value, schemaValue Value, path string, root Value, scopes []*Record) string {
 	schema, ok := schemaValue.(*Record)
 	if !ok {
 		return ""
+	}
+	if defs, ok := schema.Fields["$defs"].(*Record); ok {
+		scopes = append(append([]*Record{}, scopes...), defs)
 	}
 	if alternatives, ok := schema.Fields["anyOf"].([]Value); ok {
 		var failures []string
 		matched := false
 		for _, alternative := range alternatives {
-			problem := schemaProblem(value, alternative, path, root)
+			problem := schemaProblemIn(value, alternative, path, root, scopes)
 			if problem == "" {
 				matched = true
 				break
@@ -141,11 +150,22 @@ func schemaProblem(value, schemaValue Value, path string, root Value) string {
 		if !isText || !strings.HasPrefix(name, "#/$defs/") {
 			return fmt.Sprintf("%s: unsupported schema reference %s", path, pyReprAny(ref))
 		}
-		definitions, _ := root.(*Record).Fields["$defs"].(*Record)
-		if definitions == nil || definitions.Fields[strings.TrimPrefix(name, "#/$defs/")] == nil {
+		key := strings.TrimPrefix(name, "#/$defs/")
+		var definitions *Record
+		for i := len(scopes) - 1; i >= 0 && definitions == nil; i-- {
+			if scopes[i].Fields[key] != nil {
+				definitions = scopes[i]
+			}
+		}
+		if definitions == nil {
+			if rootRecord, ok := root.(*Record); ok {
+				definitions, _ = rootRecord.Fields["$defs"].(*Record)
+			}
+		}
+		if definitions == nil || definitions.Fields[key] == nil {
 			return fmt.Sprintf("%s: unknown schema reference %s", path, pyRepr(name))
 		}
-		return schemaProblem(value, definitions.Fields[strings.TrimPrefix(name, "#/$defs/")], path, root)
+		return schemaProblemIn(value, definitions.Fields[key], path, root, scopes)
 	}
 	if constant, has := schema.Fields["const"]; has && !valueEqual(value, constant) {
 		return fmt.Sprintf("%s: expected constant %s, got %s", path, pyReprAny(constant), pyReprAny(value))
@@ -188,7 +208,7 @@ func schemaProblem(value, schemaValue Value, path string, root Value) string {
 		if properties != nil {
 			for _, key := range properties.Keys {
 				if child, has := record.Fields[key]; has {
-					if problem := schemaProblem(child, properties.Fields[key], path+"."+key, root); problem != "" {
+					if problem := schemaProblemIn(child, properties.Fields[key], path+"."+key, root, scopes); problem != "" {
 						return problem
 					}
 				}
@@ -217,7 +237,7 @@ func schemaProblem(value, schemaValue Value, path string, root Value) string {
 					_, declared = properties.Fields[key]
 				}
 				if !declared {
-					if problem := schemaProblem(record.Fields[key], additional, path+"."+key, root); problem != "" {
+					if problem := schemaProblemIn(record.Fields[key], additional, path+"."+key, root, scopes); problem != "" {
 						return problem
 					}
 				}
@@ -227,7 +247,7 @@ func schemaProblem(value, schemaValue Value, path string, root Value) string {
 	if items, ok := value.([]Value); ok {
 		if itemSchema, ok := schema.Fields["items"].(*Record); ok {
 			for i, item := range items {
-				if problem := schemaProblem(item, itemSchema, fmt.Sprintf("%s[%d]", path, i), root); problem != "" {
+				if problem := schemaProblemIn(item, itemSchema, fmt.Sprintf("%s[%d]", path, i), root, scopes); problem != "" {
 					return problem
 				}
 			}
@@ -255,14 +275,32 @@ func acceptsNull(schema Value) bool {
 
 // fillAbsentSchema is fill_absent over a recorded schema.
 func fillAbsentSchema(value, schemaValue Value) Value {
+	return fillAbsentIn(value, schemaValue, nil)
+}
+
+// fillAbsentIn follows a tree's `$ref` into the `$defs` its outermost type
+// carries, as fill_absent in kosika/model_steps.py does.
+func fillAbsentIn(value, schemaValue Value, scopes []*Record) Value {
 	schema, ok := schemaValue.(*Record)
 	if !ok {
+		return value
+	}
+	if defs, ok := schema.Fields["$defs"].(*Record); ok {
+		scopes = append(append([]*Record{}, scopes...), defs)
+	}
+	if ref, ok := schema.Fields["$ref"].(string); ok && strings.HasPrefix(ref, "#/$defs/") {
+		name := strings.TrimPrefix(ref, "#/$defs/")
+		for i := len(scopes) - 1; i >= 0; i-- {
+			if target, has := scopes[i].Fields[name]; has {
+				return fillAbsentIn(value, target, scopes)
+			}
+		}
 		return value
 	}
 	if items, ok := value.([]Value); ok {
 		filled := make([]Value, len(items))
 		for i, item := range items {
-			filled[i] = fillAbsentSchema(item, schema.Fields["items"])
+			filled[i] = fillAbsentIn(item, schema.Fields["items"], scopes)
 		}
 		return filled
 	}
@@ -274,10 +312,8 @@ func fillAbsentSchema(value, schemaValue Value) Value {
 	if !ok {
 		options, _ := schema.Fields["anyOf"].([]Value)
 		for _, option := range options {
-			if optionRecord, ok := option.(*Record); ok {
-				if _, has := optionRecord.Fields["properties"].(*Record); has {
-					return fillAbsentSchema(value, option)
-				}
+			if isFormOf(record, option) {
+				return fillAbsentIn(value, option, scopes)
 			}
 		}
 		return value
@@ -285,12 +321,38 @@ func fillAbsentSchema(value, schemaValue Value) Value {
 	filled := copyValue(record).(*Record)
 	for _, name := range properties.Keys {
 		if current, has := filled.Fields[name]; has {
-			filled.Fields[name] = fillAbsentSchema(current, properties.Fields[name])
+			filled.Fields[name] = fillAbsentIn(current, properties.Fields[name], scopes)
 		} else if acceptsNull(properties.Fields[name]) {
 			filled.set(name, nil)
 		}
 	}
 	return filled
+}
+
+// isFormOf is _is_form_of in kosika/model_steps.py: a reference or a choice
+// to look into, or an object schema whose `$case` is the value's.
+func isFormOf(value *Record, optionValue Value) bool {
+	option, ok := optionValue.(*Record)
+	if !ok {
+		return false
+	}
+	if _, has := option.Fields["$ref"].(string); has {
+		return true
+	}
+	if _, has := option.Fields["anyOf"].([]Value); has {
+		return true
+	}
+	properties, ok := option.Fields["properties"].(*Record)
+	if !ok {
+		return false
+	}
+	if caseSchema, ok := properties.Fields["$case"].(*Record); ok {
+		if want, has := caseSchema.Fields["const"]; has {
+			got, present := value.Fields["$case"]
+			return present && valueEqual(got, want)
+		}
+	}
+	return true
 }
 
 func validateFunctionEvents(events []Value, version, depth int) {

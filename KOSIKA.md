@@ -169,7 +169,32 @@ record Result {
 
 Record fields are required, unique, and closed: runtime inputs and external
 results MUST contain every declared field and MUST NOT contain undeclared
-fields. Recursive record schemas are not supported in `0.1.0`.
+fields.
+
+A record or choice MAY hold itself, so a value can be a tree: a folder of
+folders, a plan of plans, an expression of expressions.
+
+```kosika
+record Folder { name: Text files: Text[] folders: Folder[] }
+record Task { title: Text then: Task? }
+choice Expr { num(value: Number) add(left: Expr, right: Expr) }
+```
+
+- The holding MUST be able to stop: behind `?`, `[]` or `{}`, or, in a
+  choice, beside an alternative that does not hold itself. A record or
+  choice with no finite value (`record Loop { next: Loop }`, or
+  `choice Chain { link(next: Chain) }`) is refused by `check`
+  (`check/endless-type`), with the fix: `next: Loop?` or `next: Loop[]`,
+  or a leaf alternative.
+- A function that walks a tree is recursive and needs `recurse N`.
+- In a JSON schema (what a model, a tool or a workflow input is held to),
+  the type refers back to itself where it recurs: `{"$ref":
+  "#/$defs/Folder"}`. The outermost schema of that type carries itself under
+  `"$defs": {"Folder": ...}`. A value is checked at every level of the tree,
+  and a problem names its place, `$.folders[0].folders[0]: missing required
+  property 'files'`. A model's answer that leaves out an optional field at
+  any level reads it as null, as at the top.
+- Both engines write the same schema into a trace, and replay each other's.
 
 Array and record literals require a type context from a declaration, call
 argument, return type, or containing field. The checker does not infer a record

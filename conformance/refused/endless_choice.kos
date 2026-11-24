@@ -1,0 +1,6 @@
+// Refused: a choice whose every alternative holds another of itself has no
+// value at all. A tree needs a leaf.
+
+choice Chain { link(next: Chain) }
+
+fn one(chain: Chain) -> Number { return 1 }

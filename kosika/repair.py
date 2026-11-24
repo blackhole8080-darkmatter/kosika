@@ -83,6 +83,9 @@ DIAGNOSTIC_GUIDE = """Diagnostic codes you will see:
 - check/missing-field: a record literal omits a field the record declares.
 - check/unknown-field: a record literal sets a field the record does not declare.
 - check/duplicate-field: a record declares the same field twice.
+- check/endless-type: a record or choice always needs another of itself. Let
+  the chain stop: make the field optional (`next: Node?`) or a list
+  (`kids: Node[]`), or give a choice an alternative that holds none.
 - check/empty-workflow: a workflow has no steps, or two steps share a name.
 - check/type-mismatch: a value's type does not match the required type.
 - parse/step-call, parse/step-return, parse/workflow-item: the workflow step

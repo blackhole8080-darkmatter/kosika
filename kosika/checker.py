@@ -2347,6 +2347,7 @@ def _check(program: Program) -> None:
                     "Function values are not allowed in external record schemas"
                 )
             _validate_type_name(program, field.type_name)
+    _check_buildable(program)
 
     visited_functions: dict[str, int] = {}
     active_functions: list[str] = []
@@ -2749,3 +2750,51 @@ def _check(program: Program) -> None:
                     f"Step {step.name!r} cannot shadow workflow input {step.binding_name!r}"
                 )
             bindings[step.binding_name] = call_output
+
+
+def _check_buildable(program: Program) -> None:
+    """A record or choice may hold itself (a tree), but only where the
+    holding can stop: behind `?`, `[]` or `{}`, or in another alternative.
+    `record Loop { next: Loop }` has no value at all, so it is refused."""
+    fields_of = {record.name: record.fields for record in program.records}
+    alternatives_of = {choice.name: choice.alternatives for choice in program.choices}
+    buildable: set[str] = set()
+
+    def ends(type_name: str) -> bool:
+        if type_name.endswith(("?", "[]", "{}")):
+            return True
+        if type_name in fields_of or type_name in alternatives_of:
+            return type_name in buildable
+        return True
+
+    changed = True
+    while changed:
+        changed = False
+        for name, fields in fields_of.items():
+            if name not in buildable and all(ends(f.type_name) for f in fields):
+                buildable.add(name)
+                changed = True
+        for name, alternatives in alternatives_of.items():
+            if name not in buildable and any(
+                all(ends(f.type_name) for f in alternative.fields)
+                for alternative in alternatives
+            ):
+                buildable.add(name)
+                changed = True
+    for record in program.records:
+        if record.name in buildable:
+            continue
+        field = next(f for f in record.fields if not ends(f.type_name))
+        raise CheckError(
+            f"Record {record.name!r} can never be built: its field "
+            f"{field.name!r} always needs another {field.type_name}. Let the "
+            f"chain stop: write `{field.name}: {field.type_name}?` or "
+            f"`{field.name}: {field.type_name}[]`"
+        )
+    for choice in program.choices:
+        if choice.name not in buildable:
+            raise CheckError(
+                f"Choice {choice.name!r} can never be built: every alternative "
+                f"needs a value that never ends. Add an alternative that does "
+                f"not hold another {choice.name}, such as `leaf(value: Number)`"
+            )
