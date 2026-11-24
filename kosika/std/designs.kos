@@ -420,12 +420,18 @@ fn dz_canvas_lead(ask: DzAsk) -> Text {
 fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage, flows: DzFlows) -> DzResult {
   let place = dz_place(ask)
   let on_subject = dz_on_subject(ask.text, r.structure)
-  let has_diagram = d.problems.is_empty() and not d.page.is_empty() and on_subject
+  // In the line style the structure is drawn by std/designs_line.kos, so it
+  // needs only the parts the model described, not the drawn diagram page.
+  let line = dz_line_look(ask)
+  let lined = not line.is_empty()
+  let line_figure = dz_line_figure(r)
+  let has_line = lined and on_subject and not r.structure.parts.is_empty() and ln_rule(line_figure).is_empty()
+  let has_diagram = if lined { has_line } else { d.problems.is_empty() and not d.page.is_empty() and on_subject }
   let has_moving = m.problems.is_empty() and not m.svg.is_empty()
   let lead = dz_canvas_lead(ask)
   let step = if has_diagram and has_moving { dz_step_shown(r.structure, m.art) } else { -1 }
   let moving_label = if step >= 0 { f"Moving picture &#183; <b>step {step + 1}</b> of the diagram" } else { "Moving picture" }
-  let diagram_card = if has_diagram { dz_card("The structure", dz_diagram_frame(r, d)) } else { "" }
+  let diagram_card = if not has_diagram { "" } else if lined { dz_card("The structure", dz_line_frame(line_figure, line)) } else { dz_card("The structure", dz_diagram_frame(r, d)) }
   let moving_card = if has_moving { dz_card(moving_label, m.svg + dz_beats(m.art) + "<script>" + art_script() + "</script>") } else { "" }
   let first = if lead == "illustration" { moving_card } else { diagram_card }
   let second = if lead == "illustration" { diagram_card } else { moving_card }
@@ -439,7 +445,7 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
   // Both drawn: one picture, the art and the structure together.
-  let grid = if both { dz_stage(r, d, m, dz_graph(dz_formula_for(ask.text)).svg, flows, lead) } else { "<div>" + first + second + "</div>" }
+  let grid = if both and not lined { dz_stage(r, d, m, dz_graph(dz_formula_for(ask.text)).svg, flows, lead) } else { "<div class=\"kc-grid\">" + first + second + "</div>" }
   let field = dz_science_field(ask.text)
   let equation = dz_reaction(ask.text)
   let balanced = sc_balance(equation)
@@ -447,14 +453,17 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let lab = dz_lab(ask.text)
   let formula = dz_formula_card(dz_formula_for(ask.text))
   let check = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card kc-quiz\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
-  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
+  let backdrop = if lined { "" } else { "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div>" }
+  let body = backdrop + "<div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
+  let inner = if lined { "<div class=\"kd-line\" data-look=\"" + line + "\">" + body + "</div>" } else { body }
   let own = not (formula.is_empty() and reaction.is_empty() and lab.is_empty())
   let drawn = has_diagram or has_moving or own
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style() + dz_stage_style() + dz_living_style() + dz_journey_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style() + dz_stage_style() + dz_living_style() + dz_journey_style() + (if lined { dz_line_canvas_style(line) } else { "" })) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
-  return {kind: "canvas", why: dz_canvas_why(lead, step), title: title, page: page, svg: m.svg, embed: embed, problems: wrong, fixed: m.fixed}
+  let why = if lined { dz_canvas_why(lead, step) + ", in Kosika's line style" } else { dz_canvas_why(lead, step) }
+  return {kind: "canvas", why: why, title: title, page: page, svg: m.svg, embed: embed, problems: wrong, fixed: m.fixed}
 }
 
 fn dz_3d_palette(ask: DzAsk) -> Text {
@@ -2000,12 +2009,24 @@ workflow dz_diagram_drawn(ask: DzAsk, asked: Request) -> DzResult {
 // at most, green and red only for a real pass or fail. "auto" follows the
 // theme: white lines in dark, black lines in light.
 
+// Explanations are drawn in lines by default (Aryan, 2026-11-24): white
+// lines in dark, black in light. Colour stays when the ask wants colour or
+// names one of Designs' colour palettes; art and illustration asks never
+// come here.
 fn dz_line_look(ask: DzAsk) -> Text {
   let p = ask.palette.trim().lower()
   if ln_looks().contains(p) { return p }
   if p == "line" or p == "lines" { return "auto" }
   let named = ln_look_in(p)
-  return if named.is_empty() { ln_look_in(ask.text) } else { named }
+  if not named.is_empty() { return named }
+  let said = ln_look_in(ask.text)
+  if not said.is_empty() { return said }
+  if palette_names().contains(p) or dz_wants_colour(ask.text) { return "" }
+  return "auto"
+}
+
+fn dz_wants_colour(text: Text) -> Bool {
+  return dz_has(dz_padded(text), [" colourful", " colorful", " in colour", " in color", " in colours", " in colors", " full colour", " full color", " vivid", " vibrant", " bright colours", " bright colors", " rainbow"])
 }
 
 fn dz_line_shape(s: Structure) -> Text {
@@ -2019,6 +2040,31 @@ fn dz_line_figure(r: Request) -> LnFigure {
   let edges = for l in s.links { ln_to(l.from, l.to, l.label) }
   let f = ln_figure(s.title, dz_line_shape(s), nodes, edges, "")
   return {..f, kicker: "Kosika Designs", sub: if s.summary.length() > 90 { s.summary.take(87) + "..." } else { s.summary }}
+}
+
+// The structure drawn inline, so it is as wide as the canvas. With "auto"
+// both looks are drawn and the theme shows one.
+fn dz_line_frame(f: LnFigure, look: Text) -> Text {
+  if look == "auto" { return "<div class=\"kl-fig kl-white\">" + ln_svg(f, ln_look("white")) + "</div><div class=\"kl-fig kl-black\">" + ln_svg(f, ln_look("black")) + "</div>" }
+  return "<div class=\"kl-fig\">" + ln_svg(f, ln_look(look)) + "</div>"
+}
+
+// The canvas in lines: the look's colours become the canvas's own, every
+// colour the art would use becomes the line colour, and shapes are drawn
+// as outlines. The accent is kept for the one step being shown.
+fn dz_line_vars(k: LnLook) -> Text {
+  let hues = (for h in 0 until 13 { "--h" + h.to_text() + ":" + k.ink + ";" }).join("")
+  return "--bg:" + k.bg + ";--halo:" + k.bg + ";--panel:" + k.bg + ";--ink:" + k.ink + ";--soft:" + k.dim + ";--line:" + k.ink + ";--amber:" + k.accent + ";--think:" + k.ink + ";--accent:" + k.accent + ";--ok:" + k.ok + ";--bad:" + k.bad + ";" + hues
+}
+
+fn dz_line_canvas_style(look: Text) -> Text {
+  let named = if look == "auto" { "white" } else { look }
+  let base = ".kd-line{" + dz_line_vars(ln_look(named)) + "color:var(--ink);background:var(--bg);border-radius:18px;padding:14px}"
+  let vb = dz_line_vars(ln_look("black"))
+  let dark_off = ".kd-line .kl-white{display:none}.kd-line .kl-black{display:block}"
+  let light = if look == "auto" { ".kd-line .kl-black{display:none}@media (prefers-color-scheme:light){:root:not([data-theme=dark]) .kd-line{" + vb + "}:root:not([data-theme=dark]) " + dark_off.replace("}.kd-line", "}:root:not([data-theme=dark]) .kd-line") + "}:root[data-theme=light] .kd-line{" + vb + "}:root[data-theme=light] " + dark_off.replace("}.kd-line", "}:root[data-theme=light] .kd-line") } else { "" }
+  let outline = ".kd-line .kc-card{background:var(--bg);border:1px solid color-mix(in srgb,var(--ink) 18%,transparent);backdrop-filter:none}.kd-line .kc-card svg.art :is(path,circle,ellipse,rect,polygon,polyline,line){fill:none!important;stroke:var(--ink)!important;stroke-width:1.3px}.kd-line .kc-card svg.art text{fill:var(--ink)!important;stroke:none!important}.kd-line .kc-card svg.art>rect{display:none}.kd-line .kl-fig svg{display:block;width:100%;height:auto}.kd-line .kl-fig svg :is(path,circle,ellipse,rect,polygon,polyline,line){stroke-width:revert}.kd-line .kc-card svg.art .on :is(path,circle,ellipse,rect,polygon,polyline,line){stroke:var(--amber)!important}.kd-line .beat{border-color:color-mix(in srgb,var(--ink) 14%,transparent)}.kd-line .beat b{color:var(--ink);border-color:var(--ink)}.kd-line .beat.on{color:var(--ink);border-color:var(--amber)}.kd-line .beat.on b{background:var(--amber);border-color:var(--amber);color:var(--bg)}.kd-line .kc-grid{display:grid!important;grid-template-columns:1fr!important;gap:14px}.kd-line .kc-label{color:var(--amber)}.kd-line svg.art *{filter:none!important}.kd-line .kc-head h2{font-family:'STIX Two Text',Cambria,Georgia,serif;font-weight:400}"
+  return base + light + outline
 }
 
 fn dz_from_line(ask: DzAsk, r: Request) -> DzResult {
@@ -2370,6 +2416,12 @@ test "the line style is asked for by words or by palette" {
   expect dz_line_look(dz_t_line_ask("how a build runs", "dark_matter")) == ""
 }
 
+test "explanations are drawn in lines unless colour is asked for" {
+  expect dz_line_look(dz_t_line_ask("how does the heart pump blood", "")) == "auto"
+  expect dz_line_look(dz_t_line_ask("how does the heart pump blood, colourful please", "")) == ""
+  expect dz_line_look(dz_t_line_ask("a vivid picture of the water cycle", "")) == ""
+}
+
 test "a described structure is drawn in lines, in the shape it has" {
   expect dz_line_shape(dz_t_line_request("flow", "").structure) == "flow"
   expect dz_line_shape(dz_t_line_request("cycle", "").structure) == "loop"
@@ -2378,4 +2430,29 @@ test "a described structure is drawn in lines, in the shape it has" {
   expect dz_from_line(dz_t_line_ask("how a build runs", "chalk"), dz_t_line_request("flow", "")).svg.contains("data-look=\"chalk\"")
   expect dz_from_line(dz_t_line_ask("how a build runs", "line"), dz_t_line_request("flow", "")).page.contains("data-look=\"black\"")
   expect dz_from_line(dz_t_line_ask("how a build runs", "line"), dz_t_line_request("flow", "")).embed.contains("kd-line")
+}
+
+fn dz_t_heart_art() -> ArtPage {
+  let a: Art = {title: "The heart", summary: "A pump in four rooms.", palette: "dark_matter", backdrop: "plain",
+    figures: [{id: "heart", kind: "heart", x: 50, y: 50, w: 30, h: 0, count: 0, hue: 1, label: "heart", points: []}, {id: "cell", kind: "cell", x: 82, y: 40, w: 14, h: 0, count: 0, hue: 3, label: "blood cell", points: []}],
+    motions: [], beats: [{text: "The heart squeezes.", shows: ["heart"]}, {text: "Blood cells travel on.", shows: ["cell"]}]}
+  return {page: "", svg: art_svg(a), problems: [], fixed: [], art: a}
+}
+
+fn dz_t_no_gen() -> GenArt { return {recipe: {piece: "", palette: "", mood: "", seed: 0, density: 0, title: ""}, svg: "<svg></svg>", page: "", problems: [], takes: []} }
+
+fn dz_t_canvas(palette: Text) -> DzResult {
+  let r = dz_t_line_request("flow", "")
+  let ask = dz_t_line_ask("how does a build run", palette)
+  return dz_from_canvas(ask, "dark_matter", r, {page: "", problems: ["not drawn"]}, dz_t_heart_art(), dz_t_no_gen(), dz_no_quiz(), dz_no_flows())
+}
+
+test "the canvas draws its explanation in lines by default" {
+  expect dz_t_canvas("").embed.contains("kd-line")
+  expect dz_t_canvas("").embed.contains("data-look=\"auto\"")
+  expect dz_t_canvas("").embed.contains("The structure")
+  expect not dz_t_canvas("").embed.contains("class=\"kc-art\"")
+  expect dz_t_canvas("blueprint").embed.contains("data-look=\"blueprint\"")
+  expect not dz_t_canvas("ocean").embed.contains("class=\"kd-line\"")
+  expect dz_t_canvas("ocean").embed.contains("class=\"kc-art\"")
 }

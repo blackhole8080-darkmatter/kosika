@@ -56,9 +56,19 @@ exist, or the same id used twice.
 
 ## In Kosika Designs
 
-The Designs front door (`design`) draws a diagram in the line style when the
-ask says so ("in white lines", "as a blueprint", "on a chalkboard", "line
-style"), or when the palette is `white`, `black`, `blueprint`, `chalk` or
-`line`. `line` follows the theme. The structure the model described becomes
+Explanations are drawn in lines **by default**: diagrams and the canvas
+(the "how does it work" answers). White lines show in dark, black in light.
+An ask can name a look ("as a blueprint", "on a chalkboard"), or the palette
+can be `white`, `black`, `blueprint`, `chalk` or `line`. Colour stays when
+the ask wants it ("colourful", "vivid", "in colour") or names one of
+Designs' colour palettes. Art and illustration asks are never drawn in
+lines.
+
+On the canvas, in lines:
+
+- the structure is a line figure, drawn as wide as the canvas;
+- the colourful backdrop is left out;
+- the moving picture keeps its shapes and motion, drawn as outlines in the
+  line colour, with the accent only on the step being shown. The structure the model described becomes
 a line figure: parts with parents become a tree, a cycle, orbit or hub
 becomes a loop, and anything else becomes a flow.
