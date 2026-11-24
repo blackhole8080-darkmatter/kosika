@@ -67,8 +67,28 @@ Imports have these semantics:
   each direct import. There are no namespaces, aliases, wildcard exports, or
   implicit re-exports.
 - Export names MUST be unique local declarations.
-- Duplicate names within a declaration category are rejected. Imported modules
-  also MUST NOT contribute conflicting declaration names.
+- Duplicate names within a declaration category are rejected.
+- Functions and workflows belong to the file that declares them (proposal 2,
+  `docs/proposals/0002-module-scoped-names.md`). In each file a function or
+  workflow name means the file's own declaration, or else the one a direct
+  import exports. So two files may each declare a private `clip`, and a file
+  may declare its own `solve` though it imports `std/math.kos`, which
+  exports one; inside that file `solve` is its own. A file that does not
+  declare a name and imports it from two files is refused:
+  `Conflicting module declaration 'area' in lib/a and lib/b; main imports it
+  from both, so declare its own or import only one`.
+- When one function or workflow name is declared in several files, the
+  program's own file keeps the plain name and every other copy is named
+  `MODULE.NAME` once merged, MODULE being the file's path without `.kos`
+  (`std/math.solve`, `lib/plan_a.clip`). That is the name traces, errors and
+  replays show. A name declared in one file only is never changed, so a
+  program with no such clash runs and traces exactly as before.
+- Every other declaration (records, choices, enums, shapes, stores, models,
+  tools, agents, swarms, memories, boards) is shared by the whole program:
+  a run is given values of them, binds them, and reports them by name. Two
+  files MUST NOT declare one of these names, private or not:
+  `Conflicting module declaration 'Answer' in lib/answer and main; rename one:
+  a record name is shared by the whole program, ...`.
 - Import cycles are rejected.
 - The graph is limited to 64 files, nesting depth 16, and 256 KiB per file.
 - Loading declarations never grants model providers, tool executors, MCP
