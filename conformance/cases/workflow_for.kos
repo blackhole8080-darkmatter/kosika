@@ -1,0 +1,61 @@
+// A workflow step may be made once for each item of a list:
+// `done = for s in plan.steps limit 4 { ... }`. The braces hold what
+// follows `=` in a one-line step: a call, or a match of calls. Inside,
+// the item has its name and the step's own name holds the results of
+// the passes before; after it, the step's name holds them all.
+
+record Step { tool: Text what: Text }
+record Plan { goal: Text steps: Step[] }
+record Work { what: Text before: Number }
+record Done { tool: Text answer: Text }
+record Report { text: Text }
+
+model thinker {
+  input: Work
+  output: Done
+}
+
+fn sum_of(w: Work) -> Done {
+  return {tool: "calc", answer: f"{w.what} = 42 (after {w.before})"}
+}
+
+workflow do_calc(w: Work) -> Done {
+  done = sum_of(w)
+}
+
+fn report(done: Done[]) -> Report {
+  return {text: (for d in done { f"{d.tool}: {d.answer}" }).join(" | ")}
+}
+
+workflow main(plan: Plan) -> Report {
+  done = for s in plan.steps limit 3 {
+    match s.tool {
+      case "calc" { call do_calc(w: {what: s.what, before: done.length()}) }
+      case "think" { use_model thinker(what: s.what, before: done.length()) }
+      case _ { {tool: s.tool, answer: "no hand for " + s.what} }
+    }
+  }
+  out = report(done)
+}
+
+workflow each_think(plan: Plan) -> Report {
+  said = for s in plan.steps limit 2 { use_model thinker(what: s.what, before: said.length()) otherwise {tool: "think", answer: "no answer to " + s.what} }
+  out = report(said)
+}
+
+test "each step of the plan is made in turn and sees the ones before" {
+  answers thinker: [{tool: "think", answer: "because"}]
+  r = main({goal: "g", steps: [{tool: "calc", what: "6*7"}, {tool: "think", what: "why"}, {tool: "draw", what: "a cat"}]})
+  expect r.text == "calc: 6*7 = 42 (after 0) | think: because | draw: no hand for a cat"
+}
+
+test "an empty list makes no pass" {
+  r = main({goal: "g", steps: []})
+  expect r.text == ""
+}
+
+test "a fallback stands in for one pass alone" {
+  answers thinker: [{nope: 1}, {tool: "think", answer: "second"}]
+  r = each_think({goal: "g", steps: [{tool: "think", what: "one"}, {tool: "think", what: "two"}]})
+  expect r.text == "think: no answer to one | think: second"
+}

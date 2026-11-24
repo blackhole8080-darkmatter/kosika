@@ -1,0 +1,13 @@
+// Refused: a `for` step gives a list, so it cannot be a workflow's last step.
+
+record Plan { steps: Text[] }
+record Done { text: Text }
+
+model doer {
+  input: Done
+  output: Done
+}
+
+workflow main(plan: Plan) -> Done {
+  done = for s in plan.steps limit 4 { use_model doer(text: s) }
+}

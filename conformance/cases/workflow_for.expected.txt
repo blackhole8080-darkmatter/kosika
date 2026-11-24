@@ -1,0 +1,4 @@
+PASS  each step of the plan is made in turn and sees the ones before
+PASS  an empty list makes no pass
+PASS  a fallback stands in for one pass alone
+3 passed, 0 failed

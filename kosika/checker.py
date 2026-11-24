@@ -1652,6 +1652,47 @@ def _other_calls(step: Step) -> tuple[Any, ...]:
     return tuple(others)
 
 
+def _loop_bindings(
+    program: Program, step: Step, outer: _Env, **declared: Any
+) -> _Env:
+    """The names a `for` step's call sees: everything before the step, the
+    item, and the step's own name holding the results of earlier passes."""
+
+    over_type = _expression_type(step.each_over, _Env(outer), program, step_name=step.name)
+    if not over_type.endswith("[]"):
+        raise CheckError(
+            f"Step {step.name!r} loops over {over_type!r}; a `for` step goes "
+            "through a list, so give it one, as `for s in plan.steps limit 4`"
+        )
+    if step.each_limit == 0:
+        raise CheckError(
+            f"Step {step.name!r} needs a bound: write `{step.name} = for "
+            f"{step.each_item} in ... limit N {{ ... }}`, N from 1 through 1000, "
+            "the most passes it may make"
+        )
+    if not 1 <= step.each_limit <= 1000:
+        raise CheckError(
+            f"Step {step.name!r} limit must be 1 through 1000, got "
+            f"{step.each_limit}"
+        )
+    item = step.each_item or ""
+    if item in outer or item == step.binding_name:
+        raise CheckError(
+            f"Step {step.name!r} names its item {item!r}, which is already a "
+            "name here; choose another name for the item"
+        )
+    inner = _Env(outer)
+    inner[item] = over_type[:-2]
+    outputs = {
+        _call_signature(step, call, bindings=inner, **declared)[1]
+        for call in ([branch for _, branch in step.branches] or [step.call])
+    }
+    if len(outputs) == 1:
+        # Inside, the step's name holds what the passes before gave.
+        inner[step.binding_name] = f"{outputs.pop()}[]"
+    return inner
+
+
 def _call_signature(
     step: Step,
     call: Any,
@@ -1892,7 +1933,9 @@ def _check_parallel(program: Program) -> None:
             for member in members:
                 reason = ""
                 call = member.call
-                if member.branches:
+                if member.each_item is not None:
+                    reason = "a `for` step makes its passes one after another"
+                elif member.branches:
                     reason = "a match step chooses its call as the workflow runs"
                 elif isinstance(call, WorkflowCall):
                     reason = "it calls a workflow"
@@ -2543,6 +2586,13 @@ def _check(program: Program) -> None:
         step_names = [step.name for step in workflow.steps]
         if len(set(step_names)) != len(step_names):
             raise CheckError(f"Workflow {workflow.name!r} has duplicate step names")
+        if workflow.steps[-1].each_item is not None:
+            raise CheckError(
+                f"Workflow {workflow.name!r} ends with the `for` step "
+                f"{workflow.steps[-1].name!r}, which gives a list; add a step "
+                f"after it that makes the {workflow.output_type!r} the workflow "
+                "returns"
+            )
         final_call = workflow.steps[-1].call
         final_output: str | None
         if isinstance(final_call, WorkflowCall):
@@ -2579,6 +2629,19 @@ def _check(program: Program) -> None:
             bindings[parameter.name] = parameter.type_name
         call_input: str | None
         for step in workflow.steps:
+            outer = bindings
+            if step.each_item is not None:
+                bindings = _loop_bindings(
+                    program,
+                    step,
+                    outer,
+                    workflow=workflow,
+                    workflows=workflows,
+                    functions=functions,
+                    tools=tools,
+                    agents=agents,
+                    models=models,
+                )
             if step.learns:
                 _check_learn(program, step, bindings)
             if step.subject is not None:
@@ -2662,6 +2725,10 @@ def _check(program: Program) -> None:
                     step_name=step.name,
                     expected_fields=other_fields,
                 )
+            if step.each_item is not None:
+                # After the loop, its name holds every pass's result.
+                bindings = outer
+                call_output = f"{call_output}[]"
             if step.binding_type is not None:
                 _validate_type_name(program, step.binding_type)
                 if step.binding_type != call_output:

@@ -1,0 +1,19 @@
+// Refused: a `for` step's item cannot take a name already in use.
+
+record Plan { steps: Text[] }
+record Done { text: Text }
+record Report { count: Number }
+
+model doer {
+  input: Done
+  output: Done
+}
+
+fn count(done: Done[]) -> Report {
+  return {count: done.length()}
+}
+
+workflow main(plan: Plan) -> Report {
+  done = for plan in plan.steps limit 4 { use_model doer(text: plan) }
+  out = count(done)
+}
