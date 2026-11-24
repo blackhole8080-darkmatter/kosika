@@ -740,7 +740,12 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   another step in the same block, and MUST NOT be a `match` step, a
   workflow call, an `ask`, a memory or board step, or a tool whose access
   is `execute`. An implementation MAY begin the model calls and read-only
-  tool calls of the block at the same time. Everything else about each
+  tool calls of the block at the same time, and both engines begin the
+  model calls (proposal 3, `docs/proposals/0003-parallel-for-real.md`); the
+  reference also begins read-only tool calls. A call is begun early only
+  when its model is not one that answers in order, as a test's scripted
+  answers do, and its step does not learn or vote; the others ask when
+  their turn comes. Everything else about each
   step (its events, the step budget, the session, `otherwise`) happens in
   written order, and the trace MUST be the one that running the steps in
   written order produces. A workflow with no `parallel` block is unchanged
@@ -1636,7 +1641,8 @@ Also unsupported:
   form), user-defined generics, unions other than a declared `choice` or
   `T?`, and implicit numeric/text coercions other than `Text + Number`.
 - Import aliases, package registries, remote imports, and dynamic loading.
-- Language-level parallel workflow steps or executable multi-agent consensus.
+- Executable multi-agent consensus. (Parallel workflow steps are supported:
+  `parallel { }`, above.)
 - A language guarantee that any live model endpoint is available.
 - Native in-process component ABIs, remote/cloud execution, artifact signatures,
   signed traces, and authenticated approval identity.

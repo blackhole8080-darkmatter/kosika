@@ -151,8 +151,8 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 			workflow.Steps = append(workflow.Steps, p.parseShortStep())
 		case p.check("parallel") && p.peek().Value == "{":
 			// `parallel { a = ...  b = ... }`: steps that may run at once.
-			// This engine runs them in the order written, which gives the
-			// trace the reference keeps.
+			// Their model calls begin together (beginTogether); the trace
+			// is still the one written order gives, as the reference's is.
 			p.advance()
 			p.advance()
 			groups++

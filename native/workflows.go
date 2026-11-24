@@ -31,11 +31,14 @@ type run struct {
 	checker   *checker
 	tools     map[string]*scriptedTool
 	providers map[string]modelProvider
-	traced    bool      // whether the run is written down as a trace
-	hash      string    // the program's, for its trace
-	events    *[]Value  // the top workflow's trace, as far as it got
-	steps     int       // steps begun, for the trace
-	note      *stepNote // what the call now running says of itself
+	// ahead holds the model calls a `parallel` block began early, by
+	// aheadKey; see beginTogether.
+	ahead  map[string]*early
+	traced bool      // whether the run is written down as a trace
+	hash   string    // the program's, for its trace
+	events *[]Value  // the top workflow's trace, as far as it got
+	steps  int       // steps begun, for the trace
+	note   *stepNote // what the call now running says of itself
 	// The top workflow's step now running, and its call's first event
 	// once made, for the trace of a run that fails in it.
 	failingStep string
@@ -269,7 +272,12 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 	}
 	at := frame{environment, nil, 0}
 	var result Value = newRecord()
+	begun := map[int]bool{}
 	for _, step := range workflow.Steps {
+		if step.Group != 0 && !begun[step.Group] {
+			begun[step.Group] = true
+			r.beginTogether(workflow.Steps, step.Group, at)
+		}
 		r.checkpoint()
 		r.steps++
 		if depth == 0 {
@@ -858,7 +866,9 @@ func (r *run) vote(model *ModelDecl, arguments map[string]Value, input *Record, 
 // output record, to what a thinking step promises and to the step's own
 // check, and a refused one is shown back to the model with the reason, up
 // to `retries` more times. bound names the host binding that answers.
-func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value, input *Record, retries int) (Value, answerNote) {
+// askedOf is what a model step asks for: the JSON Schema of its answer and
+// the task its thinking verb adds to the instructions.
+func (r *run) askedOf(model *ModelDecl) (Value, string) {
 	task := ""
 	if instruction := thinkingInstructions[model.Verb]; instruction != "" {
 		task = " Task: " + instruction + evidenceInstructions[model.Evidence]
@@ -868,24 +878,46 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 		// The model is asked for the record plus its quotes.
 		asked = answerSchema(model.Evidence, asked, schemaFields(asked))
 	}
-	messages := []chatMessage{
+	return asked, task
+}
+
+// firstMessages are the messages a model step is first asked with.
+func firstMessages(model *ModelDecl, arguments map[string]Value, input *Record, asked Value, task string) []chatMessage {
+	if model.Plain {
+		said := pyJSON(input, true)
+		if text, ok := arguments["text"].(string); ok && len(arguments) == 1 {
+			said = text
+		}
+		return []chatMessage{
+			{Role: "system", Content: "Answer with only the text asked for, in plain text: no JSON and nothing before or after it. When the answer is a file, give the whole file, every line, in one fenced code block." + task},
+			{Role: "user", Content: said},
+		}
+	}
+	return []chatMessage{
 		{Role: "system", Content: "Return only one JSON object matching this JSON Schema. Do not invoke tools or include Markdown. Schema: " + pyJSON(asked, true) + task},
 		{Role: "user", Content: pyJSON(input, true)},
 	}
+}
+
+// firstRequest is the request a model step is first asked with.
+func (r *run) firstRequest(model *ModelDecl, arguments map[string]Value, input *Record) *modelRequest {
+	asked, task := r.askedOf(model)
+	var shape Value
+	if !model.Plain {
+		shape = asked
+	}
+	return &modelRequest{Messages: firstMessages(model, arguments, input, asked, task), Model: deployment(model), Decl: model, JSONObject: !model.Plain, Schema: shape}
+}
+
+func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value, input *Record, retries int) (Value, answerNote) {
+	asked, task := r.askedOf(model)
+	messages := firstMessages(model, arguments, input, asked, task)
 	again := " Return one corrected JSON object."
 	field := ""
 	if model.Plain {
 		// `as text`: asked for the text alone, which fills the record's
 		// one Text field.
 		field = r.checker.recordFields(model.Output)[0].Name
-		asked := pyJSON(input, true)
-		if text, ok := arguments["text"].(string); ok && len(arguments) == 1 {
-			asked = text
-		}
-		messages = []chatMessage{
-			{Role: "system", Content: "Answer with only the text asked for, in plain text: no JSON and nothing before or after it. When the answer is a file, give the whole file, every line, in one fenced code block." + task},
-			{Role: "user", Content: asked},
-		}
 		again = " Answer again, corrected."
 	}
 	var note answerNote
@@ -1052,14 +1084,115 @@ func (r *run) ask(model *ModelDecl, request *modelRequest) *modelResponse {
 	return r.providers[model.Name].complete(request)
 }
 
-// askBound is ask, put to the host binding of that name.
+// askBound is ask, put to the host binding of that name. A request a
+// `parallel` block began early is answered by what that call gave.
 func (r *run) askBound(bound string, request *modelRequest) *modelResponse {
 	r.checkpoint()
 	if r.modelCalls >= r.maxModels {
 		panic(&budgetError{Message: fmt.Sprintf("model calls budget exceeds %d", r.maxModels)})
 	}
 	r.modelCalls++
+	key := aheadKey(bound, request)
+	if early := r.ahead[key]; early != nil {
+		delete(r.ahead, key)
+		<-early.done
+		if early.failure != nil {
+			panic(early.failure)
+		}
+		return early.response
+	}
 	return r.providers[bound].complete(request)
+}
+
+// An early is a model call a `parallel` block began before its step's
+// turn: the answer, or how the call failed, once done is closed.
+type early struct {
+	done     chan struct{}
+	response *modelResponse
+	failure  any
+}
+
+// aheadKey names a request by its binding and everything it asks.
+func aheadKey(bound string, request *modelRequest) string {
+	var text strings.Builder
+	text.WriteString(bound)
+	for _, message := range request.Messages {
+		text.WriteString("\x00" + message.Role + "\x00" + message.Content)
+	}
+	fmt.Fprintf(&text, "\x00%s\x00%t", request.Model, request.JSONObject)
+	return text.String()
+}
+
+// beginTogether starts, at the same time, the first model call of each
+// step of one `parallel` block, as begin_together in kosika/runtime.py
+// does. Only the call is made early. Everything that keeps a run honest
+// (the events, the budgets, the checks, `otherwise`) still happens in the
+// written order when each step's turn comes and it takes the answer that
+// is already there or on its way, so the trace is the one running the
+// steps one after another would write. A step whose arguments cannot be
+// worked out yet, that learns, votes, or whose model answers in order (a
+// test's scripted answers) is left to ask when its turn comes.
+func (r *run) beginTogether(steps []*Step, group int, at frame) {
+	if r.session != nil {
+		return
+	}
+	for _, step := range steps {
+		if step.Group != group || step.Call.Kind != "model" || step.Learns || step.Votes > 0 || len(step.Voters) > 0 {
+			continue
+		}
+		model := r.checker.models[step.Call.Name]
+		bound := boundName(model)
+		provider := r.providers[bound]
+		if provider == nil {
+			continue
+		}
+		if _, ordered := provider.(*scriptedProvider); ordered {
+			continue
+		}
+		arguments, ok := r.argumentsAhead(step.Call, at)
+		if !ok {
+			continue
+		}
+		input := newRecord()
+		for name, value := range arguments {
+			input.set(name, value)
+		}
+		if wanted := r.checker.schemaFor(model.Input); schemaProblem(input, wanted, "$", wanted) != "" {
+			continue
+		}
+		request := r.firstRequest(model, arguments, input)
+		key := aheadKey(bound, request)
+		if r.ahead[key] != nil {
+			continue
+		}
+		call := &early{done: make(chan struct{})}
+		if r.ahead == nil {
+			r.ahead = map[string]*early{}
+		}
+		r.ahead[key] = call
+		go func() {
+			defer close(call.done)
+			defer func() { call.failure = recover() }()
+			call.response = provider.complete(request)
+		}()
+	}
+}
+
+// argumentsAhead works out a call's arguments before its step's turn,
+// apart from the trace; false when they cannot be worked out.
+func (r *run) argumentsAhead(call *StepCall, at frame) (arguments map[string]Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			arguments, ok = nil, false
+		}
+	}()
+	arguments = map[string]Value{}
+	r.machine.collect(func() {
+		for _, arg := range resolveUnnamed(call.Args, r.checker.stepParams(call)) {
+			arguments[arg.Name] = r.machine.eval(arg.Value, at)
+		}
+	})
+	return arguments, true
 }
 
 // agent asks an agent, as AgentLoop in kosika/agent.py runs one for a
