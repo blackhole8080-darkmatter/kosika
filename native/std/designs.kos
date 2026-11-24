@@ -47,6 +47,7 @@
 import "designs_palette.kos"
 import "designs_3d.kos"
 import "designs_draw.kos"
+import "designs_line.kos"
 import "designs_main.kos"
 import "designs_art.kos"
 import "designs_generative.kos"
@@ -1980,8 +1981,56 @@ workflow dz_abstract(ask: DzAsk) -> DzResult {
 workflow dz_diagram(ask: DzAsk) -> DzResult {
   said  = call describe({text: ask.text})
   asked = dz_with_palette(said, ask.palette)
+  out   = match dz_line_look(ask).is_empty() {
+    case true { call dz_diagram_drawn(ask, asked) }
+    case _ { dz_from_line(ask, asked) }
+  }
+}
+
+workflow dz_diagram_drawn(ask: DzAsk, asked: Request) -> DzResult {
   drawn = call draw(asked)
   out   = dz_from_diagram(ask, asked, drawn)
+}
+
+// ---------------------------------------------------------------- the line style
+//
+// When the ask or the palette names the line style (white lines, black
+// lines, blueprint, chalkboard, "line style"), the structure the model
+// described is drawn by std/designs_line.kos instead: thin lines, one accent
+// at most, green and red only for a real pass or fail. "auto" follows the
+// theme: white lines in dark, black lines in light.
+
+fn dz_line_look(ask: DzAsk) -> Text {
+  let p = ask.palette.trim().lower()
+  if ln_looks().contains(p) { return p }
+  if p == "line" or p == "lines" { return "auto" }
+  let named = ln_look_in(p)
+  return if named.is_empty() { ln_look_in(ask.text) } else { named }
+}
+
+fn dz_line_shape(s: Structure) -> Text {
+  if s.parts.length() > 1 and not (for p in s.parts where not p.parent.is_empty() { p }).is_empty() { return "tree" }
+  return if ["cycle", "orbit", "hub", "loop"].contains(s.shape) { "loop" } else { "flow" }
+}
+
+fn dz_line_figure(r: Request) -> LnFigure {
+  let s = r.structure
+  let nodes = for p in s.parts { ln_part(p.id, p.label, p.note, p.parent) }
+  let edges = for l in s.links { ln_to(l.from, l.to, l.label) }
+  let f = ln_figure(s.title, dz_line_shape(s), nodes, edges, "")
+  return {..f, kicker: "Kosika Designs", sub: if s.summary.length() > 90 { s.summary.take(87) + "..." } else { s.summary }}
+}
+
+fn dz_from_line(ask: DzAsk, r: Request) -> DzResult {
+  let place = dz_place(ask)
+  let f = dz_line_figure(r)
+  let look = dz_line_look(ask)
+  let page = ln_page(f, look)
+  let shown = ln_svg(f, if look == "auto" { ln_look("white") } else { ln_look(look) })
+  let problems = ln_rule(f)
+  let frame = f"<iframe class=\"kd-frame\" title=\"{art_esc(f.title)}\" srcdoc=\"{art_esc(page)}\"></iframe>"
+  let embed = if problems.is_empty() { dz_wrap("line", place, "dark_matter", "", frame, "") } else { "" }
+  return {kind: "diagram", why: dz_why(ask) + ", in Kosika's line style", title: f.title, page: page, svg: shown, embed: embed, problems: problems, fixed: []}
 }
 
 // ---------------------------------------------------------------- tests
@@ -2305,4 +2354,28 @@ test "a tree or a graph an algorithm ran on is handed to Designs as its structur
   // The last step runs the whole path at once.
   expect dz_al_scenes(path)[path.steps.length() - 1].runs.length() == 4
   expect dz_scene_json(dz_al_scenes(path)[path.steps.length() - 1]).contains("\"runs\":[\"A>C\"")
+}
+
+fn dz_t_line_request(shape: Text, parent: Text) -> Request {
+  let s: Structure = {title: "How a build runs", summary: "parse, check, run", shape: shape, figure: "", photo: "", parts: [{id: "parse", label: "parse", note: "reads the file", parent: ""}, {id: "check", label: "check", note: "", parent: parent}, {id: "run", label: "run", note: "", parent: ""}], links: [{from: "parse", to: "check", label: ""}, {from: "check", to: "run", label: "passes"}], steps: [], marks: [], looks: [], aspects: []}
+  return {ask: "how a build runs", structure: s, picture: {title: "", author: "", license: "", license_url: "", page_url: "", image: ""}, palette: "", photos: [], backdrop: ""}
+}
+
+fn dz_t_line_ask(text: Text, palette: Text) -> DzAsk { return {text: text, palette: palette, place: "chat", kind: ""} }
+
+test "the line style is asked for by words or by palette" {
+  expect dz_line_look(dz_t_line_ask("show the build pipeline in white lines", "")) == "white"
+  expect dz_line_look(dz_t_line_ask("how a build runs", "blueprint")) == "blueprint"
+  expect dz_line_look(dz_t_line_ask("how a build runs", "line")) == "auto"
+  expect dz_line_look(dz_t_line_ask("how a build runs", "dark_matter")) == ""
+}
+
+test "a described structure is drawn in lines, in the shape it has" {
+  expect dz_line_shape(dz_t_line_request("flow", "").structure) == "flow"
+  expect dz_line_shape(dz_t_line_request("cycle", "").structure) == "loop"
+  expect dz_line_shape(dz_t_line_request("flow", "parse").structure) == "tree"
+  expect ln_rule(dz_line_figure(dz_t_line_request("flow", ""))) == []
+  expect dz_from_line(dz_t_line_ask("how a build runs", "chalk"), dz_t_line_request("flow", "")).svg.contains("data-look=\"chalk\"")
+  expect dz_from_line(dz_t_line_ask("how a build runs", "line"), dz_t_line_request("flow", "")).page.contains("data-look=\"black\"")
+  expect dz_from_line(dz_t_line_ask("how a build runs", "line"), dz_t_line_request("flow", "")).embed.contains("kd-line")
 }
