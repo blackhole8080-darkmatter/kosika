@@ -1,0 +1,13 @@
+// For module_scope.kos: the same private names, meaning something else.
+
+import "plan_a.kos"
+
+export [plan_b]
+
+fn clip(t: Text) -> Text { return t.upper() }
+
+fn plan_of(a: Ask) -> Answer { return {text: "b:" + clip(a.text)} }
+
+workflow solve(a: Ask) -> Answer { answer = plan_of(a) }
+
+workflow plan_b(a: Ask) -> Answer { answer = call solve(a: a) }

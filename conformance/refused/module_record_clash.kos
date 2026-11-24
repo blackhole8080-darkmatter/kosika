@@ -1,0 +1,8 @@
+// Refused: two files may not both declare a record of one name, private or
+// not, since a run is given and reports records by name.
+
+import "lib/answer_record.kos"
+
+record Answer { text: Text }
+
+fn f(a: Answer) -> Answer { return a }

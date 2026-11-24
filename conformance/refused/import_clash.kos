@@ -1,5 +1,7 @@
-// A file may not declare a name a file it imports declares.
+// A file may not import one name from two files: which `area` it means
+// would be a guess.
 
 import "lib/clash.kos"
+import "lib/clash_too.kos"
 
-fn area(n: Number) -> Number { return n }
+fn twice(n: Number) -> Number { return area(n) }

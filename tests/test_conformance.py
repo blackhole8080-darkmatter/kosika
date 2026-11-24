@@ -238,6 +238,67 @@ class NativeTests(unittest.TestCase):
                     reference.stderr.strip().splitlines()[-1],
                 )
 
+    def test_module_scoped_names_trace_and_replay_as_the_reference(self) -> None:
+        # A private function or workflow kept under its module's name,
+        # `lib/plan_a.solve`, is named so in both engines' traces, and each
+        # engine replays the other's.
+        ignored = {"timestamp", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        program = ROOT / "conformance" / "cases" / "module_scope.kos"
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "ask.json").write_text(
+                json.dumps({"ask": {"text": "kosika"}}), encoding="utf-8"
+            )
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program),
+                 "--input", str(folder / "ask.json"),
+                 "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertEqual(reference.returncode, 0, reference.stderr)
+            native = self.run_engine(
+                "run", str(program), "--input", str(folder / "ask.json"),
+                "--trace", str(folder / "native.jsonl"),
+            )
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+            self.assertIn("[a:kos][b:KOSIKA]", reference.stdout)
+            self.assertIn(
+                "lib/plan_a.solve",
+                (folder / "reference.jsonl").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                events(folder / "native.jsonl"), events(folder / "reference.jsonl")
+            )
+            for written, reader in (
+                ("native.jsonl", "reference"),
+                ("reference.jsonl", "native"),
+            ):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "replay", trace],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+
     def test_a_workflow_for_step_traces_and_replays_as_the_reference(self) -> None:
         # Each pass of a `for` step is a step of the trace, `done[0]`,
         # `done[1]`, ..., written the same by both engines, and each engine

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass, replace
+from typing import Any
 from pathlib import Path
 
 from .ambient import lower_ambient
@@ -13,12 +14,14 @@ from .ast import (
     AgentCall,
     FunctionCall,
     FunctionCallExpr,
+    FunctionDecl,
     FunctionRefExpr,
     ModelCall,
     Program,
     ThinkCall,
     ToolCall,
     WorkflowCall,
+    WorkflowDecl,
     expression_function_calls,
     static_function_references,
 )
@@ -170,6 +173,109 @@ def _references(program: Program) -> set[str]:
     return names - {"Text", "Number", "Bool", "Null"}
 
 
+def _module_scoped_names(
+    order: list[tuple[Path, Program, str, list[Path]]],
+    owners: dict[str, list[Path]],
+    entry: Path,
+    mark_error: Any,
+) -> dict[Path, dict[str, str]]:
+    """Functions and workflows belong to the file that declares them
+    (proposal 2).
+
+    In each file a name means the file's own declaration, or else the one a
+    direct import exports. So two files may each have a private `clip`, and
+    a program may declare its own `solve` though it imports `std/math.kos`,
+    which exports one. Where one name is declared in several files, every
+    copy outside the program's own file is kept under `MODULE.NAME`, as
+    `std/math.solve`, which no name written in Kosika can be, and each
+    file's uses are pointed at the copy they mean. Records, models, tools
+    and the other declarations stay shared by the whole program."""
+
+    modules = {resolved: (module, key, imports) for resolved, module, key, imports in order}
+    renames: dict[Path, dict[str, str]] = {}
+    for name, places in owners.items():
+        if len(places) < 2:
+            continue
+        kinds = {_kind_of(modules[place][0], name) for place in places}
+        if not kinds <= {"function", "workflow"}:
+            mark_error(places[-1])
+            shown = " and ".join(
+                modules[place][1].removesuffix(".kos") for place in places
+            )
+            raise CheckError(
+                f"Conflicting module declaration {name!r} in {shown}; rename "
+                f"one: a {'/'.join(sorted(kinds))} name is shared by the whole "
+                "program, since records, models, tools and the like are what a "
+                "run is given and reports by name"
+            )
+        final = {
+            place: name if place == entry else f"{modules[place][1].removesuffix('.kos')}.{name}"
+            for place in places
+        }
+        for resolved, (module, key, imports) in modules.items():
+            if resolved in final:
+                meant = final[resolved]
+            else:
+                exporters = [
+                    found
+                    for found in imports
+                    if found in final and name in modules[found][0].exports
+                ]
+                if not exporters:
+                    continue
+                if len(exporters) > 1:
+                    mark_error(resolved)
+                    shown = " and ".join(
+                        modules[found][1].removesuffix(".kos") for found in exporters
+                    )
+                    raise CheckError(
+                        f"Conflicting module declaration {name!r} in {shown}; "
+                        f"{key.removesuffix('.kos')} imports it from both, so "
+                        "declare its own or import only one"
+                    )
+                meant = final[exporters[0]]
+            if meant != name:
+                renames.setdefault(resolved, {})[name] = meant
+    return renames
+
+
+def _kind_of(module: Program, name: str) -> str:
+    for category in CATEGORIES:
+        if any(item.name == name for item in getattr(module, category)):
+            return category.removesuffix("s")
+    return "name"
+
+
+#: Where a function or workflow is named, by the field that names it.
+_NAMING_FIELDS = frozenset({"function_name", "workflow_name"})
+
+
+def _renamed(value: Any, names: Mapping[str, str]) -> Any:
+    """`value` with the functions and workflows in `names` called by their
+    new names: their declarations, calls, references and test runs."""
+
+    if isinstance(value, (FunctionDecl, WorkflowDecl)) and value.name in names:
+        value = replace(value, name=names[value.name])
+    if isinstance(value, tuple):
+        return tuple(_renamed(item, names) for item in value)
+    if isinstance(value, list):
+        return [_renamed(item, names) for item in value]
+    if not is_dataclass(value) or isinstance(value, type):
+        return value
+    changes: dict[str, Any] = {}
+    for item in fields(value):
+        current = getattr(value, item.name)
+        if item.name in _NAMING_FIELDS and isinstance(current, str):
+            new = names.get(current, current)
+        elif item.name == "workflow" and isinstance(current, str):
+            new = names.get(current, current)  # a swarm's workflow
+        else:
+            new = _renamed(current, names)
+        if new is not current:
+            changes[item.name] = new
+    return replace(value, **changes) if changes else value
+
+
 def load_program(
     path: str | Path,
     *,
@@ -190,7 +296,9 @@ def load_program(
     loaded: dict[Path, Program] = {}
     active: set[Path] = set()
     merged = Program()
-    owners: dict[str, Path] = {}
+    owners: dict[str, list[Path]] = {}
+    # Each module once, in the order it finished loading: imports first.
+    order: list[tuple[Path, Program, str, list[Path]]] = []
     if _diagnostic_context is not None:
         _diagnostic_context.boundary = boundary
         _diagnostic_context.sources.clear()
@@ -267,6 +375,7 @@ def load_program(
         active.add(resolved)
         visible = set()
         direct_imports: list[str] = []
+        imported: list[Path] = []
         for name in module.imports:
             relative = Path(name)
             if relative.is_absolute() or relative.drive:
@@ -290,6 +399,7 @@ def load_program(
                         alternative.name for alternative in choice.alternatives
                     )
             found = dependency_path.resolve(strict=True)
+            imported.append(found)
             direct_imports.append(
                 STD_PREFIX + found.relative_to(STD_ROOT).as_posix()
                 if found.is_relative_to(STD_ROOT)
@@ -363,10 +473,7 @@ def load_program(
                 f"{hint}"
             )
         for name in local:
-            if name in owners and owners[name] != resolved:
-                mark_error(resolved)
-                raise CheckError(f"Conflicting module declaration {name!r}")
-            owners[name] = resolved
+            owners.setdefault(name, []).append(resolved)
             if _diagnostic_context is not None:
                 _diagnostic_context.declarations.setdefault(name, set()).add(resolved)
         if _diagnostic_context is not None:
@@ -380,17 +487,22 @@ def load_program(
         )
         merged.module_declarations[module_key] = tuple(sorted(declared))
         merged.module_imports[module_key] = tuple(sorted(direct_imports))
-        for category in CATEGORIES:
-            getattr(merged, category).extend(getattr(module, category))
-        merged.tests.extend(module.tests)
-        merged.memories.extend(module.memories)
-        merged.boards.extend(module.boards)
+        order.append((resolved, module, module_key, imported))
         merged.module_hashes[module_key] = hashlib.sha256(data).hexdigest()
         active.remove(resolved)
         loaded[resolved] = module
         return module
 
     load(entry)
+    renames = _module_scoped_names(order, owners, entry.resolve(), mark_error)
+    for resolved, module, _, _ in order:
+        if resolved in renames:
+            module = _renamed(module, renames[resolved])
+        for category in CATEGORIES:
+            getattr(merged, category).extend(getattr(module, category))
+        merged.tests.extend(module.tests)
+        merged.memories.extend(module.memories)
+        merged.boards.extend(module.boards)
     # Thinking steps are lowered once over the merged program, so a general
     # model declared in one module serves steps written in another and the
     # built-in records are added a single time.

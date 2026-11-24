@@ -1,0 +1,19 @@
+PASS  MathML writes fractions, roots, powers and subscripts
+PASS  plain maths is read as people type it
+PASS  same tells equal functions from different ones
+PASS  an expression evaluates exactly
+PASS  the derivative knows its rules
+PASS  the chain rule runs through a function
+PASS  LaTeX writes fractions, powers and functions
+PASS  the simplifier folds and removes identities
+PASS  tan, abs and the constants pi and e are understood
+PASS  Newton's method finds roots with the derivative worked by rule
+PASS  integrals are found by Simpson's rule and checked at two step sizes
+PASS  numbers are written exactly when they can be
+PASS  a calculation is written out with the numbers put in
+PASS  a polynomial is read and written out with like terms collected
+PASS  roots are exact where they can be
+PASS  sets of equations are solved by elimination
+PASS  plan_a's own helpers are its own
+PASS  each file's clip and solve are its own
+18 passed, 0 failed

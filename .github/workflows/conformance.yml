@@ -88,10 +88,13 @@ jobs:
       - name: The WebAssembly engine prints what the suite expects
         run: |
           # Go's WebAssembly runner refuses a long environment, so the
-          # engine is started with only PATH.
+          # engine is started with only PATH. Go keeps its runner in
+          # lib/wasm from 1.24 on, and in misc/wasm before.
+          runner="$(go env GOROOT)/lib/wasm/wasm_exec_node.js"
+          [ -f "$runner" ] || runner="$(go env GOROOT)/misc/wasm/wasm_exec_node.js"
           cat > kosika-wasm <<SCRIPT
           #!/bin/sh
-          exec env -i PATH="\$PATH" node "$(go env GOROOT)/lib/wasm/wasm_exec_node.js" "$PWD/kosika-native.wasm" "\$@"
+          exec env -i PATH="\$PATH" node "$runner" "$PWD/kosika-native.wasm" "\$@"
           SCRIPT
           chmod +x kosika-wasm
           python -m kosika.conformance engine ./kosika-wasm

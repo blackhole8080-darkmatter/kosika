@@ -1,0 +1,1 @@
+Check failed: Conflicting module declaration 'Answer' in lib/answer_record and module_record_clash; rename one: a record name is shared by the whole program, since records, models, tools and the like are what a run is given and reports by name

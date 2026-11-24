@@ -47,6 +47,14 @@
   "2fc9c4a1bb3b0e02924ef645d82ab67e674a79c8b2984b59e40547a248387887",
   "c5c849c73946abdb7fd2498528bac3e91ed5bd2b6d86450adf49b6f350ac33ec"
  ],
+ "conformance/cases/lib/plan_a.kos": [
+  "b21a8d6f01e6d9a2cfb153d3ee34fc09f7130d77c9119a0de76fb12f845ff326",
+  "5061a76b8418af9c588548ce938b60082a7b13fd657d84785c23dd0f47ee7e46"
+ ],
+ "conformance/cases/lib/plan_b.kos": [
+  "cd841cf7002b56518189933d13b1d9aa6f6ddfd949b6f7ff3ba983d5432e2c2c",
+  "8fc7d0da214de4ad30578eeeff7c334f343bc9b98879ee8baf0f516e78b320a3"
+ ],
  "conformance/cases/lib/shapes.kos": [
   "05e9f852053060f8dac0bc413d7f4b9a7051314e8c55a17658d2c78287bdcc5e",
   "bdef1b7b63001e5320ec47559c4901c2aad846aab4729d4a36ec118ae97eefb0"
@@ -70,6 +78,10 @@
  "conformance/cases/models.kos": [
   "515f58c366ae12699720180dbe42f827d9e8da84beb3a2f120288ceb4a1c61b8",
   "677867eadbdce9c956766fa35c21832872a9fbd37d7ee6e587ad3c11994b671c"
+ ],
+ "conformance/cases/module_scope.kos": [
+  "2d41f4d5c36dec45553de1cb5ccd5e3540717d4d562d65b4c85f6bf0496b2660",
+  "63d380fa7db27090f7b30201be2d6448a263fb6bc85969736c8f2768db85b379"
  ],
  "conformance/cases/modules.kos": [
   "fc1410fc5a3b02c8436ddb17d1d47561ab8b8a3070d5ac93542c86664540c1f9",
@@ -139,6 +151,10 @@
   "7e33a9b7ea98efd5a4f8a4a643a6e89377f49b5d5c8b6b0c58f1e7f09c816723",
   "bd1501787d7cc007940e5dc4b4ca04cd7698e1b39cc13bd2191642e59f2b7de3"
  ],
+ "conformance/cases/workflow_for.kos": [
+  "a7530bc0ba05e152fa877da2ae7f3f8122b54381338ed3aeae5003778b85426f",
+  "d127157e59dc1a1fb6459edb265a99d5f9fc9dd8b4a5e37a36603b36f493de56"
+ ],
  "conformance/cases/workflows.kos": [
   "ded8466c038a1f37aa7ec15195b12916218062a0d1c1bf04a9f8b3d48b0aed66",
   "32704551f624efdd185508d4822823bc67e78fe9fda4af8e418a15e240a2f9f5"
@@ -179,6 +195,10 @@
   "344d5965baae0ec3c193f5c536bde648444ebc458d2128e63009c46eb5ed60fb",
   "d13ceab4c865c6fb50265a73faefc048aece9acf79351799aaa58095914857b2"
  ],
+ "conformance/failing/workflow_for_limit.kos": [
+  "cb001232b25c3c17e9b598454f64907ef0dbd4f55956d3e03f7d73034b422fcd",
+  "1a9cc4e566dfaec328fd7cf3db5251a1448b02561d124e4fde9025e48fb34fd3"
+ ],
  "conformance/failing/workflows.kos": [
   "b89b80ce2494503718a45d1e25f09b2e98f35e11110111b80546dfdf0e5e38f3",
   "ea12bda4b13f6c59b75aaf64df54be12aefa021f4c45aee547d68a0ec856efb7"
@@ -187,9 +207,17 @@
   "fa7dd145473ead7a4c9c178330925e734a7e85f370a0b0c7da45389a0f675200",
   "0bdac77a0793e5c6f9fb4b22aaf7b55eb9545bd0f1de45de031d658711e52f13"
  ],
+ "conformance/refused/lib/answer_record.kos": [
+  "1219d0d41fa5893e82c85c71c452c50b575dc4ec817ec0461376ffdb08266e26",
+  "ad061c9c4217fb3891d0071983fe44c3083eda7057519e2edf0e7475d0b869cc"
+ ],
  "conformance/refused/lib/clash.kos": [
   "945617e25b0675c71aaab54ced135b0f9d45174186114a78a1f90ac4f492eb68",
   "ce02665b82c31563a245322bb9eba612bb6a708d1c6e06c8cf61cc086ee0b11f"
+ ],
+ "conformance/refused/lib/clash_too.kos": [
+  "2c533575804031f5a9d21af8cb1924996702b18239d5bab0a8adafec7c969835",
+  "4e015c39998483dfd3701ea6672ef298f7c9447a81e4c5e1a5b084d89ca5ca89"
  ],
  "examples/agent_factory.kos": [
   "40d7ea1cf999006c1b23eb4d1071118e95138795f40c05ad9c7a4caa884ca7df",
