@@ -269,7 +269,43 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 	}
 	at := frame{environment, nil, 0}
 	var result Value = newRecord()
-	for _, step := range workflow.Steps {
+	// The passes of `for` steps still to make: the loop each belongs to and
+	// the item it is made for.
+	type pass struct {
+		loop *Step
+		item Value
+	}
+	passes := map[*Step]pass{}
+	queue := append([]*Step{}, workflow.Steps...)
+	for len(queue) > 0 {
+		step := queue[0]
+		queue = queue[1:]
+		if step.EachItem != "" {
+			// A `for` step: one pass per item, each an ordinary step named
+			// `done[0]`, `done[1]`, ..., made in order.
+			r.stepScope = append(append([]string{}, r.prefix...), workflow.Name, step.Name)
+			if depth == 0 {
+				r.failingStep = step.Name
+			}
+			items, _ := r.machine.eval(step.EachOver, at).([]Value)
+			if len(items) > step.EachLimit {
+				runFail(fmt.Sprintf("Step %s was given %d items, more than its limit %d; raise the limit, or give it the first %d with `.slice(0, %d)`", pyRepr(step.Name), len(items), step.EachLimit, step.EachLimit, step.EachLimit))
+			}
+			environment.vars[step.Binding] = []Value{}
+			made := make([]*Step, 0, len(items))
+			for index, item := range items {
+				one := *step
+				one.Name = fmt.Sprintf("%s[%d]", step.Name, index)
+				one.EachItem, one.EachOver, one.EachLimit = "", nil, 0
+				passes[&one] = pass{step, item}
+				made = append(made, &one)
+			}
+			queue = append(made, queue...)
+			continue
+		}
+		if made, ok := passes[step]; ok {
+			environment.vars[made.loop.EachItem] = made.item
+		}
 		r.checkpoint()
 		r.steps++
 		if depth == 0 {
@@ -304,7 +340,16 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 			value, stepEvents = r.call(step.Fallback, environment, at, depth, 0)
 		}
 		result = value
-		environment.vars[step.Binding] = result
+		if made, ok := passes[step]; ok {
+			earlier, _ := environment.vars[made.loop.Binding].([]Value)
+			environment.vars[made.loop.Binding] = append(append([]Value{}, earlier...), result)
+			delete(passes, step)
+			if len(queue) == 0 || passes[queue[0]].loop != made.loop {
+				delete(environment.vars, made.loop.EachItem)
+			}
+		} else {
+			environment.vars[step.Binding] = result
+		}
 		start := event("step_start", "step", step.Name)
 		if recovered != nil {
 			start.set("recovered_from", recovered)

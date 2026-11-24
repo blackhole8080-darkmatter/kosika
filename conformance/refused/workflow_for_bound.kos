@@ -1,0 +1,19 @@
+// Refused: a workflow `for` step must say the most passes it may make.
+
+record Plan { steps: Text[] }
+record Done { text: Text }
+record Report { count: Number }
+
+model doer {
+  input: Done
+  output: Done
+}
+
+fn count(done: Done[]) -> Report {
+  return {count: done.length()}
+}
+
+workflow main(plan: Plan) -> Report {
+  done = for s in plan.steps { use_model doer(text: s) }
+  out = count(done)
+}

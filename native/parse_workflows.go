@@ -251,8 +251,82 @@ func (p *Parser) parseShortStep() *Step {
 			return step
 		}
 	}
+	if p.check("for") {
+		if step := p.parseLoopStep(name); step != nil {
+			step.BindingType = written
+			return step
+		}
+	}
 	step := &Step{Name: name, Call: p.parseStepOrValue(), Binding: name, BindingType: written, Return: name}
 	p.stepEnding(step)
+	return step
+}
+
+// parseLoopStep reads `done = for s in plan.steps limit 4 { ... }`, a step
+// made once for each item of a list. The braces hold what may follow `=`
+// in a one-line step: a call with its endings, or a match of calls. When
+// the body makes no call, as `sizes = for w in words { w.length() }`, it
+// is the ordinary `for` of a value: nil is given back and the parser is
+// where it was.
+func (p *Parser) parseLoopStep(name string) (found *Step) {
+	start := p.index
+	defer func() {
+		if caught := recover(); caught != nil {
+			if !isPlainParseError(caught) {
+				panic(caught)
+			}
+			found = nil
+		}
+		if found == nil {
+			p.index = start
+		}
+	}()
+	p.expect("for")
+	item := p.identifier()
+	p.expect("in")
+	over := p.expression()
+	limit := 0
+	if p.accept("limit") {
+		token := p.advance()
+		if token.Kind != "NUMBER" || !isDigits(token.Value) {
+			parseFail("Expected 'count' at %d:%d, got %s", token.Line, token.Column, quoted(token.Value))
+		}
+		limit, _ = strconv.Atoi(token.Value)
+	}
+	if !p.accept("{") {
+		return nil
+	}
+	var step *Step
+	if p.check("match") {
+		step = p.parseMatchStep(name)
+	}
+	if step == nil {
+		if p.check("for") {
+			return nil
+		}
+		step = &Step{Name: name, Call: p.parseStepOrValue(), Binding: name, Return: name}
+		p.stepEnding(step)
+		if step.Learns {
+			return nil
+		}
+	}
+	if !p.accept("}") {
+		return nil
+	}
+	calls := []*StepCall{step.Call}
+	for _, branch := range step.Branches {
+		calls = append(calls, branch.Call)
+	}
+	value := step.Fallback == nil
+	for _, call := range calls {
+		if !isValueCall(call) {
+			value = false
+		}
+	}
+	if value {
+		return nil
+	}
+	step.EachItem, step.EachOver, step.EachLimit = item, over, limit
 	return step
 }
 

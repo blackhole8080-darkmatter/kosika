@@ -243,6 +243,14 @@ type Step struct {
 	// Call is then the first branch's.
 	Subject  Expr
 	Branches []Branch
+	// EachItem, EachOver and EachLimit make a `for` step: `done = for s in
+	// plan.steps limit 4 { call do(s) }`. The step is made once for each
+	// item of EachOver, in order, at most EachLimit times. Inside, the
+	// step's own name holds the results of the passes before. EachItem is
+	// "" for every other step.
+	EachItem  string
+	EachOver  Expr
+	EachLimit int
 }
 
 // A Budget is one ceiling a workflow puts on its own run.

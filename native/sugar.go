@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // callOutput is the type a step's call gives, or "" when it cannot be read
@@ -197,6 +198,16 @@ func LowerValues(program *Program) *Program {
 			}
 			prefix := workflow.Name + "$" + step.Name + "$"
 			changed := *step
+			if step.EachItem != "" {
+				// Inside a `for` step its item and its own name, the
+				// results of the passes before, may be named too.
+				if over := valueType(program, step.EachOver, seen); strings.HasSuffix(over, "[]") {
+					seen[step.EachItem] = strings.TrimSuffix(over, "[]")
+				}
+				if known != "" {
+					seen[step.Name] = known + "[]"
+				}
+			}
 			if isValueCall(step.Call) && len(step.Branches) == 0 {
 				// `count = before + 1`: a step that is a value. Its type is
 				// the one written, `tally: Tally = ...`, or else the type of
@@ -226,6 +237,12 @@ func LowerValues(program *Program) *Program {
 				changed.Fallback = standIn(step.Fallback, prefix+"otherwise", known)
 			}
 			copied.Steps = append(copied.Steps, &changed)
+			if step.EachItem != "" {
+				delete(seen, step.EachItem)
+				if known != "" {
+					known += "[]"
+				}
+			}
 			if known != "" {
 				seen[step.Name] = known
 			}

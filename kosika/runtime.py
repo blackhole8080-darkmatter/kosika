@@ -2001,8 +2001,54 @@ def _run_workflow(
                     partial(executor, declared, member_arguments)
                 )
 
+    # The passes of `for` steps still to make: each pass's step name, the
+    # loop it belongs to, and the item it is made for.
+    passes: dict[str, tuple[Step, Any]] = {}
+
+    def bind(step: Step, result: Any) -> None:
+        if step.name in passes:
+            loop, _ = passes.pop(step.name)
+            environment[loop.binding_name] = [
+                *environment[loop.binding_name],
+                result,
+            ]
+            if not any(other is loop for other, _ in passes.values()):
+                environment.pop(loop.each_item or "", None)
+        else:
+            environment[step.binding_name] = result
+
     while queue:
         step = queue.pop(0)
+        if step.each_item is not None:
+            # A `for` step: one pass per item, each an ordinary step named
+            # `done[0]`, `done[1]`, ..., made in order.
+            _control.scope = (*_scope, workflow.name, step.name)
+            items = _evaluate_expression(
+                step.each_over, environment, program, functions, [], depth=-1
+            )
+            if len(items) > step.each_limit:
+                raise RuntimeError(
+                    f"Step {step.name!r} was given {len(items)} items, more than "
+                    f"its limit {step.each_limit}; raise the limit, or give it "
+                    f"the first {step.each_limit} with `.slice(0, {step.each_limit})`"
+                )
+            environment[step.binding_name] = []
+            made = []
+            for index, item in enumerate(items):
+                one = dataclass_replace(
+                    step,
+                    name=f"{step.name}[{index}]",
+                    each_item=None,
+                    each_over=None,
+                    each_limit=0,
+                )
+                passes[one.name] = (step, item)
+                made.append(one)
+            queue[0:0] = made
+            continue
+        if step.name in passes:
+            loop, item = passes[step.name]
+            environment[loop.each_item or ""] = item
         events_before = len(events)
         try:
             _control.scope = (*_scope, workflow.name, step.name)
@@ -2067,7 +2113,7 @@ def _run_workflow(
                 )
                 if cached is not None:
                     result = cached[-1]["result"]
-                    environment[step.binding_name] = result
+                    bind(step, result)
                     events.extend(cached)
                     continue
             if isinstance(step.call, ToolCall):
@@ -2752,7 +2798,7 @@ def _run_workflow(
                     )
                 )
             _control.scope = (*_scope, workflow.name, step.name)
-            environment[step.binding_name] = result
+            bind(step, result)
             events.append(
                 _event(
                     "step_complete",

@@ -1,0 +1,1 @@
+Check failed: Step 'done' loops over 'Text'; a `for` step goes through a list, so give it one, as `for s in plan.steps limit 4`
