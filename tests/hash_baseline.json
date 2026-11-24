@@ -139,6 +139,10 @@
   "7e33a9b7ea98efd5a4f8a4a643a6e89377f49b5d5c8b6b0c58f1e7f09c816723",
   "bd1501787d7cc007940e5dc4b4ca04cd7698e1b39cc13bd2191642e59f2b7de3"
  ],
+ "conformance/cases/workflow_for.kos": [
+  "a7530bc0ba05e152fa877da2ae7f3f8122b54381338ed3aeae5003778b85426f",
+  "d127157e59dc1a1fb6459edb265a99d5f9fc9dd8b4a5e37a36603b36f493de56"
+ ],
  "conformance/cases/workflows.kos": [
   "ded8466c038a1f37aa7ec15195b12916218062a0d1c1bf04a9f8b3d48b0aed66",
   "32704551f624efdd185508d4822823bc67e78fe9fda4af8e418a15e240a2f9f5"
@@ -178,6 +182,10 @@
  "conformance/failing/thinking.kos": [
   "344d5965baae0ec3c193f5c536bde648444ebc458d2128e63009c46eb5ed60fb",
   "d13ceab4c865c6fb50265a73faefc048aece9acf79351799aaa58095914857b2"
+ ],
+ "conformance/failing/workflow_for_limit.kos": [
+  "cb001232b25c3c17e9b598454f64907ef0dbd4f55956d3e03f7d73034b422fcd",
+  "1a9cc4e566dfaec328fd7cf3db5251a1448b02561d124e4fde9025e48fb34fd3"
  ],
  "conformance/failing/workflows.kos": [
   "b89b80ce2494503718a45d1e25f09b2e98f35e11110111b80546dfdf0e5e38f3",
