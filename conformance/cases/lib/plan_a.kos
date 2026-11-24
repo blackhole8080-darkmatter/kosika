@@ -1,0 +1,18 @@
+// For module_scope.kos: a module with private names another module uses too.
+
+export [Ask, Answer, plan_a]
+
+record Ask { text: Text }
+record Answer { text: Text }
+
+fn clip(t: Text) -> Text { return t.slice(0, 3) }
+
+fn plan_of(a: Ask) -> Answer { return {text: "a:" + clip(a.text)} }
+
+workflow solve(a: Ask) -> Answer { answer = plan_of(a) }
+
+workflow plan_a(a: Ask) -> Answer { answer = call solve(a: a) }
+
+test "plan_a's own helpers are its own" {
+  expect clip("abcdef") == "abc"
+}

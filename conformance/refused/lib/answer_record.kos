@@ -1,0 +1,7 @@
+// For module_record_clash.kos.
+
+export [g]
+
+record Answer { words: Number }
+
+fn g(n: Number) -> Number { return n }

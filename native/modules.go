@@ -12,6 +12,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -106,7 +108,12 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 	hashes := map[string]string{}
 	loaded := map[string]*Program{}
 	active := map[string]bool{}
-	owners := map[string]string{}
+	// Who declares each name, in the order the modules finished loading,
+	// and each module once in that order: imports first.
+	owners := map[string][]string{}
+	var named []string
+	var order []loadedModule
+	resolvedOf := map[*Program]string{}
 	defer func() {
 		if caught := recover(); caught != nil {
 			problem, ok := caught.(*moduleError)
@@ -168,6 +175,7 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 			panic(&moduleError{message: fmt.Sprintf("%s: %v", resolved, parseErr), parse: true})
 		}
 		active[resolved] = true
+		var imported []string
 		visible := map[string]bool{}
 		for _, name := range module.Imports {
 			if filepath.IsAbs(name) || filepath.VolumeName(name) != "" {
@@ -199,6 +207,7 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 				next = pyPath(at, name)
 			}
 			dependency := load(next)
+			imported = append(imported, resolvedOf[dependency])
 			for _, exported := range dependency.Exports {
 				visible[exported] = true
 			}
@@ -228,10 +237,25 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 			refuse("%s", problem)
 		}
 		for _, name := range localNames(module) {
-			if owner, taken := owners[name]; taken && owner != resolved {
-				refuse("Conflicting module declaration %s", pyRepr(name))
+			if owners[name] == nil {
+				named = append(named, name)
 			}
-			owners[name] = resolved
+			if !hasName(owners[name], resolved) {
+				owners[name] = append(owners[name], resolved)
+			}
+		}
+		order = append(order, loadedModule{resolved, module, key, imported})
+		delete(active, resolved)
+		loaded[resolved] = module
+		resolvedOf[module] = resolved
+		return module
+	}
+	load(entry)
+	renames := moduleScopedNames(order, named, owners, realPath(entry), refuse)
+	for _, item := range order {
+		module := item.module
+		if names := renames[item.resolved]; names != nil {
+			renameScoped(reflect.ValueOf(module), names)
 		}
 		merged.Records = append(merged.Records, module.Records...)
 		merged.Enums = append(merged.Enums, module.Enums...)
@@ -245,11 +269,7 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 		merged.Tests = append(merged.Tests, module.Tests...)
 		merged.Memories = append(merged.Memories, module.Memories...)
 		merged.Boards = append(merged.Boards, module.Boards...)
-		delete(active, resolved)
-		loaded[resolved] = module
-		return module
 	}
-	load(entry)
 	merged.Identity = identityOf(hashes)
 	return merged, nil
 }
@@ -257,4 +277,212 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 func fileExists(name string) bool {
 	info, err := os.Stat(name)
 	return err == nil && !info.IsDir()
+}
+
+// A loadedModule is one file of a program, by its resolved path and the
+// key its digest is recorded under.
+type loadedModule struct {
+	resolved string
+	module   *Program
+	key      string
+	imports  []string // the resolved paths it imports directly
+}
+
+// moduleScopedNames says what each file's functions and workflows are
+// called once merged (proposal 2), as _module_scoped_names in
+// kosika/modules.py: in each file a name means the file's own declaration,
+// or else the one a direct import exports. Where one name is declared in
+// several files, every copy outside the program's own file is kept under
+// `MODULE.NAME`, and each file's uses point at the copy they mean.
+func moduleScopedNames(order []loadedModule, named []string, owners map[string][]string, entry string, refuse func(string, ...any)) map[string]map[string]string {
+	modules := map[string]loadedModule{}
+	for _, item := range order {
+		modules[item.resolved] = item
+	}
+	short := func(place string) string { return strings.TrimSuffix(modules[place].key, ".kos") }
+	renames := map[string]map[string]string{}
+	for _, name := range named {
+		places := owners[name]
+		if len(places) < 2 {
+			continue
+		}
+		kinds := map[string]bool{}
+		var shown []string
+		for _, place := range places {
+			kinds[kindOf(modules[place].module, name)] = true
+			shown = append(shown, short(place))
+		}
+		if hasOther(kinds, "function", "workflow") {
+			var listed []string
+			for kind := range kinds {
+				listed = append(listed, kind)
+			}
+			sort.Strings(listed)
+			refuse("Conflicting module declaration %s in %s; rename one: a %s name is shared by the whole program, since records, models, tools and the like are what a run is given and reports by name", pyRepr(name), strings.Join(shown, " and "), strings.Join(listed, "/"))
+		}
+		final := map[string]string{}
+		for _, place := range places {
+			final[place] = name
+			if place != entry {
+				final[place] = short(place) + "." + name
+			}
+		}
+		for _, item := range order {
+			meant, declares := final[item.resolved]
+			if !declares {
+				var exporters []string
+				for _, found := range item.imports {
+					if _, has := final[found]; has && hasName(modules[found].module.Exports, name) && !hasName(exporters, found) {
+						exporters = append(exporters, found)
+					}
+				}
+				if len(exporters) == 0 {
+					continue
+				}
+				if len(exporters) > 1 {
+					var from []string
+					for _, found := range exporters {
+						from = append(from, short(found))
+					}
+					refuse("Conflicting module declaration %s in %s; %s imports it from both, so declare its own or import only one", pyRepr(name), strings.Join(from, " and "), short(item.resolved))
+				}
+				meant = final[exporters[0]]
+			}
+			if meant != name {
+				if renames[item.resolved] == nil {
+					renames[item.resolved] = map[string]string{}
+				}
+				renames[item.resolved][name] = meant
+			}
+		}
+	}
+	return renames
+}
+
+func hasOther(kinds map[string]bool, allowed ...string) bool {
+	for kind := range kinds {
+		if !hasName(allowed, kind) {
+			return true
+		}
+	}
+	return false
+}
+
+// kindOf names what a module declares under name, as the reference's
+// category names say it.
+func kindOf(module *Program, name string) string {
+	for _, item := range []struct {
+		kind  string
+		names func() []string
+	}{
+		{"record", func() (out []string) {
+			for _, x := range module.Records {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"choice", func() (out []string) {
+			for _, x := range module.Choices {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"enum", func() (out []string) {
+			for _, x := range module.Enums {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"shape", func() (out []string) {
+			for _, x := range module.Shapes {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"tool", func() (out []string) {
+			for _, x := range module.Tools {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"agent", func() (out []string) {
+			for _, x := range module.Agents {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"model", func() (out []string) {
+			for _, x := range module.Models {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"function", func() (out []string) {
+			for _, x := range module.Functions {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+		{"workflow", func() (out []string) {
+			for _, x := range module.Workflows {
+				out = append(out, x.Name)
+			}
+			return
+		}},
+	} {
+		if hasName(item.names(), name) {
+			return item.kind
+		}
+	}
+	return "name"
+}
+
+// renameScoped gives the functions and workflows in names their new names
+// everywhere in a freshly parsed module: their declarations, calls,
+// references and test runs.
+func renameScoped(value reflect.Value, names map[string]string) {
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if value.IsNil() {
+			return
+		}
+		if value.Kind() == reflect.Pointer {
+			switch node := value.Interface().(type) {
+			case *FuncDecl:
+				node.Name = renamedTo(node.Name, names)
+			case *WorkflowDecl:
+				node.Name = renamedTo(node.Name, names)
+			case *CallExpr:
+				node.Name = renamedTo(node.Name, names)
+			case *FuncRefExpr:
+				node.Name = renamedTo(node.Name, names)
+			case *StepCall:
+				if node.Kind == "function" || node.Kind == "workflow" {
+					node.Name = renamedTo(node.Name, names)
+				}
+			}
+		}
+		renameScoped(value.Elem(), names)
+	case reflect.Struct:
+		for i := 0; i < value.NumField(); i++ {
+			if value.Type().Field(i).IsExported() {
+				renameScoped(value.Field(i), names)
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < value.Len(); i++ {
+			renameScoped(value.Index(i), names)
+		}
+	case reflect.Map:
+		for _, key := range value.MapKeys() {
+			renameScoped(value.MapIndex(key), names)
+		}
+	}
+}
+
+func renamedTo(name string, names map[string]string) string {
+	if renamed, ok := names[name]; ok {
+		return renamed
+	}
+	return name
 }

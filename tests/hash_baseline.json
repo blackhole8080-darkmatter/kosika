@@ -47,6 +47,14 @@
   "2fc9c4a1bb3b0e02924ef645d82ab67e674a79c8b2984b59e40547a248387887",
   "c5c849c73946abdb7fd2498528bac3e91ed5bd2b6d86450adf49b6f350ac33ec"
  ],
+ "conformance/cases/lib/plan_a.kos": [
+  "b21a8d6f01e6d9a2cfb153d3ee34fc09f7130d77c9119a0de76fb12f845ff326",
+  "5061a76b8418af9c588548ce938b60082a7b13fd657d84785c23dd0f47ee7e46"
+ ],
+ "conformance/cases/lib/plan_b.kos": [
+  "cd841cf7002b56518189933d13b1d9aa6f6ddfd949b6f7ff3ba983d5432e2c2c",
+  "8fc7d0da214de4ad30578eeeff7c334f343bc9b98879ee8baf0f516e78b320a3"
+ ],
  "conformance/cases/lib/shapes.kos": [
   "05e9f852053060f8dac0bc413d7f4b9a7051314e8c55a17658d2c78287bdcc5e",
   "bdef1b7b63001e5320ec47559c4901c2aad846aab4729d4a36ec118ae97eefb0"
@@ -70,6 +78,10 @@
  "conformance/cases/models.kos": [
   "515f58c366ae12699720180dbe42f827d9e8da84beb3a2f120288ceb4a1c61b8",
   "677867eadbdce9c956766fa35c21832872a9fbd37d7ee6e587ad3c11994b671c"
+ ],
+ "conformance/cases/module_scope.kos": [
+  "2d41f4d5c36dec45553de1cb5ccd5e3540717d4d562d65b4c85f6bf0496b2660",
+  "63d380fa7db27090f7b30201be2d6448a263fb6bc85969736c8f2768db85b379"
  ],
  "conformance/cases/modules.kos": [
   "fc1410fc5a3b02c8436ddb17d1d47561ab8b8a3070d5ac93542c86664540c1f9",
@@ -195,9 +207,17 @@
   "fa7dd145473ead7a4c9c178330925e734a7e85f370a0b0c7da45389a0f675200",
   "0bdac77a0793e5c6f9fb4b22aaf7b55eb9545bd0f1de45de031d658711e52f13"
  ],
+ "conformance/refused/lib/answer_record.kos": [
+  "1219d0d41fa5893e82c85c71c452c50b575dc4ec817ec0461376ffdb08266e26",
+  "ad061c9c4217fb3891d0071983fe44c3083eda7057519e2edf0e7475d0b869cc"
+ ],
  "conformance/refused/lib/clash.kos": [
   "945617e25b0675c71aaab54ced135b0f9d45174186114a78a1f90ac4f492eb68",
   "ce02665b82c31563a245322bb9eba612bb6a708d1c6e06c8cf61cc086ee0b11f"
+ ],
+ "conformance/refused/lib/clash_too.kos": [
+  "2c533575804031f5a9d21af8cb1924996702b18239d5bab0a8adafec7c969835",
+  "4e015c39998483dfd3701ea6672ef298f7c9447a81e4c5e1a5b084d89ca5ca89"
  ],
  "examples/agent_factory.kos": [
   "40d7ea1cf999006c1b23eb4d1071118e95138795f40c05ad9c7a4caa884ca7df",

@@ -1,1 +1,1 @@
-Check failed: Conflicting module declaration 'area'
+Check failed: Conflicting module declaration 'area' in lib/clash and lib/clash_too; import_clash imports it from both, so declare its own or import only one
