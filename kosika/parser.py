@@ -759,6 +759,10 @@ class Parser:
                 program.swarms.append(self.parse_swarm())
             elif keyword == "workflow":
                 program.workflows.append(self.parse_workflow())
+            elif keyword == "step" and self.peek().kind == "IDENT":
+                # `step read(path: Text) -> Notes { ... }`: a workflow whose
+                # result is remembered (see WorkflowDecl.remembered).
+                program.workflows.append(self.parse_workflow())
             elif keyword == "fn":
                 program.functions.append(self.parse_function())
             elif keyword == "model":
@@ -1325,7 +1329,9 @@ class Parser:
         return SwarmDecl(name, agents, workflow, max_rounds, approval_required)
 
     def parse_workflow(self) -> WorkflowDecl:
-        self.expect("workflow")
+        remembered = self.accept("step")
+        if not remembered:
+            self.expect("workflow")
         name = self.identifier()
         self.expect("(")
         parameters: list[Field] = []
@@ -1383,6 +1389,7 @@ class Parser:
             approval_required,
             tuple(parameters),
             tuple(budget),
+            remembered,
         )
 
     def parse_budget(self) -> list[tuple[str, int | float]]:

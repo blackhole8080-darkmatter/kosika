@@ -1021,7 +1021,9 @@ func (p *Parser) parseProgram() *Program {
 			program.Tools = append(program.Tools, p.parseTool())
 		case keyword == "agent":
 			program.Agents = append(program.Agents, p.parseAgent())
-		case keyword == "workflow":
+		case keyword == "workflow" || (keyword == "step" && p.peek().Kind == "IDENT"):
+			// `step read(path: Text) -> Notes { ... }`: a workflow whose
+			// result is remembered (see WorkflowDecl.Remembered).
 			program.Workflows = append(program.Workflows, p.parseWorkflow())
 		case (keyword == "test" || keyword == "eval") && p.peek().Kind == "STRING":
 			program.Tests = append(program.Tests, p.parseTest())

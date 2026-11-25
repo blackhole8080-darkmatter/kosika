@@ -91,6 +91,7 @@ from .network import (
     write_network_manifest,
 )
 from .project_analysis import ProjectAnalysisError, analyze_python_project
+from .remembered import Remembered
 from .runtime import MockMCP, replay, run
 from .schema import schema_for_tool_input, schema_for_type, schemas_equal
 from .skills import (
@@ -5667,6 +5668,8 @@ def main() -> int:
                     lessons=Lessons(args.memory, _meaning(args))
                     if args.memory
                     else None,
+                    # What `step` units made is kept there too.
+                    steps=Remembered(args.memory) if args.memory else None,
                     mcp_commands=mcp_commands,
                     manifest=run_manifest,
                     inputs=inputs,

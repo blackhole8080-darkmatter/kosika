@@ -321,6 +321,7 @@ func runCommand(args []string) int {
 		if memory != "" {
 			running.memory = newMemoryStore(memory)
 			running.lessons = newLessonStore(memory)
+			running.remembered = newRememberedSteps(memory)
 		}
 		running.folder, running.allowShell = folder, allowShell
 		running.services = services

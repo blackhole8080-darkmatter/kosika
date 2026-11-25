@@ -81,6 +81,7 @@ from .manifest import ManifestError, MCPManifest, verify_server
 from .mcp_stdio import MCPStdioClient
 from .model import ChatMessage, ModelProvider, ModelProviderError, ModelRequest
 from .model_steps import RejectedAnswer, call_model
+from .remembered import Remembered, step_key
 from .schema import (
     schema_for_record,
     schema_for_tool_input,
@@ -225,6 +226,16 @@ def _event(event: str, **data: object) -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         **data,
     }
+
+
+def _fits(value: Any, schema: dict[str, Any]) -> bool:
+    """Whether a value is one the schema allows."""
+
+    try:
+        validate(value, schema)
+    except ValueError:
+        return False
+    return True
 
 
 class LiveEvents(list):  # type: ignore[type-arg]
@@ -1531,6 +1542,7 @@ def run(
     on_event: Callable[[dict[str, Any], int], None] | None = None,
     skills: SkillCatalog | None = None,
     lessons: Lessons | None = None,
+    steps: Remembered | None = None,
     mind: "MindHooks | None" = None,
     _events_out: list[dict[str, Any]] | None = None,
     _scope: tuple[str, ...] = (),
@@ -1549,6 +1561,9 @@ def run(
         # What the program's learning steps have learned, for the whole
         # run, including the workflows it calls.
         _control.lessons = lessons
+        # What `step` units have made, for the whole run; kept in the
+        # memory folder too when the host gives one.
+        _control.remembered = steps if steps is not None else Remembered()
         # What the Mind layer resonates and reflects, for the whole run,
         # folded into every model call the workflow makes.
         _control.mind = mind
@@ -2168,55 +2183,95 @@ def _run_workflow(
                 events.extend(function_trace)
             elif isinstance(step.call, WorkflowCall):
                 child = workflows[step.call.workflow_name]
-                events.append(
-                    _event(
-                        "workflow_call",
-                        workflow=child.name,
-                        arguments=arguments,
-                        expression_events=expression_events,
-                    )
+                remembered: Remembered | None = getattr(_control, "remembered", None)
+                kept_as = (
+                    step_key(program_identity(program), child.name, arguments)
+                    if child.remembered and remembered is not None
+                    else None
                 )
-                child_events: list[dict[str, Any]] = (
-                    events.child() if isinstance(events, LiveEvents) else []
-                )
-                try:
-                    result = run(
-                        program,
-                        child.name,
-                        None,
-                        inputs=arguments,
-                        model_bindings=providers,
-                        tool_bindings=host_tools,
-                        database_tables=database_tables,
-                        mcp_commands=mcp_commands,
-                        manifest=manifest,
-                        _events_out=child_events,
-                        session=session,
-                        _scope=scope,
-                        _control=_control,
-                        intelligence=intelligence,
-                        function_cache=function_cache,
-                        skills=skills,
-                    )
-                except (Exception, KeyboardInterrupt):
-                    if intelligence is not None:
-                        intelligence.record_events(child_events)
+                known = remembered.recall(kept_as) if kept_as is not None else None
+                if known is not None and not _fits(
+                    known[0], schema_for_type(program, child.output_type)
+                ):
+                    known = None
+                if known is not None:
+                    # A `step` already made with these inputs: its result
+                    # again, with the trace of the call that made it.
+                    result, made_by = known
                     events.append(
                         _event(
-                            "workflow_failed", workflow=child.name, events=child_events
+                            "workflow_call",
+                            workflow=child.name,
+                            arguments=arguments,
+                            expression_events=expression_events,
+                            reused=True,
                         )
                     )
-                    raise
-                if intelligence is not None:
-                    intelligence.record_events(child_events)
-                events.append(
-                    _event(
-                        "workflow_return",
-                        workflow=child.name,
-                        result=result,
-                        events=child_events,
+                    events.append(
+                        _event(
+                            "workflow_return",
+                            workflow=child.name,
+                            result=result,
+                            events=made_by,
+                            reused=True,
+                        )
                     )
-                )
+                else:
+                    events.append(
+                        _event(
+                            "workflow_call",
+                            workflow=child.name,
+                            arguments=arguments,
+                            expression_events=expression_events,
+                        )
+                    )
+                    child_events: list[dict[str, Any]] = (
+                        events.child() if isinstance(events, LiveEvents) else []
+                    )
+                    try:
+                        result = run(
+                            program,
+                            child.name,
+                            None,
+                            inputs=arguments,
+                            model_bindings=providers,
+                            tool_bindings=host_tools,
+                            database_tables=database_tables,
+                            mcp_commands=mcp_commands,
+                            manifest=manifest,
+                            _events_out=child_events,
+                            session=session,
+                            _scope=scope,
+                            _control=_control,
+                            intelligence=intelligence,
+                            function_cache=function_cache,
+                            skills=skills,
+                        )
+                    except (Exception, KeyboardInterrupt):
+                        if intelligence is not None:
+                            intelligence.record_events(child_events)
+                        events.append(
+                            _event(
+                                "workflow_failed",
+                                workflow=child.name,
+                                events=child_events,
+                            )
+                        )
+                        raise
+                    if intelligence is not None:
+                        intelligence.record_events(child_events)
+                    if kept_as is not None and remembered is not None:
+                        remembered.keep(
+                            kept_as, child.name, arguments, result, list(child_events)
+                        )
+                    events.append(
+                        _event(
+                            "workflow_return",
+                            workflow=child.name,
+                            result=result,
+                            events=child_events,
+                        )
+                    )
             elif isinstance(step.call, AgentCall):
                 asked_agent = agents[step.call.agent_name]
                 assert asked_agent.model is not None

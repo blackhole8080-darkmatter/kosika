@@ -1,0 +1,61 @@
+// A `step` is a workflow whose result is remembered. It may ask a model or
+// use a tool, as a workflow does. A second call with the same inputs makes
+// no calls of its own and gives the first call's result; other inputs make
+// it again. A `fn` stays pure: it cannot call a step.
+
+record Chapter { title: Text body: Text }
+record Notes { title: Text gist: Text }
+record Book { chapters: Chapter[] }
+record Reading { text: Text }
+
+model reader {
+  input: Chapter
+  output: Notes
+}
+
+// One chapter read: the model is asked once for each chapter it has not
+// read before.
+step read_chapter(chapter: Chapter) -> Notes {
+  notes = use_model reader(title: chapter.title, body: chapter.body)
+}
+
+fn join(all: Notes[]) -> Reading {
+  return {text: (for n in all { f"{n.title}: {n.gist}" }).join(" | ")}
+}
+
+workflow read_book(book: Book) -> Reading {
+  read = for c in book.chapters limit 10 { call read_chapter(c) }
+  out  = join(read)
+}
+
+// The same chapter twice: the second call is the first one's result.
+workflow read_twice(chapter: Chapter) -> Reading {
+  first  = call read_chapter(chapter)
+  second = call read_chapter(chapter)
+  out    = join([first, second])
+}
+
+// A workflow it calls remembers within the same run too.
+workflow outer(book: Book) -> Reading {
+  once  = call read_book(book)
+  again = call read_book(book)
+  out   = join([{title: "once", gist: once.text}, {title: "again", gist: again.text}])
+}
+
+test "a step asks its model once for the same inputs" {
+  answers reader: [{title: "One", gist: "it begins"}]
+  r = read_twice({title: "One", body: "Once upon a time"})
+  expect r.text == "One: it begins | One: it begins"
+}
+
+test "other inputs make the step again" {
+  answers reader: [{title: "One", gist: "it begins"}, {title: "Two", gist: "it ends"}]
+  r = read_book({chapters: [{title: "One", body: "a"}, {title: "Two", body: "b"}, {title: "One", body: "a"}]})
+  expect r.text == "One: it begins | Two: it ends | One: it begins"
+}
+
+test "what a step made is remembered for the whole run" {
+  answers reader: [{title: "One", gist: "x"}]
+  r = outer({chapters: [{title: "One", body: "a"}]})
+  expect r.text == "once: One: x | again: One: x"
+}

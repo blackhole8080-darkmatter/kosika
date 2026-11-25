@@ -291,6 +291,10 @@ type WorkflowDecl struct {
 	Steps    []*Step
 	Approval bool
 	Budget   []Budget
+	// Remembered is a workflow declared `step`: a second call with the
+	// same inputs, in the same run or in a later one that keeps the same
+	// memory folder, makes no calls and gives the first call's result.
+	Remembered bool
 }
 
 // A ModelDecl is a model a step may ask, with the records it takes and

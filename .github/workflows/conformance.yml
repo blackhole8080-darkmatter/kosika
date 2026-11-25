@@ -18,6 +18,7 @@ on:
       - "tests/test_workflow_for.py"
       - "tests/test_parallel.py"
       - "tests/test_diagnostics_parity.py"
+      - "tests/test_step_unit.py"
       - ".github/workflows/conformance.yml"
   pull_request:
     paths:
@@ -30,6 +31,7 @@ on:
       - "tests/test_workflow_for.py"
       - "tests/test_parallel.py"
       - "tests/test_diagnostics_parity.py"
+      - "tests/test_step_unit.py"
       - ".github/workflows/conformance.yml"
   workflow_dispatch:
 
@@ -71,7 +73,7 @@ jobs:
         if: runner.os == 'Linux'
         run: python -m kosika.conformance agree ./kosika-native
       - name: Both engines trace and replay alike
-        run: python -m pytest -q tests/test_conformance.py tests/test_workflow_for.py tests/test_parallel.py tests/test_diagnostics_parity.py
+        run: python -m pytest -q tests/test_conformance.py tests/test_workflow_for.py tests/test_parallel.py tests/test_diagnostics_parity.py tests/test_step_unit.py
 
   webassembly:
     name: webassembly (phone engine)

@@ -756,6 +756,11 @@ class WorkflowDecl:
     # "tool_calls", or "seconds". A budget only ever tightens the limits of
     # whoever runs the program.
     budget: tuple[tuple[str, int | float], ...] = ()
+    # Declared `step` rather than `workflow`: a unit whose result is
+    # remembered. A second call with the same inputs, in the same run or in a
+    # later one that keeps the same memory folder, makes no calls of its own
+    # and gives the first call's result.
+    remembered: bool = False
 
 
 @dataclass(frozen=True)
@@ -1002,6 +1007,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "shapes": ((), []),
     "stores": ((), []),
     "learns": (False,),
+    "remembered": (False,),
     "plain": (False,),
     "learn_by": (None,),
     "learn_near": (False,),

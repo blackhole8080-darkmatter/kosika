@@ -649,7 +649,7 @@ func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
 		} else {
 			decl := c.functions[call.Name]
 			if decl == nil {
-				checkFail("Step %s uses unknown function %s", pyRepr(step.Name), pyRepr(call.Name))
+				checkFail("Step %s uses unknown function %s%s", pyRepr(step.Name), pyRepr(call.Name), callItHint(c.workflows[call.Name]))
 			}
 			params, output = decl.Params, decl.Out
 		}
@@ -979,4 +979,17 @@ func (c *checker) checkFallbacks() {
 		}
 	}
 	newChecker(swapped).checkDeclarations()
+}
+
+// callItHint is what to write when a step names a workflow or a `step` as
+// if it were a function: those are made with `call`.
+func callItHint(workflow *WorkflowDecl) string {
+	if workflow == nil {
+		return ""
+	}
+	kind := "workflow"
+	if workflow.Remembered {
+		kind = "step"
+	}
+	return fmt.Sprintf("; %s is a %s, so make it with `call %s(...)`", pyRepr(workflow.Name), kind, workflow.Name)
 }
