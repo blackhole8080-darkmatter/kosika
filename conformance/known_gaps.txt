@@ -1,0 +1,41 @@
+# Programs outside the suite that the engines do not yet agree on.
+#
+# `python -m kosika.conformance agree ENGINE` checks every other .kos in the
+# repository: both engines must give it the same verdict, and run its tests
+# with the same result. A program here is held to what its line says:
+#
+#   engine-cannot PATH  the reference checks it; the other engine refuses it
+#                       by name ("kosika-native cannot ... yet"), never with a
+#                       syntax error or a crash
+#   checks-nowhere PATH neither engine checks it: an example written in syntax
+#                       Kosika does not have, waiting to be rewritten
+#
+# The list only shrinks. A program listed here that the engines now agree on
+# fails the gate until its line is taken out, so a fix is never forgotten.
+
+# `learn near` (lessons for differently worded questions)
+engine-cannot benchmarks/learning/near.kos
+
+# `swarm` is experimental tooling, read by the reference only
+engine-cannot benchmarks/spec/reference/20_swarm.kos
+engine-cannot examples/city/ai.kos
+engine-cannot examples/city/code.kos
+engine-cannot examples/city/education.kos
+engine-cannot examples/city/history.kos
+engine-cannot examples/city/research.kos
+engine-cannot examples/city/science.kos
+engine-cannot examples/swarm_review.kos
+
+# Early examples (2026-10) in syntax Kosika never had: `!`, `&&`, `||`, `@`,
+# `skill`, `python` tools, a `motion` system source.
+checks-nowhere examples/algorithms.kos
+checks-nowhere examples/knowledge.kos
+checks-nowhere examples/learning_agent.kos
+checks-nowhere examples/multi_agent.kos
+checks-nowhere examples/path_motion/main.kos
+checks-nowhere examples/simple_smart_agent.kos
+checks-nowhere examples/skills.kos
+checks-nowhere examples/smart_agent_tools.kos
+checks-nowhere examples/smart_agent_working.kos
+checks-nowhere examples/smart_integration.kos
+checks-nowhere examples/tensors_demo.kos

@@ -12,6 +12,8 @@ on:
       - "kosika/**"
       - "native/**"
       - "conformance/**"
+      - "examples/**"
+      - "benchmarks/**"
       - "tests/test_conformance.py"
       - "tests/test_workflow_for.py"
       - "tests/test_parallel.py"
@@ -22,6 +24,8 @@ on:
       - "kosika/**"
       - "native/**"
       - "conformance/**"
+      - "examples/**"
+      - "benchmarks/**"
       - "tests/test_conformance.py"
       - "tests/test_workflow_for.py"
       - "tests/test_parallel.py"
@@ -61,6 +65,11 @@ jobs:
         run: go build -o ../kosika-native${{ runner.os == 'Windows' && '.exe' || '' }} .
       - name: The native engine prints what the suite expects
         run: python -m kosika.conformance engine ./kosika-native${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Both engines agree on every program in the repository
+        # What one engine checks the other checks, and its tests come out the
+        # same; the exceptions are in conformance/known_gaps.txt.
+        if: runner.os == 'Linux'
+        run: python -m kosika.conformance agree ./kosika-native
       - name: Both engines trace and replay alike
         run: python -m pytest -q tests/test_conformance.py tests/test_workflow_for.py tests/test_parallel.py tests/test_diagnostics_parity.py
 

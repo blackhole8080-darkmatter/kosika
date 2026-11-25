@@ -215,8 +215,15 @@ func (p *Parser) stepEnding(step *Step) {
 		step.Escalate = p.identifier()
 	}
 	if p.check("learn") && p.peek().Value != "=" && p.peek().Value != ":" {
-		p.advance()
+		learned := p.advance()
 		step.Learns = true
+		// `learn near` (lessons for questions worded differently) is the
+		// reference's alone for now: refused here by name, not as a syntax
+		// error. A step named `near` on the next line is a step.
+		if p.check("near") && p.current().Line == learned.Line {
+			token := p.current()
+			parseFail("kosika-native cannot run `learn near` yet (at %d:%d); it learns exact questions: write `learn`, or run this on the reference engine", token.Line, token.Column)
+		}
 		if p.accept("by") {
 			step.LearnBy = p.expression()
 		}

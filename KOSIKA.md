@@ -1636,7 +1636,18 @@ an AI writer most often meets, a `help` line with the usual fix.
 - Whole-run limits are cooperative. The default host limits are 10,000
   function calls, 10,000 workflow steps, 64 model calls, and 256 tool calls,
   with no deadline. Hosts MAY lower or raise each count from 1 through
-  1,000,000 and MAY set a positive deadline.
+  1,000,000 and MAY set a positive deadline. Both engines' `run` take the
+  same options for this: `--max-model-calls`, `--max-tool-calls`,
+  `--max-function-calls` and `--deadline-seconds`. A workflow's `budget`
+  and an environment's only ever lower them. On the reference, requests to
+  a model provider (retries included, `--max-requests`) follow
+  `--max-model-calls` unless given, so raising that one limit is enough.
+- A program one engine checks, the other engine checks too, and its tests
+  come out the same; where an engine does not read a feature yet, it
+  refuses it by name (`kosika-native cannot ... yet`), never with a syntax
+  error or a crash. `python -m kosika.conformance agree ENGINE` holds every
+  program in the repository to this; the exceptions are listed in
+  `conformance/known_gaps.txt`, a list that only shrinks.
 - Cancellation, deadline, and budget checks occur between language operations
   and provider/tool calls. They do not preempt an in-flight host effect.
 
