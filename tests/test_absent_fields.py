@@ -13,6 +13,7 @@ from kosika.model import ModelProviderError, ModelResponse, ScriptedModelProvide
 from kosika.model_steps import fill_absent
 from kosika.parser import parse
 from kosika.runtime import replay, run
+from kosika.schema import schema_for_record, schema_for_type
 
 SOURCE = """
 record Ticket { text: Text }
@@ -71,6 +72,33 @@ class FillTests(unittest.TestCase):
         self.assertEqual(fill_absent({}, schema), {"a": None})
         self.assertEqual(fill_absent({"a": "x"}, schema), {"a": "x"})
         self.assertEqual(fill_absent("text", schema), "text")
+
+    def test_a_tree_is_completed_at_every_level(self) -> None:
+        # `record Task { title: Text then: Task? }`: the schema refers back to
+        # itself, and a link left out deep down is read as null too.
+        program = parse("record Task { title: Text then: Task? }")
+        check(program)
+        schema = schema_for_record(program, "Task")
+        self.assertIn("$defs", schema)
+        answer = {"title": "a", "then": {"title": "b", "then": {"title": "c"}}}
+        self.assertEqual(
+            fill_absent(answer, schema),
+            {"title": "a", "then": {"title": "b", "then": {"title": "c", "then": None}}},
+        )
+
+    def test_a_choice_is_completed_by_the_alternative_it_is(self) -> None:
+        # Only the fields of the alternative the value names are filled: a
+        # `wait` is never given the `note` of a `go`.
+        program = parse(
+            "choice Move { go(note: Text?) wait(until: Number, why: Text?) }"
+        )
+        check(program)
+        schema = schema_for_type(program, "Move")
+        self.assertEqual(
+            fill_absent({"$case": "wait", "until": 3}, schema),
+            {"$case": "wait", "until": 3, "why": None},
+        )
+        self.assertEqual(fill_absent({"$case": "go"}, schema), {"$case": "go", "note": None})
 
 
 class RunTests(unittest.TestCase):

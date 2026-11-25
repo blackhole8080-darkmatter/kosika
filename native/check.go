@@ -1580,6 +1580,7 @@ func (c *checker) checkDeclarations() {
 			c.validateType(field.Type)
 		}
 	}
+	c.checkBuildable()
 
 	graph := map[string][]string{}
 	for _, name := range c.order {
@@ -1809,4 +1810,74 @@ func (c *checker) checkTest(test *TestDecl) (line int, problem string) {
 		}
 	}
 	return 0, ""
+}
+
+// checkBuildable refuses a record or choice that holds itself where the
+// holding cannot stop: `record Loop { next: Loop }` has no value at all. A
+// tree holds itself behind `?`, `[]` or `{}`, or in another alternative.
+func (c *checker) checkBuildable() {
+	fieldsOf := map[string][]Param{}
+	for _, record := range c.program.Records {
+		fieldsOf[record.Name] = record.Fields
+	}
+	alternativesOf := map[string][]*ChoiceAlternative{}
+	for _, choice := range c.program.Choices {
+		alternativesOf[choice.Name] = choice.Alternatives
+	}
+	buildable := map[string]bool{}
+	ends := func(typeName string) bool {
+		if strings.HasSuffix(typeName, "?") || strings.HasSuffix(typeName, "[]") || strings.HasSuffix(typeName, "{}") {
+			return true
+		}
+		_, isRecord := fieldsOf[typeName]
+		_, isChoice := alternativesOf[typeName]
+		if isRecord || isChoice {
+			return buildable[typeName]
+		}
+		return true
+	}
+	allEnd := func(fields []Param) bool {
+		for _, field := range fields {
+			if !ends(field.Type) {
+				return false
+			}
+		}
+		return true
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, record := range c.program.Records {
+			if !buildable[record.Name] && allEnd(record.Fields) {
+				buildable[record.Name], changed = true, true
+			}
+		}
+		for _, choice := range c.program.Choices {
+			if buildable[choice.Name] {
+				continue
+			}
+			for _, alternative := range choice.Alternatives {
+				if allEnd(alternative.Fields) {
+					buildable[choice.Name], changed = true, true
+					break
+				}
+			}
+		}
+	}
+	for _, record := range c.program.Records {
+		if buildable[record.Name] {
+			continue
+		}
+		for _, field := range record.Fields {
+			if !ends(field.Type) {
+				checkFail("Record %s can never be built: its field %s always needs another %s. Let the chain stop: write `%s: %s?` or `%s: %s[]`",
+					pyRepr(record.Name), pyRepr(field.Name), field.Type, field.Name, field.Type, field.Name, field.Type)
+			}
+		}
+	}
+	for _, choice := range c.program.Choices {
+		if !buildable[choice.Name] {
+			checkFail("Choice %s can never be built: every alternative needs a value that never ends. Add an alternative that does not hold another %s, such as `leaf(value: Number)`",
+				pyRepr(choice.Name), choice.Name)
+		}
+	}
 }

@@ -36,35 +36,66 @@ def _accepts_null(schema: Any) -> bool:
     return any(_accepts_null(option) for option in schema.get("anyOf", ()))
 
 
-def fill_absent(value: Any, schema: Any) -> Any:
+def fill_absent(value: Any, schema: Any, scopes: tuple[Any, ...] = ()) -> Any:
     """Read a field the model left out as null, where null is allowed.
 
     Models often omit a field they have nothing for instead of writing
     `null`. For an optional field the two mean the same, so the answer is
     completed rather than rejected. A field that must hold a value is never
     filled in: leaving that out is still an invalid answer.
+
+    A tree's schema refers back to itself (`$ref` into the `$defs` its
+    outermost type carries), so the filling follows it down every level.
     """
 
     if not isinstance(schema, dict):
         return value
+    if isinstance(schema.get("$defs"), dict):
+        scopes = (*scopes, schema["$defs"])
+    reference = schema.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/$defs/"):
+        name = reference[len("#/$defs/") :]
+        for defs in reversed(scopes):
+            if name in defs:
+                return fill_absent(value, defs[name], scopes)
+        return value
     if isinstance(value, list):
-        return [fill_absent(item, schema.get("items")) for item in value]
+        return [fill_absent(item, schema.get("items"), scopes) for item in value]
     if not isinstance(value, dict):
         return value
     properties = schema.get("properties")
     if not isinstance(properties, dict):
-        # An optional record is "this record, or null": look inside the record.
+        # An optional record is "this record, or null", and a choice is one
+        # of its alternatives: look inside the one the value is.
         for option in schema.get("anyOf", ()):
-            if isinstance(option, dict) and isinstance(option.get("properties"), dict):
-                return fill_absent(value, option)
+            if _is_form_of(value, option, scopes):
+                return fill_absent(value, option, scopes)
         return value
     filled = dict(value)
     for name, field in properties.items():
         if name in filled:
-            filled[name] = fill_absent(filled[name], field)
+            filled[name] = fill_absent(filled[name], field, scopes)
         elif _accepts_null(field):
             filled[name] = None
     return filled
+
+
+def _is_form_of(value: dict, option: Any, scopes: tuple[Any, ...]) -> bool:
+    """Whether `option` is a form the value could be: a reference or a
+    choice to look into, or an object schema whose `$case` (for a choice
+    alternative) is the value's."""
+
+    if not isinstance(option, dict):
+        return False
+    if isinstance(option.get("$ref"), str) or isinstance(option.get("anyOf"), list):
+        return True
+    properties = option.get("properties")
+    if not isinstance(properties, dict):
+        return False
+    case = properties.get("$case")
+    if isinstance(case, dict) and "const" in case:
+        return value.get("$case") == case["const"]
+    return True
 
 
 class RejectedAnswer(ModelProviderError):

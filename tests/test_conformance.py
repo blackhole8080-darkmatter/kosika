@@ -255,6 +255,121 @@ class NativeTests(unittest.TestCase):
                     reference.stderr.strip().splitlines()[-1],
                 )
 
+    def test_a_tree_traces_replays_and_refuses_as_the_reference(self) -> None:
+        # A record or choice that holds itself is checked at every level of
+        # the tree, in both engines, with the same `$ref` schema in the trace;
+        # each engine replays the other's trace.
+        ignored = {"timestamp", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        def num(value: int) -> dict:
+            return {"$case": "num", "value": value}
+
+        program = ROOT / "conformance" / "cases" / "trees.kos"
+        runs = {
+            "size": (
+                {
+                    "folder": {
+                        "name": "root",
+                        "files": ["README"],
+                        "folders": [
+                            {"name": "src", "files": ["a", "b"], "folders": []}
+                        ],
+                    }
+                },
+                None,
+            ),
+            "calculate": (
+                {"question": {"text": "1 + 2 * 5"}},
+                {
+                    "parser": [
+                        {
+                            "$case": "add",
+                            "left": num(1),
+                            "right": {"$case": "times", "left": num(2), "right": num(5)},
+                        }
+                    ]
+                },
+            ),
+        }
+        bad = {
+            "folder": {
+                "name": "root",
+                "files": [],
+                "folders": [{"name": "src", "files": [], "folders": [{"name": "x"}]}],
+            }
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            for workflow, (inputs, fixture) in runs.items():
+                arguments = ["run", str(program), "--workflow", workflow]
+                (folder / "in.json").write_text(json.dumps(inputs), encoding="utf-8")
+                arguments += ["--input", str(folder / "in.json")]
+                if fixture is not None:
+                    (folder / "fixture.json").write_text(
+                        json.dumps(fixture), encoding="utf-8"
+                    )
+                    arguments += ["--model-fixture", str(folder / "fixture.json")]
+                reference = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", *arguments, "--trace",
+                     str(folder / "reference.jsonl")],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(reference.returncode, 0, reference.stderr)
+                native = self.run_engine(
+                    *arguments, "--trace", str(folder / "native.jsonl")
+                )
+                self.assertEqual(native.returncode, 0, native.stderr.decode())
+                self.assertEqual(
+                    native.stdout.decode("utf-8").splitlines()[0],
+                    reference.stdout.splitlines()[0],
+                )
+                self.assertEqual(
+                    events(folder / "native.jsonl"), events(folder / "reference.jsonl")
+                )
+                self.assertIn("$defs", (folder / "native.jsonl").read_text("utf-8"))
+                replayed = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", "replay",
+                     str(folder / "native.jsonl")],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(replayed.returncode, 0, replayed.stderr)
+                replayed = self.run_engine("replay", str(folder / "reference.jsonl"))
+                self.assertEqual(replayed.returncode, 0, replayed.stderr.decode())
+            (folder / "bad.json").write_text(json.dumps(bad), encoding="utf-8")
+            arguments = ["run", str(program), "--workflow", "size", "--input",
+                         str(folder / "bad.json")]
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", *arguments],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            native = self.run_engine(*arguments)
+            self.assertEqual(native.returncode, 2)
+            self.assertIn("files", reference.stderr)
+            self.assertEqual(
+                native.stderr.decode("utf-8").strip().splitlines()[-1],
+                reference.stderr.strip().splitlines()[-1],
+            )
+
     def test_a_long_run_takes_the_same_limits_on_both_engines(self) -> None:
         # A run of 70 model calls stops at the default 64 on both engines with
         # the same words, and finishes on both, with the same trace, when

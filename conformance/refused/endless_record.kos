@@ -1,0 +1,6 @@
+// Refused: a record that always needs another of itself has no value at all.
+// A tree stops behind `?`, `[]` or `{}`.
+
+record Loop { name: Text next: Loop }
+
+fn name(loop: Loop) -> Text { return loop.name }

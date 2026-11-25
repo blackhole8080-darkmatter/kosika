@@ -56,6 +56,7 @@ def validate(
     *,
     path: str = "$",
     root: Mapping[str, Any] | None = None,
+    scopes: tuple[Mapping[str, Any], ...] = (),
 ) -> None:
     """Validate the JSON Schema subset needed by Kosika v0.1.
 
@@ -65,12 +66,16 @@ def validate(
     """
     if root is None:
         root = schema
+    if isinstance(schema.get("$defs"), Mapping):
+        # A schema that carries `$defs` (a type holding itself) is where the
+        # references inside it are looked up, nearest first.
+        scopes = (*scopes, schema["$defs"])
     alternatives = schema.get("anyOf")
     if isinstance(alternatives, list):
         failures: list[str] = []
         for alternative in alternatives:
             try:
-                validate(value, alternative, path=path, root=root)
+                validate(value, alternative, path=path, root=root, scopes=scopes)
                 break
             except SchemaValidationError as exc:
                 failures.append(str(exc))
@@ -82,11 +87,14 @@ def validate(
         ref = schema["$ref"]
         if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
             raise SchemaValidationError(f"{path}: unsupported schema reference {ref!r}")
-        definitions = root.get("$defs", {})
         name = ref.removeprefix("#/$defs/")
+        definitions = next(
+            (scope for scope in reversed(scopes) if name in scope),
+            root.get("$defs", {}),
+        )
         if name not in definitions:
             raise SchemaValidationError(f"{path}: unknown schema reference {ref!r}")
-        validate(value, definitions[name], path=path, root=root)
+        validate(value, definitions[name], path=path, root=root, scopes=scopes)
         return
 
     if "const" in schema and not _json_equal(value, schema["const"]):
@@ -120,7 +128,13 @@ def validate(
         if isinstance(properties, Mapping):
             for key, child_schema in properties.items():
                 if key in value:
-                    validate(value[key], child_schema, path=f"{path}.{key}", root=root)
+                    validate(
+                        value[key],
+                        child_schema,
+                        path=f"{path}.{key}",
+                        root=root,
+                        scopes=scopes,
+                    )
         additional = schema.get("additionalProperties")
         if additional is False:
             unknown = set(value) - set(properties)
@@ -131,11 +145,15 @@ def validate(
         elif isinstance(additional, Mapping):
             for key, item in value.items():
                 if key not in properties:
-                    validate(item, additional, path=f"{path}.{key}", root=root)
+                    validate(
+                        item, additional, path=f"{path}.{key}", root=root, scopes=scopes
+                    )
 
     if isinstance(value, list) and isinstance(schema.get("items"), Mapping):
         for index, item in enumerate(value):
-            validate(item, schema["items"], path=f"{path}[{index}]", root=root)
+            validate(
+                item, schema["items"], path=f"{path}[{index}]", root=root, scopes=scopes
+            )
 
 
 def schemas_equal(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
@@ -153,8 +171,13 @@ def schema_for_tool_input(program: Program, input_record: str | None) -> dict[st
 
 
 def _schema_for_type(
-    program: Program, type_name: str, stack: tuple[str, ...]
+    program: Program,
+    type_name: str,
+    stack: tuple[str, ...],
+    defs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if defs is None:
+        defs = {}
     if signature(type_name):
         return {
             "type": "object",
@@ -182,16 +205,22 @@ def _schema_for_type(
             # A shape's value is one of the records that are it.
             return {
                 "anyOf": [
-                    _schema_for_type(program, record.name, stack)
+                    _schema_for_type(program, record.name, stack, defs)
                     for record in program.records
                     if implements(program, record.name, shape.name)
                 ]
             }
+    if type_name in stack:
+        # A record or choice that holds itself (a tree): where it recurs,
+        # the schema refers back to it. Its outermost schema carries itself
+        # under `$defs` for those references.
+        defs[type_name] = True
+        return {"$ref": f"#/$defs/{type_name}"}
     for choice in program.choices:
         if choice.name == type_name:
             # A choice is one of its alternatives. `$case` names which, and
             # the alternative's fields sit beside it.
-            return {
+            return _carrying_itself(type_name, defs, {
                 "anyOf": [
                     {
                         "type": "object",
@@ -199,7 +228,7 @@ def _schema_for_type(
                             "$case": {"const": alternative.name},
                             **{
                                 field.name: _schema_for_type(
-                                    program, field.type_name, (*stack, type_name)
+                                    program, field.type_name, (*stack, type_name), defs
                                 )
                                 for field in alternative.fields
                             },
@@ -212,53 +241,71 @@ def _schema_for_type(
                     }
                     for alternative in choice.alternatives
                 ]
-            }
+            })
     if type_name.endswith("?"):
         return {
             "anyOf": [
-                _schema_for_type(program, type_name[:-1], stack),
+                _schema_for_type(program, type_name[:-1], stack, defs),
                 {"type": "null"},
             ]
         }
     if type_name.endswith("{}"):
         return {
             "type": "object",
-            "additionalProperties": _schema_for_type(program, type_name[:-2], stack),
+            "additionalProperties": _schema_for_type(program, type_name[:-2], stack, defs),
         }
     if type_name.endswith("[]"):
         return {
             "type": "array",
-            "items": _schema_for_type(program, type_name[:-2], stack),
+            "items": _schema_for_type(program, type_name[:-2], stack, defs),
         }
-    if type_name in stack:
-        raise ValueError(
-            f"Recursive record schema {type_name!r} is not supported in v0.1"
-        )
     records = {record.name: record for record in program.records}
     record = records.get(type_name)
     if record is None:
         raise ValueError(f"Unsupported record field type {type_name!r}")
     properties = {
-        field.name: _schema_for_type(program, field.type_name, (*stack, type_name))
+        field.name: _schema_for_type(
+            program, field.type_name, (*stack, type_name), defs
+        )
         for field in record.fields
     }
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": [field.name for field in record.fields],
-        "additionalProperties": False,
-    }
+    return _carrying_itself(
+        type_name,
+        defs,
+        {
+            "type": "object",
+            "properties": properties,
+            "required": [field.name for field in record.fields],
+            "additionalProperties": False,
+        },
+    )
+
+
+def _carrying_itself(
+    type_name: str, defs: dict[str, Any], schema: dict[str, Any]
+) -> dict[str, Any]:
+    """A type that recurred inside its own schema carries that schema
+    under `$defs`, so each `#/$defs/NAME` below it has something to name.
+    A type that never recurs keeps exactly the schema it always had."""
+
+    if not defs.pop(type_name, False):
+        return schema
+    return {**schema, "$defs": {type_name: schema}}
 
 
 def schema_for_record(program: Program, record_name: str) -> dict[str, Any]:
     if record_name not in {record.name for record in program.records}:
         raise ValueError(f"Unknown record {record_name!r}")
-    return _schema_for_type(program, record_name, ())
+    return _with_defs(program, record_name)
+
+
+def _with_defs(program: Program, type_name: str) -> dict[str, Any]:
+    return _schema_for_type(program, type_name, (), {})
 
 
 def schema_for_type(program: Program, type_name: str) -> dict[str, Any]:
     """Return the bounded JSON schema for any checked Kosika value type."""
-    return _schema_for_type(program, type_name, ())
+    return _with_defs(program, type_name)
 
 
 def implements(program: Program, record_name: str, shape_name: str) -> bool:

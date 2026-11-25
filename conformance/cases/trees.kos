@@ -1,0 +1,100 @@
+// A record or choice may hold itself, so a value can be a tree: a folder of
+// folders, a plan of plans, or an expression of expressions. The schema
+// a model or tool is given refers back to the type where it recurs.
+
+record Folder {
+  name: Text
+  files: Text[]
+  folders: Folder[]
+}
+
+choice Expr {
+  num(value: Number)
+  add(left: Expr, right: Expr)
+  times(left: Expr, right: Expr)
+}
+
+record Task {
+  title: Text
+  then: Task?
+}
+
+record Question { text: Text }
+record Size { files: Number depth: Number }
+record Answer { value: Number }
+record Steps { text: Text }
+
+model parser {
+  input: Question
+  output: Expr
+}
+
+fn count(folder: Folder) -> Number recurse 32 {
+  var total = folder.files.length()
+  for inner in folder.folders { total = total + count(inner) }
+  return total
+}
+
+fn depth(folder: Folder) -> Number recurse 32 {
+  var deepest = 0
+  for inner in folder.folders {
+    let d = depth(inner)
+    if d > deepest { deepest = d }
+  }
+  return deepest + 1
+}
+
+fn eval(e: Expr) -> Number recurse 32 {
+  return match e {
+    case num(value) { value }
+    case add(left, right) { eval(left) + eval(right) }
+    case times(left, right) { eval(left) * eval(right) }
+  }
+}
+
+fn titles(task: Task) -> Text recurse 32 {
+  let next = task.then
+  if next.exists() {
+    return task.title + " > " + titles(next)
+  }
+  return task.title
+}
+
+workflow size(folder: Folder) -> Size {
+  out = {files: count(folder), depth: depth(folder)}
+}
+
+workflow calculate(question: Question) -> Answer {
+  expr = use_model parser(text: question.text)
+  out = {value: eval(expr)}
+}
+
+workflow plan(task: Task) -> Steps {
+  out = {text: titles(task)}
+}
+
+test "a folder of folders" {
+  docs = Folder(name: "docs", files: ["a.md"], folders: [])
+  src = Folder(name: "src", files: ["main.kos", "lib.kos"], folders: [docs])
+  root = Folder(name: "root", files: ["README"], folders: [src])
+  expect count(root) == 4
+  expect depth(root) == 3
+  r = size(root)
+  expect r.files == 4
+  expect r.depth == 3
+}
+
+test "an expression of expressions" {
+  expect eval(add(num(2), times(num(3), num(4)))) == 14
+}
+
+test "a model answers with a tree" {
+  answers parser: [add(left: num(value: 1), right: times(left: num(value: 2), right: num(value: 5)))]
+  r = calculate({text: "1 + 2 * 5"})
+  expect r.value == 11
+}
+
+test "an optional link to the next" {
+  r = plan({title: "read", then: {title: "plan", then: {title: "write", then: null}}})
+  expect r.text == "read > plan > write"
+}

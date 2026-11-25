@@ -1,0 +1,1 @@
+Check failed: Record 'Loop' can never be built: its field 'next' always needs another Loop. Let the chain stop: write `next: Loop?` or `next: Loop[]`
