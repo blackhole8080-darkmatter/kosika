@@ -15,6 +15,7 @@ The suite is in `conformance/`. See its README.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -72,9 +73,10 @@ def unplaced(text: str, program: Path) -> str:
     """A parse error names its file first. Where the suite lives differs
     from machine to machine, so that name is left out of what is compared."""
 
-    for spelled in {str(program), str(program.resolve())}:
-        text = text.replace(f"{spelled}: ", "")
-    return text
+    # The engine may spell the folder another way (on Windows, a short 8.3
+    # name), so any path ending in the program's own file name is cut.
+    pattern = r"(?:[A-Za-z]:)?[^\s:]*[\\/]" + re.escape(program.name) + r": "
+    return re.sub(pattern, "", text, flags=re.IGNORECASE)
 
 
 def main(argv: list[str] | None = None) -> int:
