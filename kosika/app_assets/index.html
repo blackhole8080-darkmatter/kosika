@@ -1254,6 +1254,7 @@ pre.diff .hunk { color: var(--faint); }
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
 <template id="icon-study"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M7 9.500v5c0 1.400 2.200 3 5 3s5-1.600 5-3v-5"/><path d="M21 7v6"/></svg></template>
 <template id="icon-ai"><svg viewBox="0 0 24 24"><path d="M12 3l1.800 4.700L18.500 9.500l-4.700 1.800L12 16l-1.800-4.700L5.500 9.500l4.700-1.800z"/><path d="M18 15l.9 2.100 2.100.9-2.100.9L18 21l-.9-2.100-2.100-.9 2.100-.9z"/></svg></template>
+<template id="icon-brain"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.400"/><circle cx="5" cy="6" r="1.600"/><circle cx="19" cy="6" r="1.600"/><circle cx="5" cy="18" r="1.600"/><circle cx="19" cy="18" r="1.600"/><path d="M6.300 7.100l3.900 3.300M17.700 7.100l-3.900 3.300M6.300 16.900l3.900-3.300M17.700 16.900l-3.900-3.300M6.600 6h10.800" fill="none" stroke="currentColor" stroke-width="1.300"/></svg></template>
 <template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
@@ -1468,7 +1469,7 @@ new MutationObserver(() => {
 }).observe(main, {childList: true});
 function drawRail(active) {
   const on = sectionOf(active);
-  const top = [["home", "Home"], ["assistant", "Kosi"], ["coders", "Coders"], ["ai", "Kosika AI"], ["study", "Study"], ["designs", "Designs"]];
+  const top = [["home", "Home"], ["assistant", "Kosi"], ["coders", "Coders"], ["ai", "Kosika AI"], ["study", "Study"], ["designs", "Designs"], ["brain", "Brain"]];
   const bottom = [["agents", "Agents"], ["settings", "Settings"]];
   const item = ([key, label]) => h("div", {class: "nav" + (key === on ? " on" : ""), title: label, onclick: () => go(key === "settings" ? "models" : key)}, icon(key), h("span", null, label));
   document.getElementById("nav").replaceChildren(...top.map(item), h("div", {class: "nav-gap"}), ...bottom.map(item));
@@ -1499,6 +1500,7 @@ async function route() {
     const active = view || "home";
     drawRail(active);
     if (active !== "home") clearTimeout(homeTimer);
+    if (active !== "brain") clearTimeout(brainTimer);
     if (active === "home") await showHome(id);
     else if (active === "agents") showAgents();
     else if (active === "models" || active === "settings") await showModels();
@@ -1510,6 +1512,7 @@ async function route() {
     else if (active === "designs") showDesigns();
     else if (active === "ai") await showAI();
     else if (active === "study") showStudy();
+    else if (active === "brain") await showBrain();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
     else if (active === "coders") await (id ? showCoderRun(id) : showCoders());
@@ -1988,6 +1991,32 @@ async function showModels() {
       h("ul", {class: "route-list"}, uses.map(agent => h("li", {class: "hit", onclick: () => go("agent", agent.id)}, h("b", null, agent.title || agent.id),
         h("span", null, agent.models.join(", ")))))) : null
   ].filter(Boolean));
+}
+
+// The Brain page: the Kosika Brain's network, live. Every few seconds it asks
+// again; the network is drawn anew only when the Brain kept a new episode,
+// and each link is as thick as the checks it has passed.
+let brainTimer = 0;
+let brainShown = -1;
+async function showBrain() {
+  clearTimeout(brainTimer);
+  const view = await api("/api/brain").catch(error => ({ok: false, error: String(error), page: "", episodes: 0, total: 0}));
+  if (location.hash.slice(1).split("/")[0] !== "brain") return;
+  if (view.changed !== brainShown || !main.querySelector(".brain-frame")) {
+    brainShown = view.changed;
+    const frame = h("iframe", {class: "brain-frame", title: "The Kosika Brain's network", sandbox: "allow-scripts",
+      style: "width:100%;height:min(78vh,820px);border:0;border-radius:14px;background:#0b0d1a"});
+    frame.srcdoc = view.page || "<!doctype html><html><body style=\"margin:0;background:#0b0d1a\"></body></html>";
+    main.replaceChildren(...[
+      titled("Brain"),
+      h("p", {class: "lead"}, view.summary || "", " ", h("span", {class: "path"}, view.path || "")),
+      view.ok ? null : h("div", {class: "banner bad"}, view.error),
+      h("div", {class: "chips", style: "margin:-6px 0 14px"}, chip(view.passed + " passed", "ok"), chip(view.failed + " failed", view.failed ? "bad" : ""),
+        chip(view.unchecked + " unchecked", ""), chip(view.links + " links"), chip("live", "think")),
+      view.page ? frame : null
+    ].filter(Boolean));
+  }
+  brainTimer = setTimeout(() => { if (location.hash.slice(1).split("/")[0] === "brain") showBrain(); }, 8000);
 }
 
 let homeTimer = 0;
