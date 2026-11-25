@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func fail(format string, args ...any) {
@@ -47,10 +48,13 @@ func load(path string) *Program {
 // `run` says it on the error output, as the reference's command line does.
 func loadTo(path string, refusals *os.File) *Program {
 	program, failure := loadModules(path)
-	if failure != nil && failure.parse {
+	if failure != nil && failure.parse && strings.Contains(failure.message, "kosika-native cannot") {
+		// Valid Kosika this engine cannot run yet: not the program's fault.
 		fail("Check failed: %s", failure.message)
 	}
 	if failure != nil {
+		// Refused, whether it does not parse or does not check: exit code
+		// 2, as the reference ends.
 		fmt.Fprintf(refusals, "Check failed: %s\n", failure.message)
 		os.Exit(2)
 	}

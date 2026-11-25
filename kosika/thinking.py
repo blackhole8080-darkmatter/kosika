@@ -38,6 +38,7 @@ from .ast import (
     RecordDecl,
     Step,
     ThinkCall,
+    kept_branch,
 )
 from .builtin_methods import did_you_mean
 from .evidence import INSTRUCTIONS as EVIDENCE_INSTRUCTIONS
@@ -273,7 +274,7 @@ def lower_thinking(program: Program) -> Program:
                 (pattern, lower_call(step, branch)) for pattern, branch in step.branches
             )
             if branches:
-                call = branches[0][1]
+                call = kept_branch(replace(step, branches=branches))
             if (
                 call is step.call
                 and fallback is step.fallback

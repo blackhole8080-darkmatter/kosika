@@ -63,9 +63,18 @@ def report(program: Path) -> tuple[str, int]:
     try:
         results = run_tests(load_program(program))
     except (ValueError, TypeError) as exc:
-        return f"Check failed: {exc}\n", 2
+        return f"Check failed: {unplaced(str(exc), program)}\n", 2
     failed = any(not result.passed for result in results)
     return to_text(results) + "\n", 1 if failed else 0
+
+
+def unplaced(text: str, program: Path) -> str:
+    """A parse error names its file first. Where the suite lives differs
+    from machine to machine, so that name is left out of what is compared."""
+
+    for spelled in {str(program), str(program.resolve())}:
+        text = text.replace(f"{spelled}: ", "")
+    return text
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,7 +129,9 @@ def check_engine(engine: list[str]) -> int:
         ran = subprocess.run(
             [*engine, "test", str(program)], capture_output=True, check=False
         )
-        printed = (ran.stdout + ran.stderr).decode("utf-8").replace("\r\n", "\n")
+        printed = unplaced(
+            (ran.stdout + ran.stderr).decode("utf-8").replace("\r\n", "\n"), program
+        )
         expected = expected_path(program).read_text(encoding="utf-8")
         code = EXIT_CODES[program.parent.name]
         if printed != expected or ran.returncode != code:

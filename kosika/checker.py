@@ -45,6 +45,7 @@ from .ast import (
     UnaryExpr,
     VariableExpr,
     WorkflowCall,
+    WorkflowDecl,
     function_body,
     method_function,
     static_function_references,
@@ -946,7 +947,9 @@ def _expression_type(
         return body_type
     if isinstance(expression, FunctionExpr):
         function_bindings = _Env()
-        function_bindings.outside = bindings if isinstance(bindings, _Env) else _Env(bindings)
+        function_bindings.outside = (
+            bindings if isinstance(bindings, _Env) else _Env(bindings)
+        )
         for parameter in expression.parameters:
             if parameter.name in function_bindings:
                 raise CheckError(
@@ -1804,6 +1807,8 @@ def _check_branches(program: Program) -> None:
         for step in workflow.steps:
             if not step.branches:
                 continue
+            if step.finishes:
+                _check_finishes(workflow, step)
             patterns = [pattern for pattern, _ in step.branches]
             # A match on an enum that names every value needs no `case _`;
             # that is checked with the subject's type.
@@ -1817,13 +1822,24 @@ def _check_branches(program: Program) -> None:
             if len(seen) != len(set(seen)):
                 raise CheckError(f"Step {step.name!r} match lists a value twice")
             outputs = set()
-            for _, call in step.branches:
+            for index, (_, call) in enumerate(step.branches):
                 tool = tools.get(call.tool_name) if isinstance(call, ToolCall) else None
                 if tool is not None and tool.access == "execute":
                     raise CheckError(
                         f"Step {step.name!r} match cannot choose execute tool "
                         f"{tool.name!r}"
                     )
+                if index in step.finishes:
+                    finished = _call_output(program, call)
+                    if finished is not None and finished != workflow.output_type:
+                        raise CheckError(
+                            f"Step {step.name!r} finishes workflow "
+                            f"{workflow.name!r} with {finished!r}, but it returns "
+                            f"{workflow.output_type!r}; `finish` gives what the "
+                            "workflow returns, so make that call give a "
+                            f"{workflow.output_type!r}"
+                        )
+                    continue
                 outputs.add(_call_output(program, call))
             outputs.discard(None)
             if len(outputs) > 1:
@@ -1831,6 +1847,25 @@ def _check_branches(program: Program) -> None:
                     f"Step {step.name!r} match branches return different "
                     f"types: {', '.join(sorted(map(str, outputs)))}"
                 )
+
+
+def _check_finishes(workflow: WorkflowDecl, step: Step) -> None:
+    """Where `finish` may be written: in a branch of an `if` or `match` step
+    that also has a branch which does not finish, outside a `for` step. (A
+    branching step is never in `parallel`; that is refused already.)"""
+
+    if len(step.finishes) == len(step.branches):
+        raise CheckError(
+            f"Step {step.name!r} finishes workflow {workflow.name!r} whichever "
+            "branch is taken; make it the last step and drop `finish`, or give "
+            "it a branch that goes on"
+        )
+    if step.each_item is not None:
+        raise CheckError(
+            f"Step {step.name!r} cannot finish workflow {workflow.name!r} from "
+            "inside a `for` step; let the `for` step make its passes, then "
+            "decide in an `if` step after it"
+        )
 
 
 #: Names a record's own function may not take, because a map already

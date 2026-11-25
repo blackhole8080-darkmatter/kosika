@@ -736,6 +736,12 @@ class Step:
     each_item: str | None = None
     each_over: Any = None
     each_limit: int = 0
+    # `hit = if cached.found { finish reply(cached) } else { call think(ask) }`:
+    # the places in `branches` whose call, when chosen, ends the workflow with
+    # its result, the steps after it not made. Empty for every other step.
+    # `call` above is then the first branch that does not finish, the one
+    # whose type the step's own name takes.
+    finishes: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1002,6 +1008,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "each_item": (None,),
     "each_over": (None,),
     "each_limit": (0,),
+    "finishes": ((), []),
     "config": ((), []),
 }
 
@@ -1048,3 +1055,14 @@ def _program_payload(program: Program) -> dict[str, Any]:
     payload = prune(asdict(program))
     payload.pop("tests", None)
     return payload
+
+
+def kept_branch(step: "Step") -> Any:
+    """The call of a branching step's first branch that does not finish the
+    workflow: the one the step's own name takes its type from. The first
+    branch when every one finishes (which the checker refuses)."""
+
+    for index, (_, call) in enumerate(step.branches):
+        if index not in step.finishes:
+            return call
+    return step.branches[0][1] if step.branches else step.call

@@ -206,6 +206,31 @@ type Branch struct {
 	Any     bool
 	Pattern Value
 	Call    *StepCall
+	// Finish is `finish`: when this branch is taken its call's result is
+	// what the workflow returns, and the steps after it are not made.
+	Finish bool
+}
+
+// keptBranch is the call of a branching step's first branch that does not
+// finish the workflow: the one the step's own name takes its type from.
+// The first branch when every one finishes (which the checker refuses).
+func keptBranch(branches []Branch) *StepCall {
+	for _, branch := range branches {
+		if !branch.Finish {
+			return branch.Call
+		}
+	}
+	return branches[0].Call
+}
+
+// finishes is whether any branch of a step finishes the workflow.
+func finishes(step *Step) bool {
+	for _, branch := range step.Branches {
+		if branch.Finish {
+			return true
+		}
+	}
+	return false
 }
 
 type Step struct {

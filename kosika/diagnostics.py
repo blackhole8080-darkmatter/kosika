@@ -131,6 +131,8 @@ CODES: Mapping[str, str] = {
     "check/assignment-to-unknown": "An assignment targets a name that is not in scope.",
     "check/unknown-variable": "A local binding is not in scope.",
     "check/captured-variable": "A function written as a value names a local from around it, which it cannot see.",
+    "check/finish": "A `finish` branch is written where it cannot end the workflow, or gives the wrong type.",
+    "parse/if-step-else": "An `if` step that makes a call has no `else`.",
     # -- Types -----------------------------------------------------------
     "check/type-mismatch": "A value's type does not match the required type.",
     "check/condition-type": "A condition did not produce a Bool.",
@@ -603,6 +605,8 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     # Name resolution that appears in step context.
     ("check/unknown-variable", re.compile(r"references unknown variable")),
     ("check/captured-variable", re.compile(r"a function written as a value sees only its parameters")),
+    ("check/finish", re.compile(r"^Step '[^']*' (?:cannot )?finish(?:es)? workflow")),
+    ("parse/if-step-else", re.compile(r"^Step '[^']*' needs an `else`")),
 )
 
 _UNKNOWN_VARIABLE_TAIL = re.compile(r"references unknown variable '([^']+)'")
@@ -618,6 +622,8 @@ HELP: Mapping[str, str] = {
     "parse/unnamed-argument": "Name each argument: `f(text: t)`.",
     "check/endless-type": "Make the field that recurs optional (`next: Node?`) or a list (`kids: Node[]`), or add a leaf alternative.",
     "check/captured-variable": "Pass the value in as a parameter, or write a named `fn` inside this one, which may use it.",
+    "check/finish": "`finish CALL` ends the workflow with CALL's result, so CALL gives the workflow's own type; at least one branch goes on, and a `for` step never finishes.",
+    "parse/if-step-else": "Write `name = if COND { CALL } else { CALL }`: both ways give the step a value, or one may `finish` the workflow.",
     "engine/not-yet": "Write it without that feature, or run the program on the engine that reads it (`kosika`).",
     "check/recursion-limit": "A recursive function says how deep it may go: `fn walk(n: Node) -> Number recurse 32 { ... }`.",
     "check/inference-failure": "Give the binding a type, `let x: Item = {...}`, or build the record by name, `Item(name: \"pen\")`.",
