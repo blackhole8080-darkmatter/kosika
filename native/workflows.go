@@ -126,7 +126,13 @@ func (r *run) checkpoint() {
 }
 
 func newRun(program *Program, tools map[string]*scriptedTool, providers map[string]modelProvider, workflow *WorkflowDecl) *run {
-	limits := map[string]int{"tool_calls": 256, "model_calls": 64}
+	return newRunWithin(program, tools, providers, workflow, 256, 64)
+}
+
+// newRunWithin is newRun with the tool and model call limits whoever runs
+// the program set (the reference's --max-tool-calls and --max-model-calls).
+func newRunWithin(program *Program, tools map[string]*scriptedTool, providers map[string]modelProvider, workflow *WorkflowDecl, maxTools, maxModels int) *run {
+	limits := map[string]int{"tool_calls": maxTools, "model_calls": maxModels}
 	// A workflow's budget only ever tightens the limit of whoever runs it.
 	for _, item := range workflow.Budget {
 		if whole, ok := item.Amount.(*big.Int); ok && whole.IsInt64() {

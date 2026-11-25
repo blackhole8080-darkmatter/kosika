@@ -24,7 +24,7 @@ func runCommand(args []string) int {
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true, "--json": true}
 	var givenSites []string
-	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--approve-in": true, "--standing": true, "--model-context": true, "--max-function-calls": true, "--deadline-seconds": true, "--approve-wait": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--approve-in": true, "--standing": true, "--model-context": true, "--max-function-calls": true, "--max-model-calls": true, "--max-tool-calls": true, "--deadline-seconds": true, "--approve-wait": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -87,6 +87,23 @@ func runCommand(args []string) int {
 			return 2
 		}
 		maxFunctionCalls = calls
+	}
+	// The model and tool calls a run may make, as the reference engine's
+	// --max-model-calls and --max-tool-calls. A workflow's budget and an
+	// environment's only ever tighten them.
+	maxModelCalls, maxToolCalls := 64, 256
+	for _, limit := range []struct {
+		flag, name string
+		into       *int
+	}{{"--max-model-calls", "max_model_calls", &maxModelCalls}, {"--max-tool-calls", "max_tool_calls", &maxToolCalls}} {
+		if given := options[limit.flag]; given != "" {
+			calls, err := strconv.Atoi(given)
+			if err != nil || calls < 1 || calls > 1_000_000 {
+				fmt.Fprintf(os.Stderr, "Workflow failed: %s must be an integer from 1 to 1000000\n", limit.name)
+				return 2
+			}
+			*limit.into = calls
+		}
 	}
 	// The whole run's time, as the reference engine's --deadline-seconds:
 	// past it the run stops, wherever it is, and says so.
@@ -299,7 +316,7 @@ func runCommand(args []string) int {
 	started := time.Now()
 	permission := false
 	attempt := func() (result Value, stopped, failure string) {
-		running = newRun(program, map[string]*scriptedTool{}, providers, workflow)
+		running = newRunWithin(program, map[string]*scriptedTool{}, providers, workflow, maxToolCalls, maxModelCalls)
 		running.servers = servers
 		if memory != "" {
 			running.memory = newMemoryStore(memory)

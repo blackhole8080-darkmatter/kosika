@@ -54,6 +54,23 @@ class ReferenceTests(unittest.TestCase):
                 # a refused one never runs.
                 self.assertEqual(code, conformance.EXIT_CODES[program.parent.name])
 
+    def test_the_known_gaps_name_real_programs(self) -> None:
+        # The list of programs the engines do not yet agree on names only
+        # programs that exist, each once, with a kind the gate knows.
+        gaps = conformance.known_gaps()
+        names = {
+            path.relative_to(conformance.REPOSITORY).as_posix()
+            for path in conformance.repository_programs()
+        }
+        self.assertTrue(gaps)
+        self.assertLessEqual(set(gaps), names)
+        self.assertLessEqual(set(gaps.values()), {"engine-cannot", "checks-nowhere"})
+        with tempfile.TemporaryDirectory() as scratch:
+            bad = Path(scratch) / "gaps.txt"
+            bad.write_text("maybe examples/a.kos\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "engine-cannot PATH"):
+                conformance.known_gaps(bad)
+
     def test_a_passing_case_has_no_failure_and_a_failing_one_has_some(self) -> None:
         for program in conformance.programs():
             with self.subTest(program.name):
@@ -231,6 +248,107 @@ class NativeTests(unittest.TestCase):
                 )
                 native = self.run_engine(
                     "run", str(program), "--input", str(folder / f"{name}.json")
+                )
+                self.assertEqual(native.returncode, 2)
+                self.assertEqual(
+                    native.stderr.decode("utf-8").strip().splitlines()[-1],
+                    reference.stderr.strip().splitlines()[-1],
+                )
+
+    def test_a_long_run_takes_the_same_limits_on_both_engines(self) -> None:
+        # A run of 70 model calls stops at the default 64 on both engines with
+        # the same words, and finishes on both, with the same trace, when
+        # whoever runs it raises --max-model-calls. Before, the Go engine had
+        # no such option, so a long job could only run on Python.
+        source = """
+record Page { text: Text }
+record Book { pages: Page[] }
+record Note { text: Text }
+record Notes { count: Number }
+
+model reader {
+  input: Page
+  output: Note
+}
+
+fn tally(notes: Note[]) -> Notes {
+  return {count: notes.length()}
+}
+
+workflow main(book: Book) -> Notes {
+  notes = for p in book.pages limit 200 {
+    use_model reader(text: p.text)
+  }
+  out = tally(notes)
+}
+"""
+        ignored = {"timestamp", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            program = folder / "book.kos"
+            program.write_text(source, encoding="utf-8")
+            pages = [{"text": str(i)} for i in range(70)]
+            (folder / "in.json").write_text(
+                json.dumps({"book": {"pages": pages}}), encoding="utf-8"
+            )
+            (folder / "fixture.json").write_text(
+                json.dumps({"reader": [{"text": "n"}] * 70}), encoding="utf-8"
+            )
+            base = [
+                "run", str(program), "--input", str(folder / "in.json"),
+                "--model-fixture", str(folder / "fixture.json"),
+            ]
+            for extra, finishes in (([], False), (["--max-model-calls", "100"], True)):
+                reference = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", *base, *extra, "--trace",
+                     str(folder / "reference.jsonl")],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                native = self.run_engine(
+                    *base, *extra, "--trace", str(folder / "native.jsonl")
+                )
+                if finishes:
+                    self.assertEqual(reference.returncode, 0, reference.stderr)
+                    self.assertEqual(native.returncode, 0, native.stderr.decode())
+                    self.assertEqual(
+                        native.stdout.decode("utf-8").splitlines()[0],
+                        reference.stdout.splitlines()[0],
+                    )
+                    self.assertEqual(
+                        events(folder / "native.jsonl"),
+                        events(folder / "reference.jsonl"),
+                    )
+                else:
+                    self.assertNotEqual(reference.returncode, 0)
+                    self.assertEqual(
+                        native.stderr.decode("utf-8").strip().splitlines()[-1],
+                        reference.stderr.strip().splitlines()[-1],
+                    )
+                    self.assertIn("exceeds 64", reference.stderr)
+            for bad in ("0", "1000001"):
+                native = self.run_engine(*base, "--max-model-calls", bad)
+                reference = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", *base, "--max-model-calls", bad],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
                 )
                 self.assertEqual(native.returncode, 2)
                 self.assertEqual(
