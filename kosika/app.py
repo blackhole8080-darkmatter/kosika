@@ -2293,6 +2293,22 @@ class App:
 
         return brain_page.page()
 
+    def model_health(self) -> dict[str, Any]:
+        """Whether Kosika's model router and Ollama answer right now."""
+
+        from .quickstart import health
+
+        return health()
+
+    def wake_models(self) -> dict[str, Any]:
+        """Start the model router and Ollama when they are not running, and
+        say what was done."""
+
+        from .quickstart import health, wake_ollama, wake_router
+
+        said = [line for line in (wake_ollama(), wake_router()) if line]
+        return {**health(), "said": said}
+
     def models_page(self) -> dict[str, Any]:
         """The models the agents reach through Kosika's router, and how each
         is doing, as app_assets/models.kos says."""
@@ -2372,6 +2388,24 @@ class App:
             raise AppError("Send the run's name")
         try:
             return coders.keep(name)
+        except (ValueError, FileNotFoundError) as exc:
+            raise AppError(str(exc), 422) from exc
+        except (RuntimeError, OSError) as exc:
+            raise AppError(str(exc), 502) from exc
+
+    def keep_all_coder_runs(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Keep every run that passed and waits: one branch, one pull request
+        into studio for review. Nothing is merged."""
+
+        from . import coders
+
+        names = body.get("runs")
+        if names is not None and (
+            not isinstance(names, list) or not all(isinstance(n, str) for n in names)
+        ):
+            raise AppError("Send the runs' names as a list, or nothing for all")
+        try:
+            return coders.keep_all(names)
         except (ValueError, FileNotFoundError) as exc:
             raise AppError(str(exc), 422) from exc
         except (RuntimeError, OSError) as exc:
@@ -2809,6 +2843,10 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.home())
                 elif method == "GET" and url.path == "/api/brain":
                     self._json(200, app.brain_page())
+                elif method == "GET" and url.path == "/api/health":
+                    self._json(200, app.model_health())
+                elif method == "POST" and url.path == "/api/health/wake":
+                    self._json(200, app.wake_models())
                 elif method == "GET" and url.path == "/api/models/router":
                     self._json(200, app.models_page())
                 elif method == "GET" and url.path == "/api/morning":
@@ -2823,6 +2861,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.start_coders(self._body()))
                 elif method == "GET" and url.path == "/api/coders/run":
                     self._json(200, app.coder_run((query.get("run") or [""])[0]))
+                elif method == "POST" and url.path == "/api/coders/keep-all":
+                    self._json(200, app.keep_all_coder_runs(self._body()))
                 elif method == "POST" and url.path == "/api/coders/keep":
                     self._json(200, app.keep_coder_run(self._body()))
                 elif method == "GET" and url.path == "/api/coders/mascot":

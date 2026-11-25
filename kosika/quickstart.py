@@ -11,6 +11,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import socket
+import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -19,6 +23,15 @@ from typing import Any
 from .starter import StarterError, create_starter
 
 OLLAMA = "http://localhost:11434"
+#: Kosika's own model router (kosika-agents/models): free cloud models
+#: first, then the ones on this computer, each tried in turn when one fails.
+ROUTER_PORT = int(os.environ.get("KOSIKA_ROUTER_PORT", "8791"))
+ROUTER = f"http://127.0.0.1:{ROUTER_PORT}/v1"
+ROUTER_MODEL = "kosika-virtual"
+#: How long Studio waits for one answer through the router before it says
+#: plainly that no model answered. The router itself gives up on a slow
+#: model and tries the next one well before this.
+ROUTER_TIMEOUT_SECONDS = 240
 #: Starter agents made in a new folder, in this order.
 STARTERS = ("support", "expense", "notes", "researcher")
 #: Models tried first when several are installed: known to follow the
@@ -47,6 +60,67 @@ def installed_models(
         if isinstance(found, list)
         else None
     )
+
+
+def _answers(port: int, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def wake_ollama(wait_seconds: float = 15.0) -> str:
+    """Start Ollama when it is installed and not running. Returns what
+    happened in plain words: "" when it was already running."""
+
+    if installed_models(timeout=1.0) is not None:
+        return ""
+    program = shutil.which("ollama")
+    if not program:
+        return "Ollama is not installed, so only cloud models can answer."
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        subprocess.Popen(
+            [program, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+    except OSError as exc:
+        return f"Ollama could not be started: {exc}"
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        if installed_models(timeout=1.0) is not None:
+            return "Ollama was not running, so Studio started it."
+        time.sleep(0.5)
+    return "Ollama was started but did not answer yet."
+
+
+def wake_router() -> str:
+    """Start Kosika's model router when it is not running. "" when it was
+    already running; otherwise what happened, in plain words."""
+
+    if _answers(ROUTER_PORT):
+        return ""
+    from .ai_page import start_router
+
+    problem = start_router()
+    return problem or "Kosika's model router was not running, so Studio started it."
+
+
+def health() -> dict[str, Any]:
+    """Whether the model services answer right now, for Studio's Home."""
+
+    models = installed_models(timeout=1.0)
+    return {
+        "router": _answers(ROUTER_PORT),
+        "router_url": ROUTER,
+        "ollama": models is not None,
+        "local_models": sorted(
+            str(m.get("name")) for m in (models or []) if m.get("name")
+        ),
+    }
 
 
 def _is_embedding(model: dict[str, Any]) -> bool:
@@ -87,10 +161,13 @@ def one_model_warning(setting: str | None) -> list[str]:
 
 
 def start_plan(
-    folder: Path, models: list[dict[str, Any]] | None
+    folder: Path, models: list[dict[str, Any]] | None, router: bool = False
 ) -> tuple[list[str], list[str]]:
     """What `kosika start` will do: the Studio arguments, and the lines that
-    tell the person. Makes the starter agents if the folder has none."""
+    tell the person. Makes the starter agents if the folder has none.
+
+    With ROUTER true, agents are answered through Kosika's model router, so
+    every model it knows is tried in turn; else by one model in Ollama."""
 
     lines = ["Kosika is starting."]
     made: list[str] = []
@@ -111,22 +188,37 @@ def start_plan(
     )
     arguments = ["studio", str(folder)]
     chosen = choose_model(models) if models else None
-    if chosen:
-        arguments += ["--model", chosen, "--model-protocol", "ollama"]
-        lines.append(f"  Model: {chosen}, from Ollama on this computer.")
-        embedding = next(
-            (
-                str(m["name"])
-                for m in models or []
-                if _is_embedding(m) and m.get("name")
-            ),
-            None,
+    embedding = next(
+        (
+            str(m["name"]).removesuffix(":latest")
+            for m in models or []
+            if _is_embedding(m) and m.get("name")
+        ),
+        None,
+    )
+    if router:
+        arguments += [
+            "--model",
+            ROUTER_MODEL,
+            "--model-url",
+            ROUTER,
+            "--model-timeout",
+            str(ROUTER_TIMEOUT_SECONDS),
+        ]
+        lines.append(
+            "  Models: Kosika's router, free cloud models first, then the ones on"
+            " this computer. When one fails the next is asked."
         )
         if embedding:
-            arguments += ["--embed-model", embedding.removesuffix(":latest")]
-            lines.append(
-                f"  Search by meaning: on, with {embedding.removesuffix(':latest')}."
-            )
+            arguments += ["--embed-model", embedding, "--embed-url", OLLAMA]
+            lines.append(f"  Search by meaning: on, with {embedding}.")
+            lines += one_model_warning(os.environ.get("OLLAMA_MAX_LOADED_MODELS"))
+    elif chosen:
+        arguments += ["--model", chosen, "--model-protocol", "ollama"]
+        lines.append(f"  Model: {chosen}, from Ollama on this computer.")
+        if embedding:
+            arguments += ["--embed-model", embedding]
+            lines.append(f"  Search by meaning: on, with {embedding}.")
             lines += one_model_warning(os.environ.get("OLLAMA_MAX_LOADED_MODELS"))
     elif models is None:
         lines += [

@@ -1163,9 +1163,13 @@ pre.diff .hunk { color: var(--faint); }
 .page-top { margin-bottom: 22px; }
 .page-top h1 { margin: 0; }
 .quiet-line { color: var(--soft); font-size: 13px; margin: 4px 0 0; }
-.home-grid.compact { grid-template-columns: 1.3fr 1fr 1fr; align-items: start; }
+.home-grid.compact { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
 .home-grid.compact .today { grid-row: span 2; }
 .home-grid.compact .wide { grid-column: span 2; }
+.home-grid.compact > * { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .home-grid.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } .home-grid.compact .today { grid-row: auto; } }
+@media (max-width: 760px) { .home-grid.compact { grid-template-columns: minmax(0, 1fr); } .home-grid.compact .wide { grid-column: auto; } }
+.home-health { margin: 0 0 14px; } .home-health:empty { display: none; }
 .home-card h3 { margin: 0 0 12px; font-size: 15px; }
 .home-card.hit { cursor: pointer; }
 .home-card .big { font-size: 40px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
@@ -1217,7 +1221,7 @@ pre.diff .hunk { color: var(--faint); }
 .plan-icon[data-kind="keep"] { background: var(--ok-soft); color: var(--ok); }
 .plan-icon[data-kind="paper"], .plan-icon[data-kind="study"] { background: var(--think-soft); color: var(--think); }
 .plan-steps button { min-height: 30px; padding: 0 12px; font-size: 13px; }
-.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 14px; }
 .home-card { border-top: 3px solid var(--card-accent, var(--accent)); }
 .home-card h3 { margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
 .home-card h3 i { width: 9px; height: 9px; border-radius: 50%; background: var(--card-accent, var(--accent)); box-shadow: 0 0 10px var(--card-accent, var(--accent)); }
@@ -2046,6 +2050,7 @@ async function showHome(tab, quiet) {
   }
   ask.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
   const grid = h("div", {class: "home-grid compact"}, homeCards(view, plan, models));
+  const health = h("div", {class: "home-health"});
   const again = () => { homeTimer = setTimeout(async () => {
     if (!["", "#", "#home"].includes(location.hash)) return;
     try {
@@ -2058,8 +2063,31 @@ async function showHome(tab, quiet) {
     h("div", {class: "home-head"}, h("h1", null, look.greeting)),
     h("div", {class: "home-ask"}, ask, h("button", {onclick: send}, "Ask")),
     view.ok ? null : h("div", {class: "banner bad"}, view.error || "home.kos could not be run"),
+    health,
     grid].filter(Boolean));
   again();
+  showHealth(health);
+}
+
+// Whether the agents can reach a model: Kosika's router (free cloud models
+// first) and Ollama (the models on this computer). When either is off, one
+// button starts it, so agents are never left waiting on a server that was
+// simply not running.
+async function showHealth(holder) {
+  let now;
+  try { now = await api("/api/health"); } catch (error) { holder.replaceChildren(); return; }
+  const pip = (ok, label) => h("span", {class: "chip"}, h("i", {class: "pip", style: "background:" + (ok ? "var(--ok)" : "var(--bad)")}), label + (ok ? " on" : " off"));
+  const down = !now.router || !now.ollama;
+  const wake = h("button", {class: "ghost", onclick: async () => {
+    wake.disabled = true; wake.textContent = "Starting\u2026";
+    try { const said = await api("/api/health/wake", {method: "POST", body: "{}"}); holder.dataset.said = (said.said || []).join(" "); } catch (error) { holder.dataset.said = error.message; }
+    showHealth(holder);
+  }}, "Start them");
+  holder.replaceChildren(...[h("div", {class: "card-top"},
+    ...[h("div", {class: "chips"}, pip(now.router, "Model router"), pip(now.ollama, "Ollama")),
+    down ? wake : null].filter(Boolean)),
+    down ? h("p", {class: "quiet-line"}, !now.router ? "Agents can\u2019t reach the free cloud models until the router is on." : "The models on this computer can\u2019t answer until Ollama is on.") : null,
+    holder.dataset.said ? h("p", {class: "quiet-line"}, holder.dataset.said) : null].filter(Boolean));
 }
 
 // The four cards: Today (Kosi's plan, one line a step), who is at work (their
@@ -2197,10 +2225,21 @@ async function showCoders(note) {
     event.currentTarget.disabled = true;
     try { await api("/api/coders/start", {method: "POST", body: JSON.stringify({size: 4})}); showCoders("Started."); } catch (error) { alert(error.message); }
   }}, "Start swarm");
+  // Every change that passed and still waits, kept together: one branch and
+  // one pull request into studio to review, instead of one at a time.
+  const keepAll = view.waiting ? h("button", {title: "One pull request into studio with every change that passed. Nothing is merged.", onclick: async event => {
+    const button = event.currentTarget;
+    if (!confirm("Keep all " + view.waiting + " changes that passed? They go on one branch and one pull request into studio for you to review. Nothing is merged.")) return;
+    button.disabled = true; button.textContent = "Keeping\u2026";
+    try {
+      const said = await api("/api/coders/keep-all", {method: "POST", body: "{}"});
+      showCoders("Kept " + said.kept.length + " in one pull request: " + said.url + (said.skipped.length ? " \u00b7 " + said.skipped.length + " no longer apply and still wait." : ""));
+    } catch (error) { showCoders(error.message); }
+  }}, "Keep all " + view.waiting + " that passed") : null;
   main.replaceChildren(...[
     h("div", {class: "card-top page-top"},
-      h("div", null, h("h1", null, "Coders"), h("p", {class: "quiet-line"}, passed + " passed \u00b7 " + view.working + " working \u00b7 " + failed + " to retry")),
-      h("div", {class: "row"}, h("button", {class: "ghost", onclick: () => { adding.style.display = adding.style.display === "none" ? "" : "none"; box.focus(); }}, "+ Request"), start)),
+      h("div", null, h("h1", null, "Coders"), h("p", {class: "quiet-line"}, passed + " passed \u00b7 " + view.working + " working \u00b7 " + failed + " to retry" + (view.waiting ? " \u00b7 " + view.waiting + " waiting for Keep" : ""))),
+      h("div", {class: "row"}, keepAll, h("button", {class: "ghost", onclick: () => { adding.style.display = adding.style.display === "none" ? "" : "none"; box.focus(); }}, "+ Request"), start)),
     note ? h("div", {class: "banner"}, note) : null,
     adding,
     Object.keys(newest).length ? grid : h("p", {class: "quiet-line"}, "The swarm hasn\u2019t run yet."),
