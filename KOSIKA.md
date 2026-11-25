@@ -341,6 +341,10 @@ Supported functions:
   values. `ref name` creates a typed function value, including its captures,
   and function values may be passed, returned, stored in workflow bindings, and
   called.
+- A function written as a value, `fn(x: Number) -> Number { x * 2 }`, sees
+  only its own parameters and top-level names; it does not capture locals
+  around it. Using one is refused with `check/captured-variable`, which names
+  the fix: pass it in as a parameter, or write a named nested function.
 - May recurse only when every function participating in the cycle declares
   `recurse N`, where `N` is from 1 through 128. Call depth is bounded at 128
   and static function nesting at 32.
@@ -950,6 +954,42 @@ said = match kind.label {
   never take that branch; if it does take it, the call is refused there. A
   tool whose access is `execute` never runs without an approval for that
   exact call, whatever path led to it.
+
+A step MAY also choose its call with `if` (proposal 7,
+`docs/proposals/0007-workflow-if.md`):
+
+```kosika
+more = if hit.found { finish from_cache(hit) } else { use_model thinker(ask) }
+said = if size == 0 { finish {text: "nothing asked"} } else if size < 4 { short(ask) } else { call long(ask) }
+```
+
+```ebnf
+step   |= identifier "=" "if" expression branch
+          { "else" "if" expression branch } "else" branch ;
+branch  = "{" [ "finish" ] ( call | expression ) "}" ;
+```
+
+- An `if` step is a `match` step on its condition: `case true` and
+  `case _`. With `else if` it matches the place of the first condition that
+  holds. Everything said above of a `match` step holds for it, and its trace
+  is a `match` step's.
+- It MUST have an `else` (`parse/if-step-else`), because a step always makes
+  one call or gives one value. An `if` whose branches are all values, with
+  no `finish`, is the ordinary `if` of a value step.
+
+A branch of an `if` or `match` step MAY begin with `finish`. When that
+branch is taken, its call is made as the step's call and its result is what
+the workflow returns; the steps after it are not made. `finish(x)`, with a
+parenthesis right after it, is still a call of a function named `finish`.
+
+- A finishing branch MUST give the workflow's own type, and the other
+  branches give the step's type, as before (`check/finish`).
+- At least one branch MUST go on: a step that always finishes is the last
+  step written another way.
+- `finish` MUST NOT be written in a `for` step; decide in an `if` step
+  after it. (A branching step is never in a `parallel` block.)
+- The trace of a run that finished early ends with that step's events and
+  `run_complete`; it is replayed like any other, on either engine.
 
 ### Budgets
 
@@ -1576,8 +1616,9 @@ call = identifier "(" named-arguments ")"                 (* function *)
 - The final step result MUST have the workflow output type.
 - Workflow calls are acyclic and statically bounded to depth 32.
 - Arbitrary branching and loops belong in pure functions. At workflow level
-  a step may choose its call with `match`, and may be made once for each
-  item of a list with a `for` step, below; nothing else loops.
+  a step may choose its call with `match` or `if`, may `finish` the workflow
+  early from a branch, and may be made once for each item of a list with a
+  `for` step; nothing else branches or loops.
 - `execute agent.tool(...)` is valid only when the tool appears in the agent's
   `can` list and its input/output types match.
 - `ask agent(...)` runs the bounded agent loop against the agent's model and
@@ -1592,6 +1633,28 @@ approval record. The runtime
 claims the exact action and arguments before the effect and journals completion
 for safe resume. Approval actor strings are record labels, not authenticated
 human identity; authentication is a host responsibility.
+
+## Diagnostics
+
+`kosika check FILE --format json` prints a `kosika.diagnostics/v1` report on
+both engines (`python -m kosika.cli` and `kosika-native`): `schema`, `path`,
+`ok`, `diagnostics`, `codes`, and `error_count`. Each diagnostic has a stable
+`code`, the `message`, a zero-based LSP `range` or `null`, and, for the codes
+an AI writer most often meets, a `help` line with the usual fix.
+
+- The code table lives in `kosika/diagnostics.py` (`CODES`, `HELP`, and the
+  message rules). `python -m kosika.diagnostics` prints it as
+  `kosika.diagnostic-codes/v1`; the Go engine embeds that file
+  (`native/diagnostic_codes.json`), so the two engines cannot drift apart.
+- For one program both engines report the same codes, messages and `help`.
+  A located error (`at LINE:COLUMN`) has the same range on both, as wide as
+  the token there. The reference engine also anchors check errors to the
+  declaration or step they name; the Go engine reports `range: null` for
+  those for now.
+- `engine/not-yet` means the program is valid Kosika that this engine cannot
+  run yet (for example `learn near` on Go). It is not the program's fault: run
+  it on the reference engine.
+- Exit status is 0 when the program checks and 2 when it does not.
 
 ## Execution semantics
 

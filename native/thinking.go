@@ -232,7 +232,7 @@ func LowerThinking(program *Program) (lowered *Program, refused string) {
 					branch.Call = lower(step, branch.Call, "")
 					changed.Branches[i] = branch
 				}
-				changed.Call = changed.Branches[0].Call
+				changed.Call = keptBranch(changed.Branches)
 			}
 			changedWorkflow.Steps = append(changedWorkflow.Steps, &changed)
 		}

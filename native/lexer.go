@@ -30,7 +30,7 @@ type LexError struct {
 }
 
 func (e *LexError) Error() string {
-	return fmt.Sprintf("Unexpected character at %d:%d: %s", e.Line, e.Column, e.Excerpt)
+	return fmt.Sprintf("Unexpected character at %d:%d: %s", e.Line, e.Column, pyRepr(e.Excerpt))
 }
 
 func isDigit(r rune) bool  { return r >= '0' && r <= '9' }

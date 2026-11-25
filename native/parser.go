@@ -12,12 +12,18 @@ import (
 	"strings"
 )
 
-type ParseError struct{ Message string }
+// A ParseError says what was expected. Shape is set on one that says a
+// step was begun as a branching step and not finished as one: it is
+// reported, never taken as a sign the line is a plain value.
+type ParseError struct {
+	Message string
+	Shape   bool
+}
 
 func (e *ParseError) Error() string { return e.Message }
 
 func parseFail(format string, args ...any) {
-	panic(&ParseError{fmt.Sprintf(format, args...)})
+	panic(&ParseError{Message: fmt.Sprintf(format, args...)})
 }
 
 var compound = []string{"+=", "-=", "*=", "/="}

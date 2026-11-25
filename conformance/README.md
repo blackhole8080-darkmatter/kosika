@@ -58,7 +58,7 @@ it must be what Kosika should do, not merely what one engine happens to do.
   refused and checked by these programs, but none carries an approval
   through to the tool that runs.
 - Vectors and matrices, and `std/nn.kos` beyond loading it.
-- 36 passing programs, 12 failing ones and 89 refused ones are a beginning. A method or rule
+- 37 passing programs, 12 failing ones and 94 refused ones are a beginning. A method or rule
   that no case uses is not held to anything.
 
 ## Every other program: `agree`

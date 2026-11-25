@@ -4,6 +4,7 @@ package main
 // step this engine cannot run yet (fetching a page) is refused by name.
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -159,7 +160,7 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 			for !p.accept("}") {
 				if !p.atAssignment() && !p.atTypedStep() {
 					inner := p.current()
-					parseFail("Unexpected workflow item %s at %d:%d", quoted(inner.Value), inner.Line, inner.Column)
+					parseFail("Unexpected workflow item %s at %d:%d; a workflow step is one line `name = <one call>`, and the last step's value is the result, so put logic in a fn", quoted(inner.Value), inner.Line, inner.Column)
 				}
 				step := p.parseShortStep()
 				step.Group = groups
@@ -171,7 +172,7 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 		case p.accept("budget"):
 			workflow.Budget = append(workflow.Budget, p.parseBudget()...)
 		default:
-			parseFail("Unexpected workflow item %s at %d:%d", quoted(token.Value), token.Line, token.Column)
+			parseFail("Unexpected workflow item %s at %d:%d; a workflow step is one line `name = <one call>`, and the last step's value is the result, so put logic in a fn", quoted(token.Value), token.Line, token.Column)
 		}
 	}
 	return workflow
@@ -258,6 +259,11 @@ func (p *Parser) parseShortStep() *Step {
 			return step
 		}
 	}
+	if written == "" && p.check("if") {
+		if step := p.parseIfStep(name); step != nil {
+			return step
+		}
+	}
 	if p.check("for") {
 		if step := p.parseLoopStep(name); step != nil {
 			step.BindingType = written
@@ -307,6 +313,9 @@ func (p *Parser) parseLoopStep(name string) (found *Step) {
 	if p.check("match") {
 		step = p.parseMatchStep(name)
 	}
+	if step == nil && p.check("if") {
+		step = p.parseIfStep(name)
+	}
 	if step == nil {
 		if p.check("for") {
 			return nil
@@ -324,7 +333,7 @@ func (p *Parser) parseLoopStep(name string) (found *Step) {
 	for _, branch := range step.Branches {
 		calls = append(calls, branch.Call)
 	}
-	value := step.Fallback == nil
+	value := step.Fallback == nil && !finishes(step)
 	for _, call := range calls {
 		if !isValueCall(call) {
 			value = false
@@ -353,7 +362,7 @@ func (p *Parser) parseMatchStep(name string) (found *Step) {
 		}
 		if found != nil {
 			for _, branch := range found.Branches {
-				if !isValueCall(branch.Call) {
+				if !isValueCall(branch.Call) || branch.Finish {
 					return
 				}
 			}
@@ -382,14 +391,111 @@ func (p *Parser) parseMatchStep(name string) (found *Step) {
 			}
 		}
 		p.expect("{")
-		branch.Call = p.parseStepOrValue()
+		branch.Finish, branch.Call = p.parseBranchBody()
 		p.expect("}")
 		step.Branches = append(step.Branches, branch)
 	}
 	if len(step.Branches) == 0 {
 		p.expect("case")
 	}
-	step.Call = step.Branches[0].Call
+	step.Call = keptBranch(step.Branches)
+	return step
+}
+
+// parseBranchBody reads what one branch of a `match` or `if` step holds: a
+// call or a value, after `finish` when making it ends the workflow.
+// `finish(...)` is a call of a function named finish, as it always was.
+func (p *Parser) parseBranchBody() (bool, *StepCall) {
+	token := p.current()
+	finish := token.Kind == "IDENT" && token.Value == "finish" && p.peek().Value != "("
+	if finish {
+		p.advance()
+	}
+	return finish, p.parseStepOrValue()
+}
+
+// parseIfStep reads `hit = if cached.found { finish reply(cached) } else {
+// call think(ask) }`: a step that makes one of two calls, chosen by a
+// condition. It is a match step on the condition, `case true` and `case _`;
+// with `else if`, on the place of the first condition that holds. When no
+// branch makes a call or finishes, as `size = if big { 2 } else { 1 }`, it is
+// the ordinary `if` of a value: nil is given back and the parser is where it
+// was.
+func (p *Parser) parseIfStep(name string) (found *Step) {
+	start := p.index
+	opening := p.current()
+	defer func() {
+		if caught := recover(); caught != nil {
+			if !isPlainParseError(caught) {
+				panic(caught)
+			}
+			found = nil
+		}
+		if found == nil {
+			p.index = start
+		}
+	}()
+	p.expect("if")
+	var conditions []Expr
+	var bodies []Branch
+	body := func() {
+		p.expect("{")
+		var branch Branch
+		branch.Finish, branch.Call = p.parseBranchBody()
+		p.expect("}")
+		bodies = append(bodies, branch)
+	}
+	for {
+		conditions = append(conditions, p.expression())
+		body()
+		if !p.check("else") {
+			value := true
+			for _, branch := range bodies {
+				if branch.Finish || !isValueCall(branch.Call) {
+					value = false
+				}
+			}
+			if !value {
+				panic(&ParseError{Shape: true, Message: fmt.Sprintf("Step %s needs an `else` at %d:%d: an `if` step makes one call whichever way its condition goes, so write `else { ... }` with the call or value for the other way", pyRepr(name), opening.Line, opening.Column)})
+			}
+			return nil // `if` with no `else` and no call: an `if` value
+		}
+		p.expect("else")
+		if p.accept("if") {
+			continue
+		}
+		body()
+		break
+	}
+	value := true
+	for _, branch := range bodies {
+		if branch.Finish || !isValueCall(branch.Call) {
+			value = false
+		}
+	}
+	if value {
+		return nil
+	}
+	step := &Step{Name: name, Binding: name, Return: name}
+	if len(conditions) == 1 {
+		step.Subject = conditions[0]
+		bodies[0].Pattern = true
+		bodies[1].Any = true
+	} else {
+		// `else if`: the subject is the place of the first condition that
+		// holds, as a number, and the last branch is `case _`.
+		var subject Expr = &Literal{numberLiteral(strconv.Itoa(len(conditions)), false)}
+		for index := len(conditions) - 1; index >= 0; index-- {
+			subject = &CondExpr{conditions[index], &Literal{numberLiteral(strconv.Itoa(index), false)}, subject}
+		}
+		step.Subject = subject
+		for index := range conditions {
+			bodies[index].Pattern = numberLiteral(strconv.Itoa(index), false)
+		}
+		bodies[len(bodies)-1].Any = true
+	}
+	step.Branches = bodies
+	step.Call = keptBranch(bodies)
 	return step
 }
 
@@ -429,7 +535,7 @@ func (p *Parser) parseStepOrValue() *StepCall {
 // expected, not of one saying this engine cannot run something yet.
 func isPlainParseError(caught any) bool {
 	failure, ok := caught.(*ParseError)
-	return ok && !strings.HasPrefix(failure.Message, "kosika-native cannot")
+	return ok && !failure.Shape && !strings.HasPrefix(failure.Message, "kosika-native cannot")
 }
 
 // tryStepCall is parseStepCall, or nil where what follows is not a call.

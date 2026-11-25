@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func fail(format string, args ...any) {
@@ -47,10 +48,13 @@ func load(path string) *Program {
 // `run` says it on the error output, as the reference's command line does.
 func loadTo(path string, refusals *os.File) *Program {
 	program, failure := loadModules(path)
-	if failure != nil && failure.parse {
+	if failure != nil && failure.parse && strings.Contains(failure.message, "kosika-native cannot") {
+		// Valid Kosika this engine cannot run yet: not the program's fault.
 		fail("Check failed: %s", failure.message)
 	}
 	if failure != nil {
+		// Refused, whether it does not parse or does not check: exit code
+		// 2, as the reference ends.
 		fmt.Fprintf(refusals, "Check failed: %s\n", failure.message)
 		os.Exit(2)
 	}
@@ -115,6 +119,14 @@ func main() {
 	}
 	if len(args) == 2 && args[0] == "replay" {
 		os.Exit(replayCommand(args[1]))
+	}
+	// The reference's machine-readable report, `check --format json FILE`
+	// or `check FILE --format json`: see diagnostics.go.
+	if len(args) == 4 && args[0] == "check" && args[1] == "--format" && args[2] == "json" {
+		os.Exit(checkJSONCommand(args[3]))
+	}
+	if len(args) == 4 && args[0] == "check" && args[2] == "--format" && args[3] == "json" {
+		os.Exit(checkJSONCommand(args[1]))
 	}
 	if len(args) == 2 && args[0] == "check" {
 		// Would this program run? The same verdict and the same reason as

@@ -15,6 +15,7 @@ The suite is in `conformance/`. See its README.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -63,9 +64,19 @@ def report(program: Path) -> tuple[str, int]:
     try:
         results = run_tests(load_program(program))
     except (ValueError, TypeError) as exc:
-        return f"Check failed: {exc}\n", 2
+        return f"Check failed: {unplaced(str(exc), program)}\n", 2
     failed = any(not result.passed for result in results)
     return to_text(results) + "\n", 1 if failed else 0
+
+
+def unplaced(text: str, program: Path) -> str:
+    """A parse error names its file first. Where the suite lives differs
+    from machine to machine, so that name is left out of what is compared."""
+
+    # The engine may spell the folder another way (on Windows, a short 8.3
+    # name), so any path ending in the program's own file name is cut.
+    pattern = r"(?:[A-Za-z]:)?[^\s:]*[\\/]" + re.escape(program.name) + r": "
+    return re.sub(pattern, "", text, flags=re.IGNORECASE)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,7 +131,9 @@ def check_engine(engine: list[str]) -> int:
         ran = subprocess.run(
             [*engine, "test", str(program)], capture_output=True, check=False
         )
-        printed = (ran.stdout + ran.stderr).decode("utf-8").replace("\r\n", "\n")
+        printed = unplaced(
+            (ran.stdout + ran.stderr).decode("utf-8").replace("\r\n", "\n"), program
+        )
         expected = expected_path(program).read_text(encoding="utf-8")
         code = EXIT_CODES[program.parent.name]
         if printed != expected or ran.returncode != code:

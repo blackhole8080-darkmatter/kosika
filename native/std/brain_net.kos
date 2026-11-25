@@ -12,6 +12,10 @@
 //   words    two episodes whose asks share topic words (bc_words, the
 //            words the Brain's own recall uses), each to its 3 nearest
 //   record   a part with episodes keeps them on the timeline
+//
+// A link is as thick as it is strong, and checks make it so: every check an
+// episode passed strengthens its part's link to the timeline, every failure
+// weakens it (bn_strength), so the network grows where Kosika's work holds.
 //   round    the latest episode's round: timeline, working memory, part,
 //            episode
 //
@@ -29,7 +33,7 @@ import "brain_core.kos"
 import "designs_plot.kos"
 import "designs_network.kos"
 
-export [BrainNetAsk, BrainNetView, BrainNetwork, BrainNetLink, bn_parts, bn_part_names, bn_network, bn_net, bn_figure, bn_link_weight, brain_net]
+export [BrainNetAsk, BrainNetView, BrainNetwork, BrainNetLink, bn_parts, bn_part_names, bn_network, bn_net, bn_figure, bn_link_weight, bn_strength, brain_net]
 
 record BrainNetAsk { about: Text }
 record BrainNetView { title: Text page: Text svg: Text episodes: Number links: Number }
@@ -56,6 +60,19 @@ fn bn_link_weight(a: Text[], b: Text[]) -> Number {
   return shared / (a.length() + b.length() - shared)
 }
 
+// How strong a link has grown, 0 to 1: a logistic of the checks passed
+// less those failed, so it starts at 0.5 and each passed check strengthens
+// it, quickly at first, then less and less.
+fn bn_strength(passed: Number, failed: Number) -> Number {
+  return 1 / (1 + (0 - (passed - failed) / 2).exp())
+}
+
+fn bn_outcome_weight(o: Text) -> Number {
+  if o == "passed" { return bn_strength(1, 0) }
+  if o == "failed" { return bn_strength(0, 1) }
+  return 0.5
+}
+
 fn bn_short(t: Text, n: Number) -> Text { return if t.length() > n { t.take(n) + "..." } else { t } }
 
 // The newest 40 episodes, each beside its part. Neurons: 0 the timeline,
@@ -74,6 +91,8 @@ fn bn_network(episodes: BrainEpisode[], working: Text[]) -> BrainNetwork {
   }
   var links: BrainNetLink[] = []
   var counts = for k in 0 until parts.length() { 0 }
+  var passed = for k in 0 until parts.length() { 0 }
+  var failed = for k in 0 until parts.length() { 0 }
   var words: Text[][] = []
   let from = (episodes.length() - 40).max(0)
   var last = -1
@@ -90,8 +109,10 @@ fn bn_network(episodes: BrainEpisode[], working: Text[]) -> BrainNetwork {
     let y = (2.4 * hub.sin() + d * a.sin()).max(-3.9).min(3.9)
     let id = nodes.length()
     let outcome = if ["passed", "failed", "unchecked"].contains(e.outcome) { e.outcome } else { "unchecked" }
+    passed = for i in 0 until passed.length() { if i == k and outcome == "passed" { passed[i] + 1 } else { passed[i] } }
+    failed = for i in 0 until failed.length() { if i == k and outcome == "failed" { failed[i] + 1 } else { failed[i] } }
     nodes = nodes.append({name: "", region: regions[k], x: x, y: y, z: 0.35 + 0.1 * (n % 4), about: bn_short(e.ask, 90) + " (" + outcome + ")", ring: bn_outcome_hex(outcome), size: 0.5})
-    links = links.append({from: id, to: 2 + k, weight: 0.5, why: "part"})
+    links = links.append({from: id, to: 2 + k, weight: bn_outcome_weight(outcome), why: "part"})
     words = words.append(bc_words(e.ask))
     last = id
     last_k = k
@@ -109,7 +130,7 @@ fn bn_network(episodes: BrainEpisode[], working: Text[]) -> BrainNetwork {
     links = links.concat(best)
   }
   for k in 0 until parts.length() {
-    if counts[k] > 0 { links = links.append({from: 2 + k, to: 0, weight: (0.3 + 0.1 * counts[k]).min(1), why: "record"}) }
+    if counts[k] > 0 { links = links.append({from: 2 + k, to: 0, weight: bn_strength(passed[k], failed[k]), why: "record"}) }
   }
   if last >= 0 {
     links = links.concat([{from: 0, to: 1, weight: 1, why: "round"}, {from: 1, to: 2 + last_k, weight: 1, why: "round"}, {from: 2 + last_k, to: last, weight: 1, why: "round"}])
@@ -128,7 +149,7 @@ fn bn_figure(episodes: BrainEpisode[], working: Text[]) -> PlFigure {
   let title = if episodes.is_empty() { "Kosika Brain network: no episodes yet" } else { f"Kosika Brain network: {episodes.length()} episodes" }
   let f = net25_figure(bn_net(b, title))
   var notes: Text[] = ["The timeline stands at the core with working memory beside it; each Kosika part is a hub, and each episode a small neuron in its part's cluster: green passed, red failed, amber unchecked."]
-  notes = notes.append(f"Every link is real: {b.links.length()} in all, from an episode to its part, between episodes whose asks share topic words, from a part to the timeline, and the latest episode's round. Signals run on the links that are strong enough (weight 0.5 or more).")
+  notes = notes.append(f"Every link is real: {b.links.length()} in all, from an episode to its part, between episodes whose asks share topic words, from a part to the timeline, and the latest episode's round. Each link is as thick as it is strong: every passed check strengthens it and every failure weakens it. Signals run on the links that are strong enough (weight 0.5 or more).")
   let fig: PlFigure = {kind: f.kind, title: title, formula: f.formula, notation: f.notation, svg: f.svg, live: "", page: "", notes: notes.concat(f.notes), problems: f.problems}
   return pl_paged(fig, "Kosika Brain &#183; the network")
 }
@@ -170,6 +191,18 @@ test "the latest episode's round runs timeline, working memory, part, episode" {
   net = bn_network([bn_test_ep("ai", "one", "passed"), bn_test_ep("swarm", "two", "failed")], ["one"])
   expect (for l in net.links where l.why == "round" { [l.from, l.to] }) == [[0, 1], [1, 6], [6, 9]]
   expect (for l in bn_network([], []).links where l.why == "round" { l }).is_empty()
+}
+
+test "links grow stronger with every check that passes, and weaker with failures" {
+  expect bn_strength(0, 0) == 0.5
+  expect bn_strength(3, 0) > bn_strength(1, 0)
+  expect bn_strength(0, 2) < 0.5
+  net = bn_network([bn_test_ep("ai", "one", "passed"), bn_test_ep("ai", "two", "passed"), bn_test_ep("kosi", "three", "failed")], [])
+  rec = for l in net.links where l.why == "record" { l }
+  expect rec[0].to == 0
+  expect rec[0].weight == bn_strength(2, 0)
+  expect rec[1].weight == bn_strength(0, 1)
+  expect (for l in net.links where l.why == "part" { l.weight })[2] < 0.5
 }
 
 test "the network is drawn by the 2.5D drawer, its asks escaped" {

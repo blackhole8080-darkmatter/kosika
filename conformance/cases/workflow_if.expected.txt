@@ -1,0 +1,6 @@
+PASS  a known answer finishes the workflow and asks no model
+PASS  otherwise the model is asked and the steps after are made
+PASS  else if takes the first condition that holds
+PASS  a match step may finish, and finish(...) is still a call
+PASS  a called workflow that finishes early hands back its result
+5 passed, 0 failed

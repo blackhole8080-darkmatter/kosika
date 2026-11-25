@@ -1,0 +1,25 @@
+// Refused: an `if` step makes a call whichever way its condition goes,
+// so it needs an `else`.
+
+record Ask { text: Text }
+record Hit { found: Bool text: Text }
+record Reply { text: Text }
+
+model thinker {
+  input: Ask
+  output: Hit
+}
+
+fn look(ask: Ask) -> Hit {
+  return {found: ask.text == "hi", text: "hello"}
+}
+
+fn reply(hit: Hit) -> Reply {
+  return {text: hit.text}
+}
+
+workflow main(ask: Ask) -> Reply {
+  hit = look(ask)
+  more = if hit.found { use_model thinker(text: ask.text) }
+  out = reply(more)
+}

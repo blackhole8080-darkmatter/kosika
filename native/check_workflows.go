@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -815,6 +816,9 @@ func (c *checker) checkBranches() {
 			if len(step.Branches) == 0 {
 				continue
 			}
+			if finishes(step) {
+				checkFinishes(workflow, step)
+			}
 			most = max(most, len(step.Branches))
 			last := len(step.Branches) - 1
 			// A match on an enum that names every value needs no `case _`;
@@ -843,6 +847,12 @@ func (c *checker) checkBranches() {
 						checkFail("Step %s match cannot choose execute tool %s", pyRepr(step.Name), pyRepr(tool.Name))
 					}
 				}
+				if branch.Finish {
+					if out := callOutput(c.program, branch.Call); out != "" && out != workflow.Out {
+						checkFail("Step %s finishes workflow %s with %s, but it returns %s; `finish` gives what the workflow returns, so make that call give a %s", pyRepr(step.Name), pyRepr(workflow.Name), pyRepr(out), pyRepr(workflow.Out), pyRepr(workflow.Out))
+					}
+					continue
+				}
 				if out := callOutput(c.program, branch.Call); out != "" {
 					outputs[out] = true
 				}
@@ -864,6 +874,11 @@ func (c *checker) checkBranches() {
 			}
 			changed := *step
 			changed.Call = step.Branches[min(index, len(step.Branches)-1)].Call
+			if step.Branches[min(index, len(step.Branches)-1)].Finish {
+				// A call that finishes is checked on its own, below: the
+				// step's name never holds its result.
+				changed.Call = keptBranch(step.Branches)
+			}
 			// Each case now makes this one call, so the program is checked
 			// with it, and its cases are still there to be checked against
 			// the subject.
@@ -875,6 +890,43 @@ func (c *checker) checkBranches() {
 			return &changed
 		})
 		newChecker(variant).checkDeclarations()
+	}
+	// A call that finishes is checked as the last step of its workflow,
+	// which is what it is when it is made.
+	for w, workflow := range c.program.Workflows {
+		for s, step := range workflow.Steps {
+			for _, branch := range step.Branches {
+				if !branch.Finish {
+					continue
+				}
+				copied := *c.program
+				copied.Workflows = append([]*WorkflowDecl(nil), c.program.Workflows...)
+				ended := *workflow
+				last := *step
+				last.Call = branch.Call
+				last.Branches = make([]Branch, len(step.Branches))
+				for i, other := range step.Branches {
+					other.Call, other.Finish = branch.Call, false
+					last.Branches[i] = other
+				}
+				ended.Steps = append(append([]*Step(nil), workflow.Steps[:s]...), &last)
+				copied.Workflows[w] = &ended
+				newChecker(&copied).checkDeclarations()
+			}
+		}
+	}
+}
+
+// checkFinishes checks where `finish` may be written: in a branch of an
+// `if` or `match` step that also has a branch which does not finish,
+// outside a `for` step. (A branching step is never in `parallel`; that is
+// refused already.)
+func checkFinishes(workflow *WorkflowDecl, step *Step) {
+	if !slices.ContainsFunc(step.Branches, func(branch Branch) bool { return !branch.Finish }) {
+		checkFail("Step %s finishes workflow %s whichever branch is taken; make it the last step and drop `finish`, or give it a branch that goes on", pyRepr(step.Name), pyRepr(workflow.Name))
+	}
+	if step.EachItem != "" {
+		checkFail("Step %s cannot finish workflow %s from inside a `for` step; let the `for` step make its passes, then decide in an `if` step after it", pyRepr(step.Name), pyRepr(workflow.Name))
 	}
 }
 

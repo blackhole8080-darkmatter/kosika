@@ -65,6 +65,7 @@ from .ast import (
     VariableExpr,
     WorkflowCall,
     WorkflowDecl,
+    kept_branch,
     method_function,
 )
 from .lexer import Token, lex
@@ -1625,6 +1626,10 @@ class Parser:
             step = self.parse_match_step(name)
             if step is not None:
                 return step
+        if written_type is None and self.check("if"):
+            step = self.parse_if_step(name)
+            if step is not None:
+                return step
         if self.check("for"):
             step = self.parse_loop_step(name, written_type)
             if step is not None:
@@ -1702,6 +1707,10 @@ class Parser:
             step = self.parse_match_step(name)
             if step is not None:
                 return step
+        if self.check("if"):
+            step = self.parse_if_step(name)
+            if step is not None:
+                return step
         if self.check("for"):
             return None
         try:
@@ -1739,16 +1748,113 @@ class Parser:
             step = self._match_step(name)
         except ParseError:
             step = None
-        if step is None or all(_is_value_call(call) for _, call in step.branches):
+        if step is None or (
+            not step.finishes
+            and all(_is_value_call(call) for _, call in step.branches)
+        ):
             self.index = start
             return None
         return step
+
+    def parse_branch_body(self) -> tuple[bool, Any]:
+        """What one branch of a `match` or `if` step holds: a call or a
+        value, after `finish` when making it ends the workflow. `finish(...)`
+        is a call of a function named finish, as it always was."""
+
+        finishes = (
+            self.current.kind == "IDENT"
+            and self.current.value == "finish"
+            and self.peek().value != "("
+        )
+        if finishes:
+            self.advance()
+        return finishes, self.parse_step_or_value()
+
+    def parse_if_step(self, name: str) -> Step | None:
+        """`hit = if cached.found { finish reply(cached) } else { call
+        think(ask) }`: a step that makes one of two calls, chosen by a
+        condition. It is a `match` step on the condition, `case true` and
+        `case _`; with `else if`, on which condition holds first.
+
+        When no branch makes a call or finishes, as `size = if big { 2 }
+        else { 1 }`, it is the ordinary `if` of a value; None is given back
+        and the parser is where it was."""
+
+        start = self.index
+        opening = self.current
+        self.expect("if")
+        conditions: list[Expression] = []
+        bodies: list[Any] = []
+        finishes: list[int] = []
+        missing_else = False
+        try:
+            while True:
+                conditions.append(self.expression())
+                self.expect("{")
+                finish, body = self.parse_branch_body()
+                self.expect("}")
+                if finish:
+                    finishes.append(len(bodies))
+                bodies.append(body)
+                if not self.check("else"):
+                    if finishes or not all(_is_value_call(call) for call in bodies):
+                        missing_else = True
+                        break
+                    # `if` with no `else` and no call: an `if` value.
+                    self.index = start
+                    return None
+                self.expect("else")
+                if self.accept("if"):
+                    continue
+                self.expect("{")
+                finish, body = self.parse_branch_body()
+                self.expect("}")
+                if finish:
+                    finishes.append(len(bodies))
+                bodies.append(body)
+                break
+        except ParseError:
+            self.index = start
+            return None
+        if missing_else:
+            raise ParseError(
+                f"Step {name!r} needs an `else` at {opening.line}:"
+                f"{opening.column}: an `if` step makes one call "
+                "whichever way its condition goes, so write `else "
+                "{ ... }` with the call or value for the other way"
+            )
+        if not finishes and all(_is_value_call(call) for call in bodies):
+            self.index = start
+            return None
+        if len(conditions) == 1:
+            subject: Expression = conditions[0]
+            patterns: list[Any] = [True, None]
+        else:
+            # `else if`: the subject is the place of the first condition
+            # that holds, as a number, and the last branch is `case _`.
+            subject = LiteralExpr(len(conditions))
+            for index in reversed(range(len(conditions))):
+                subject = ConditionalExpr(conditions[index], LiteralExpr(index), subject)
+            patterns = [*range(len(conditions)), None]
+        branches = tuple(zip(patterns, bodies))
+        step = Step(
+            name,
+            branches[0][1],
+            name,
+            None,
+            name,
+            subject=subject,
+            branches=branches,
+            finishes=tuple(finishes),
+        )
+        return replace(step, call=kept_branch(step))
 
     def _match_step(self, name: str) -> Step:
         self.expect("match")
         subject = self.parse_or_expression()
         self.expect("{")
         branches: list[tuple[Any, Any]] = []
+        finishes: list[int] = []
         while not self.accept("}"):
             self.expect("case")
             pattern: Any = None
@@ -1768,11 +1874,14 @@ class Parser:
                         f"got {token.value!r}"
                     )
             self.expect("{")
-            branches.append((pattern, self.parse_step_or_value()))
+            finish, body = self.parse_branch_body()
+            if finish:
+                finishes.append(len(branches))
+            branches.append((pattern, body))
             self.expect("}")
         if not branches:
             self.expect("case")
-        return Step(
+        step = Step(
             name,
             branches[0][1],
             name,
@@ -1780,7 +1889,9 @@ class Parser:
             name,
             subject=subject,
             branches=tuple(branches),
+            finishes=tuple(finishes),
         )
+        return replace(step, call=kept_branch(step))
 
     def parse_step_or_value(
         self,

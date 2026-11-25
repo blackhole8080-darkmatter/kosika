@@ -1,0 +1,52 @@
+// brain.kos: what Studio's Brain page shows, decided in Kosika.
+//
+// brain_page.py reads the Brain's timeline (every episode a Kosika part
+// kept) and hands the newest here. This program draws the Brain's network
+// with std/brain_net.kos, where every link is as thick as it is strong, and
+// counts what passed and failed, so the page can say it in one line.
+
+import "std/brain_core.kos"
+import "std/brain_net.kos"
+
+record BrainPageAsk { episodes: BrainEpisode[] total: Number }
+record BrainPage { title: Text page: Text svg: Text episodes: Number total: Number passed: Number failed: Number unchecked: Number links: Number summary: Text }
+
+fn bp_count(episodes: BrainEpisode[], outcome: Text) -> Number {
+  return (for e in episodes where e.outcome == outcome { e }).length()
+}
+
+fn bp_summary(total: Number, shown: Number, passed: Number, failed: Number) -> Text {
+  if total == 0 { return "The Brain has no episodes yet: ask Kosi or Kosika AI something, and each answer it checks appears here." }
+  let of = if shown < total { f"the newest {shown} of {total}" } else { f"all {total}" }
+  return f"Showing {of} episodes: {passed} passed their checks and {failed} failed. Thicker links have passed more checks."
+}
+
+fn bp_page(a: BrainPageAsk) -> BrainPage {
+  let f = bn_figure(a.episodes, [])
+  let passed = bp_count(a.episodes, "passed")
+  let failed = bp_count(a.episodes, "failed")
+  return {title: f.title, page: f.page, svg: f.svg, episodes: a.episodes.length(), total: a.total, passed: passed, failed: failed,
+          unchecked: a.episodes.length() - passed - failed, links: bn_network(a.episodes, []).links.length(),
+          summary: bp_summary(a.total, a.episodes.length(), passed, failed)}
+}
+
+workflow page(a: BrainPageAsk) -> BrainPage {
+  shown = bp_page(a)
+}
+
+fn bp_test_ep(part: Text, ask: Text, outcome: Text) -> BrainEpisode { return {part: part, session: "default", seq: 1, at: "", ask: ask, did: "did it", outcome: outcome, checked_by: "tests", words: ""} }
+
+test "the Brain page counts what passed and failed and draws the network" {
+  p = bp_page({episodes: [bp_test_ep("ai", "What is 18% of 2450?", "passed"), bp_test_ep("designs", "Plot y = sin(x)", "failed"), bp_test_ep("kosi", "hello", "unchecked")], total: 5})
+  expect p.passed == 1
+  expect p.failed == 1
+  expect p.unchecked == 1
+  expect p.svg.contains("<svg")
+  expect p.summary == "Showing the newest 3 of 5 episodes: 1 passed their checks and 1 failed. Thicker links have passed more checks."
+}
+
+test "an empty Brain says how to fill it" {
+  p = bp_page({episodes: [], total: 0})
+  expect p.episodes == 0
+  expect p.summary.starts_with("The Brain has no episodes yet")
+}

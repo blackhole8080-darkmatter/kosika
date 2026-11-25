@@ -134,7 +134,9 @@ class NativeTests(unittest.TestCase):
                         "the native engine does not claim " + ", ".join(sorted(missing))
                     )
                 ran = self.run_engine("test", str(program))
-                printed = ran.stdout.decode("utf-8").replace("\r\n", "\n")
+                printed = conformance.unplaced(
+                    ran.stdout.decode("utf-8").replace("\r\n", "\n"), program
+                )
                 wanted = conformance.expected_path(program).read_text(encoding="utf-8")
                 self.assertEqual(printed, wanted, ran.stderr.decode("utf-8", "replace"))
                 self.assertEqual(
@@ -800,8 +802,12 @@ workflow main(plan: Plan) -> Report {
             bad = Path(scratch) / "bad.kos"
             bad.write_text("fn f() -> Number {\n  return 1 +\n}\n", encoding="utf-8")
             ran = self.run_engine("test", str(bad))
-        self.assertEqual(ran.returncode, 1)
-        self.assertIn("Expected expression at 3:1, got '}'", ran.stderr.decode("utf-8"))
+        # Refused, as the reference refuses it: exit code 2.
+        self.assertEqual(ran.returncode, 2)
+        self.assertIn(
+            "Expected expression at 3:1, got '}'",
+            (ran.stdout + ran.stderr).decode("utf-8"),
+        )
 
     def test_it_asks_a_model_server_as_the_reference_does(self) -> None:
         # A stand-in model server that answers in either wire format, and

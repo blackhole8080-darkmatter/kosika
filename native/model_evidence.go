@@ -128,7 +128,7 @@ func LowerModelEvidence(program *Program) (lowered *Program, refused string) {
 					lifted = lifted && branch.Call == step.Branches[i].Call
 					changed.Branches[i] = branch
 				}
-				changed.Call = changed.Branches[0].Call
+				changed.Call = keptBranch(changed.Branches)
 				same = lifted
 			}
 			if same {
