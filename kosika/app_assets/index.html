@@ -2013,6 +2013,7 @@ async function showBrain() {
       view.ok ? null : h("div", {class: "banner bad"}, view.error),
       h("div", {class: "chips", style: "margin:-6px 0 14px"}, chip(view.passed + " passed", "ok"), chip(view.failed + " failed", view.failed ? "bad" : ""),
         chip(view.unchecked + " unchecked", ""), chip(view.links + " links"), chip("live", "think")),
+      view.kind ? h("p", {class: "lead", style: "margin:-4px 0 14px"}, h("b", null, "Kosika\u2019s charter: "), view.kind, " Every answer is held to it: honest, kind, never harmful.") : null,
       view.page ? frame : null
     ].filter(Boolean));
   }
