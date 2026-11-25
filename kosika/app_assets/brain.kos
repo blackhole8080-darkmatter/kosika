@@ -7,9 +7,10 @@
 
 import "std/brain_core.kos"
 import "std/brain_net.kos"
+import "std/kindness.kos"
 
 record BrainPageAsk { episodes: BrainEpisode[] total: Number }
-record BrainPage { title: Text page: Text svg: Text episodes: Number total: Number passed: Number failed: Number unchecked: Number links: Number summary: Text }
+record BrainPage { title: Text page: Text svg: Text episodes: Number total: Number passed: Number failed: Number unchecked: Number links: Number summary: Text kind_stopped: Number kind: Text }
 
 fn bp_count(episodes: BrainEpisode[], outcome: Text) -> Number {
   return (for e in episodes where e.outcome == outcome { e }).length()
@@ -21,13 +22,20 @@ fn bp_summary(total: Number, shown: Number, passed: Number, failed: Number) -> T
   return f"Showing {of} episodes: {passed} passed their checks and {failed} failed. Thicker links have passed more checks."
 }
 
+// How Kosika's charter (std/kindness.kos) held: the answers whose check
+// stopped them as unkind, out of the answers kept.
+fn bp_kind(episodes: BrainEpisode[]) -> KindTally {
+  return kind_tally(for e in episodes where e.checked_by == "brain_check" { e.did })
+}
+
 fn bp_page(a: BrainPageAsk) -> BrainPage {
   let f = bn_figure(a.episodes, [])
   let passed = bp_count(a.episodes, "passed")
   let failed = bp_count(a.episodes, "failed")
   return {title: f.title, page: f.page, svg: f.svg, episodes: a.episodes.length(), total: a.total, passed: passed, failed: failed,
           unchecked: a.episodes.length() - passed - failed, links: bn_network(a.episodes, []).links.length(),
-          summary: bp_summary(a.total, a.episodes.length(), passed, failed)}
+          summary: bp_summary(a.total, a.episodes.length(), passed, failed),
+          kind_stopped: bp_kind(a.episodes).stopped, kind: bp_kind(a.episodes).summary}
 }
 
 workflow page(a: BrainPageAsk) -> BrainPage {
@@ -49,4 +57,12 @@ test "an empty Brain says how to fill it" {
   p = bp_page({episodes: [], total: 0})
   expect p.episodes == 0
   expect p.summary.starts_with("The Brain has no episodes yet")
+}
+
+fn bp_test_said(did: Text, outcome: Text) -> BrainEpisode { return {part: "kosi", session: "default", seq: 1, at: "", ask: "hi", did: did, outcome: outcome, checked_by: "brain_check", words: ""} }
+
+test "the Brain page says how Kosika's charter held" {
+  p = bp_page({episodes: [bp_test_said("answered: hello", "unchecked"), bp_test_said("answer refused: unkind: it flatters ('you're a genius')", "failed"), bp_test_ep("ai", "What is 18% of 2450?", "passed")], total: 3})
+  expect p.kind_stopped == 1
+  expect p.kind == "The kindness check stopped 1 of 2 answers."
 }

@@ -103,7 +103,7 @@ def page() -> dict[str, Any]:
         except Exception as exc:  # a timeout or a broken engine must not take Studio down
             drawn, error = {}, f"brain.kos: {exc}"
         made = {"title": "Kosika Brain", "page": "", "svg": "", "episodes": len(shown), "total": total,
-                "passed": 0, "failed": 0, "unchecked": 0, "links": 0, "summary": "",
+                "passed": 0, "failed": 0, "unchecked": 0, "links": 0, "summary": "", "kind_stopped": 0, "kind": "",
                 **drawn, "ok": not error, "error": error, "changed": changed, "path": str(path)}
         if not error:
             _kept.clear()
