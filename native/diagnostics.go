@@ -11,6 +11,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -85,8 +86,10 @@ func diagnosticRange(message string, source string) any {
 func checkJSONCommand(path string) int {
 	message := checkOnly(path)
 	// A parse error names its file first; the report names it once, apart.
-	for _, prefix := range []string{path + ": ", absolutePath(path) + ": "} {
-		message = strings.TrimPrefix(message, prefix)
+	// On Windows the folder may be spelled another way (a short 8.3 name,
+	// or other slashes), so the file is known by its own name.
+	if named, rest, found := strings.Cut(message, ": "); found && strings.EqualFold(filepath.Base(filepath.FromSlash(named)), filepath.Base(path)) {
+		message = rest
 	}
 	report := map[string]any{
 		"schema": "kosika.diagnostics/v1",
