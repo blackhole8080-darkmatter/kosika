@@ -83,6 +83,7 @@ CODES: Mapping[str, str] = {
     "check/duplicate-field": "A record or declaration lists a field more than once.",
     "check/duplicate-parameter": "A declaration lists a parameter more than once.",
     "check/duplicate-pattern": "A match expression repeats a pattern.",
+    "check/endless-type": "A record or choice always needs another of itself, so it has no value.",
     "check/missing-field": "A record literal omits required fields.",
     "check/missing-argument": "A call omits required arguments.",
     "check/unknown-argument": "A call supplies an argument that is not declared.",
@@ -344,6 +345,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/duplicate-field", re.compile(r"^Duplicate \w+ field|has duplicate fields")),
     ("check/duplicate-parameter", re.compile(r"[Dd]uplicate\b.*\bparameter")),
     ("check/duplicate-pattern", re.compile(r"^Duplicate match pattern")),
+    ("check/endless-type", re.compile(r"can never be built: ")),
     ("check/missing-field", re.compile(r"is missing record fields")),
     (
         "check/missing-argument",

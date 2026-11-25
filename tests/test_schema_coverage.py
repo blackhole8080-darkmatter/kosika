@@ -114,11 +114,23 @@ class SchemaCoverageTests(unittest.TestCase):
                 "additionalProperties": False,
             },
         )
-        with self.assertRaisesRegex(ValueError, "Recursive record schema"):
+        # A record that holds itself (a tree) refers back to itself where it
+        # recurs; its outermost schema carries itself under `$defs`.
+        node = {
+            "type": "object",
+            "properties": {
+                "kids": {"type": "array", "items": {"$ref": "#/$defs/Node"}}
+            },
+            "required": ["kids"],
+            "additionalProperties": False,
+        }
+        self.assertEqual(
             schema_for_record(
-                Program(records=[RecordDecl("Loop", (Field("child", "Loop"),))]),
-                "Loop",
-            )
+                Program(records=[RecordDecl("Node", (Field("kids", "Node[]"),))]),
+                "Node",
+            ),
+            {**node, "$defs": {"Node": node}},
+        )
 
     def test_schema_helpers_and_record_conversion_errors(self) -> None:
         left = {"type": "object", "properties": {"x": {"type": "string"}}}

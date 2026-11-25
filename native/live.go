@@ -575,6 +575,29 @@ func pyReprAny(v Value) string {
 // schemaFor is the JSON schema the reference makes from a type, built as a
 // record so that it is written in its keys' order: schema_for_type.
 func (c *checker) schemaFor(typeName string) Value {
+	return c.schemaWithin(typeName, nil, map[string]bool{})
+}
+
+// carryingItself gives a record or choice that recurred inside its own
+// schema (a tree) that schema under `$defs`, so each `#/$defs/NAME` below
+// it has something to name. A type that never recurs keeps exactly the
+// schema it always had: _carrying_itself in kosika/schema.py.
+func carryingItself(typeName string, recurred map[string]bool, schema *Record) Value {
+	if !recurred[typeName] {
+		return schema
+	}
+	delete(recurred, typeName)
+	carrying := newRecord()
+	for _, key := range schema.Keys {
+		carrying.set(key, schema.Fields[key])
+	}
+	defs := newRecord()
+	defs.set(typeName, schema)
+	carrying.set("$defs", defs)
+	return carrying
+}
+
+func (c *checker) schemaWithin(typeName string, stack []string, recurred map[string]bool) Value {
 	object := func(pairs ...any) *Record {
 		record := newRecord()
 		for i := 0; i < len(pairs); i += 2 {
@@ -598,10 +621,19 @@ func (c *checker) schemaFor(typeName string) Value {
 		// A shape's value is one of the records that are it.
 		forms := []Value{}
 		for _, name := range c.shapeMembers(shape) {
-			forms = append(forms, c.schemaFor(name))
+			forms = append(forms, c.schemaWithin(name, stack, recurred))
 		}
 		return object("anyOf", forms)
 	}
+	for _, open := range stack {
+		if open == typeName {
+			// A record or choice that holds itself: where it recurs, the
+			// schema refers back to it.
+			recurred[typeName] = true
+			return object("$ref", "#/$defs/"+typeName)
+		}
+	}
+	inner := append(append([]string{}, stack...), typeName)
 	if choice := c.choices[typeName]; choice != nil {
 		// A choice is one of its alternatives. `$case` names which, and
 		// the alternative's fields sit beside it.
@@ -611,31 +643,31 @@ func (c *checker) schemaFor(typeName string) Value {
 			properties.set("$case", object("const", alternative.Name))
 			required := []Value{"$case"}
 			for _, field := range alternative.Fields {
-				properties.set(field.Name, c.schemaFor(field.Type))
+				properties.set(field.Name, c.schemaWithin(field.Type, inner, recurred))
 				required = append(required, field.Name)
 			}
 			forms = append(forms, object("type", "object", "properties", properties, "required", required, "additionalProperties", false))
 		}
-		return object("anyOf", forms)
+		return carryingItself(typeName, recurred, object("anyOf", forms))
 	}
 	switch {
 	case strings.HasSuffix(typeName, "?"):
-		return object("anyOf", []Value{c.schemaFor(typeName[:len(typeName)-1]), object("type", "null")})
+		return object("anyOf", []Value{c.schemaWithin(typeName[:len(typeName)-1], stack, recurred), object("type", "null")})
 	case strings.HasSuffix(typeName, "{}"):
-		return object("type", "object", "additionalProperties", c.schemaFor(typeName[:len(typeName)-2]))
+		return object("type", "object", "additionalProperties", c.schemaWithin(typeName[:len(typeName)-2], stack, recurred))
 	case strings.HasSuffix(typeName, "[]"):
-		return object("type", "array", "items", c.schemaFor(typeName[:len(typeName)-2]))
+		return object("type", "array", "items", c.schemaWithin(typeName[:len(typeName)-2], stack, recurred))
 	}
 	properties := newRecord()
 	var required []Value
 	for _, field := range c.records[typeName].Fields {
-		properties.set(field.Name, c.schemaFor(field.Type))
+		properties.set(field.Name, c.schemaWithin(field.Type, inner, recurred))
 		required = append(required, field.Name)
 	}
 	if required == nil {
 		required = []Value{}
 	}
-	return object("type", "object", "properties", properties, "required", required, "additionalProperties", false)
+	return carryingItself(typeName, recurred, object("type", "object", "properties", properties, "required", required, "additionalProperties", false))
 }
 
 // thinkingInstructions are the reference's words for each thinking step.
