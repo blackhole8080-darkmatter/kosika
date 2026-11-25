@@ -51,6 +51,8 @@ type run struct {
 	stepScope  []string
 	stepAction string
 	stepCached bool
+	// finishing is whether the branch the last step took was `finish`.
+	finishing  bool
 	servers    map[string]*mcpServer // by tool source, when a run names one
 	toolCalls  int
 	maxTools   int
@@ -326,8 +328,11 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 			r.failingStep, r.inFlight = step.Name, nil
 		}
 		r.stepScope = append(append([]string{}, r.prefix...), workflow.Name, step.Name)
-		r.stepAction, r.stepCached = "", false
+		r.stepAction, r.stepCached, r.finishing = "", false, false
 		value, stepEvents, failure := r.attempt(step, step.Call, environment, at, depth)
+		// `finish`: this call's result is what the workflow returns, and the
+		// steps after it are not made.
+		finishing := r.finishing
 		var recovered *Record
 		if failure != nil {
 			// `otherwise`: a failure of the work hands the step to its
@@ -380,6 +385,9 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 		if depth == 0 {
 			r.failingStep, r.inFlight = "", nil
 		}
+		if finishing {
+			queue = nil
+		}
 	}
 	r.validate(result, workflow.Out, "$")
 	if r.traced {
@@ -410,11 +418,12 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 			panic(caught)
 		}
 	}()
+	finish := false
 	if len(step.Branches) > 0 && step.Subject != nil {
 		chosen := r.machine.eval(step.Subject, at)
 		for _, branch := range step.Branches {
 			if branch.Any || valueEqual(branch.Pattern, chosen) {
-				call = branch.Call
+				call, finish = branch.Call, branch.Finish
 				break
 			}
 		}
@@ -432,6 +441,8 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 		defer func() { r.plan = nil }()
 	}
 	value, events = r.call(call, environment, at, depth, step.Retries)
+	// Set after the call, which may run workflows of its own.
+	r.finishing = finish
 	return value, events, nil
 }
 

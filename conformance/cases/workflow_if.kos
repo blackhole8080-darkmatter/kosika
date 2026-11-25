@@ -1,0 +1,96 @@
+// A workflow step may choose its call with `if`, and a branch of an `if` or
+// `match` step may `finish` the workflow: that call's result is what the
+// workflow returns, and the steps after it are not made. Each step is still
+// one call, traced and replayed like any other.
+
+record Ask { text: Text }
+record Hit { found: Bool text: Text }
+record Reply { text: Text }
+
+model thinker {
+  input: Ask
+  output: Hit
+}
+
+fn look(ask: Ask) -> Hit {
+  return {found: ask.text == "hi", text: "hello"}
+}
+
+fn from_cache(hit: Hit) -> Reply {
+  return {text: "cached: " + hit.text}
+}
+
+fn shape(hit: Hit) -> Reply {
+  return {text: hit.text}
+}
+
+fn finish(hit: Hit) -> Hit {
+  return {found: hit.found, text: hit.text + "!"}
+}
+
+// Known answers finish at once; anything else asks the model, and only
+// then is the answer shaped.
+workflow main(ask: Ask) -> Reply {
+  hit  = look(ask)
+  more = if hit.found { finish from_cache(hit) } else { use_model thinker(text: ask.text) }
+  out  = shape(more)
+}
+
+// `else if` picks the first condition that holds; a branch may be a value.
+workflow sort(ask: Ask) -> Reply {
+  size = ask.text.length()
+  said = if size == 0 { finish {text: "nothing asked"} } else if size < 4 { {found: false, text: "short"} } else { use_model thinker(text: ask.text) }
+  out  = shape(said)
+}
+
+// `finish` in a `match` step; `finish(...)` is still a call of `fn finish`.
+workflow route(ask: Ask) -> Reply {
+  hit  = look(ask)
+  next = match ask.text {
+    case "stop" { finish {text: "stopped"} }
+    case "hi" { finish(hit) }
+    case _ { use_model thinker(text: ask.text) }
+  }
+  out  = shape(next)
+}
+
+// A workflow that finishes early gives its result to the one that called it,
+// which goes on.
+workflow outer(ask: Ask) -> Reply {
+  inner = call main(ask)
+  out   = shape({found: true, text: inner.text + " (outer)"})
+}
+
+test "a known answer finishes the workflow and asks no model" {
+  answers thinker: []
+  r = main({text: "hi"})
+  expect r.text == "cached: hello"
+}
+
+test "otherwise the model is asked and the steps after are made" {
+  answers thinker: [{found: true, text: "thought"}]
+  r = main({text: "why"})
+  expect r.text == "thought"
+}
+
+test "else if takes the first condition that holds" {
+  answers thinker: [{found: true, text: "long one"}]
+  a = sort({text: ""})
+  b = sort({text: "abc"})
+  c = sort({text: "abcdef"})
+  expect a.text == "nothing asked" and b.text == "short" and c.text == "long one"
+}
+
+test "a match step may finish, and finish(...) is still a call" {
+  answers thinker: [{found: false, text: "asked"}]
+  a = route({text: "stop"})
+  b = route({text: "hi"})
+  c = route({text: "other"})
+  expect a.text == "stopped" and b.text == "hello!" and c.text == "asked"
+}
+
+test "a called workflow that finishes early hands back its result" {
+  answers thinker: []
+  r = outer({text: "hi"})
+  expect r.text == "cached: hello (outer)"
+}

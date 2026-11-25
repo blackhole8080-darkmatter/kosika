@@ -184,7 +184,9 @@ func LowerValues(program *Program) *Program {
 			if len(step.Branches) > 0 {
 				calls = nil
 				for _, branch := range step.Branches {
-					calls = append(calls, branch.Call)
+					if !branch.Finish {
+						calls = append(calls, branch.Call)
+					}
 				}
 			}
 			known := ""
@@ -228,10 +230,15 @@ func LowerValues(program *Program) *Program {
 			if len(step.Branches) > 0 {
 				changed.Branches = make([]Branch, len(step.Branches))
 				for i, branch := range step.Branches {
-					branch.Call = standIn(branch.Call, fmt.Sprintf("%scase%d", prefix, i+1), known)
+					// A branch that finishes gives what the workflow returns.
+					wanted := known
+					if branch.Finish {
+						wanted = workflow.Out
+					}
+					branch.Call = standIn(branch.Call, fmt.Sprintf("%scase%d", prefix, i+1), wanted)
 					changed.Branches[i] = branch
 				}
-				changed.Call = changed.Branches[0].Call
+				changed.Call = keptBranch(changed.Branches)
 			}
 			if step.Fallback != nil {
 				changed.Fallback = standIn(step.Fallback, prefix+"otherwise", known)

@@ -1,0 +1,1 @@
+Check failed: Step 'more' finishes workflow 'main' with 'Hit', but it returns 'Reply'; `finish` gives what the workflow returns, so make that call give a 'Reply'

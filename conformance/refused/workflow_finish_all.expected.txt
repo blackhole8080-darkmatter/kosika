@@ -1,0 +1,1 @@
+Check failed: Step 'more' finishes workflow 'main' whichever branch is taken; make it the last step and drop `finish`, or give it a branch that goes on

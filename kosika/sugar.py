@@ -47,6 +47,7 @@ from .ast import (
     VariableExpr,
     WorkflowCall,
     WorkflowDecl,
+    kept_branch,
 )
 
 #: The name the parser gives a call's single unnamed argument.
@@ -298,7 +299,11 @@ def lower_values(program: Program) -> Program:
         seen.clear()
         seen.update({field.name: field.type_name for field in workflow.parameters})
         for step in workflow.steps:
-            calls = [call for _, call in step.branches] or [step.call]
+            calls = [
+                call
+                for index, (_, call) in enumerate(step.branches)
+                if index not in step.finishes
+            ] or [step.call]
             known = next(
                 (
                     found
@@ -335,13 +340,21 @@ def lower_values(program: Program) -> Program:
                     known = workflow.output_type
                 changes["call"] = stand_in(step.call, f"{prefix}value", known)
             if step.branches:
+                # A branch that finishes gives what the workflow returns.
                 branches = tuple(
-                    (pattern, stand_in(call, f"{prefix}case{index + 1}", known))
+                    (
+                        pattern,
+                        stand_in(
+                            call,
+                            f"{prefix}case{index + 1}",
+                            workflow.output_type if index in step.finishes else known,
+                        ),
+                    )
                     for index, (pattern, call) in enumerate(step.branches)
                 )
                 if branches != step.branches:
                     changes["branches"] = branches
-                    changes["call"] = branches[0][1]
+                    changes["call"] = kept_branch(replace(step, branches=branches))
             if step.fallback is not None:
                 fallback = stand_in(step.fallback, f"{prefix}otherwise", known)
                 if fallback is not step.fallback:

@@ -2050,6 +2050,7 @@ def _run_workflow(
             loop, item = passes[step.name]
             environment[loop.each_item or ""] = item
         events_before = len(events)
+        finishing = False
         try:
             _control.scope = (*_scope, workflow.name, step.name)
             _control.consume("steps")
@@ -2061,19 +2062,24 @@ def _run_workflow(
                 chosen_by = _evaluate_expression(
                     step.subject, environment, program, functions, [], depth=-1
                 )
+                chosen = next(
+                    index
+                    for index, (pattern, _) in enumerate(step.branches)
+                    if pattern is None
+                    or (
+                        isinstance(pattern, bool) == isinstance(chosen_by, bool)
+                        and pattern == chosen_by
+                    )
+                )
+                # `finish`: this call's result is what the workflow returns,
+                # and the steps after it are not made.
+                finishing = chosen in step.finishes
                 step = dataclass_replace(
                     step,
-                    call=next(
-                        branch
-                        for pattern, branch in step.branches
-                        if pattern is None
-                        or (
-                            isinstance(pattern, bool) == isinstance(chosen_by, bool)
-                            and pattern == chosen_by
-                        )
-                    ),
+                    call=step.branches[chosen][1],
                     branches=(),
                     subject=None,
+                    finishes=(),
                 )
             expression_events: list[dict[str, Any]] = []
             arguments = {
@@ -2115,6 +2121,8 @@ def _run_workflow(
                     result = cached[-1]["result"]
                     bind(step, result)
                     events.extend(cached)
+                    if finishing:
+                        queue.clear()
                     continue
             if isinstance(step.call, ToolCall):
                 _control.consume("tool_calls")
@@ -2809,6 +2817,8 @@ def _run_workflow(
             )
             if session is not None and not isinstance(step.call, WorkflowCall):
                 session.complete(scope, events[step_offset:], action)
+            if finishing:
+                queue.clear()
             _control.checkpoint()
         except (RuntimeError, ValueError) as exc:
             # `otherwise`: a recoverable failure hands the step to its
