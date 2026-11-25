@@ -25,10 +25,17 @@
 // "failed", and only a part's real checker (tests run, maths computed,
 // quotes matched) makes it "passed".
 //
+// Every answer is also held to Kosika's charter (std/kindness.kos): the
+// prompt carries it, and an answer that pressures, flatters, belittles,
+// overclaims or pretends to be a person fails its check.
+//
 // Programs opt in by importing this module and running with
 // `--memory FOLDER`.
 
-export [BrainEpisodes, brain_recent, BrainThought, BrainEpisode, BrainWorking, BrainContext, BrainDone, BrainRecorded, BrainAnswer, BrainCheck, brain_sense, brain_record, brain_think, bc_words, bc_near_enough, bc_context, bc_working_of, bc_next_working, bc_episode, bc_episode_key, bc_working_key, bc_check, bc_done, bc_prompt, bc_timeline_lines, bc_outcomes]
+import "kindness.kos"
+import "designs_line.kos"
+
+export [BrainEpisodes, brain_recent, BrainThought, BrainEpisode, BrainWorking, BrainContext, BrainDone, BrainRecorded, BrainAnswer, BrainCheck, brain_sense, brain_record, brain_think, bc_words, bc_near_enough, bc_context, bc_working_of, bc_next_working, bc_episode, bc_episode_key, bc_working_key, bc_check, bc_done, bc_prompt, bc_timeline_lines, bc_outcomes, bc_explains, bc_task_for, bc_steps, bc_body, bc_picture]
 
 // ask: what was asked, in the person's words. part: which Kosika part is
 // asking (ai, swarm, kosi, chat, designs, studio). session: one talk, so
@@ -56,7 +63,10 @@ record BrainRecorded { key: Text seq: Number entries: Number said: Text }
 
 record BrainCheck { outcome: Text why: Text }
 
-record BrainAnswer { text: Text outcome: Text why: Text recalled: Number said: Text }
+// picture: for an ask to explain something, a white-line diagram of the
+// answer's steps (a whole page, white lines in dark, black in light); "" when
+// the ask wants no explaining or the answer gave fewer than two steps.
+record BrainAnswer { text: Text outcome: Text why: Text recalled: Number said: Text picture: Text }
 
 memory timeline of BrainEpisode
 memory working of BrainWorking
@@ -173,7 +183,65 @@ fn bc_recorded(saved: MemorySaved, e: BrainEpisode) -> BrainRecorded {
 // ---------------------------------------------------------------- think and check
 
 fn bc_task() -> Text {
-  return "You are Kosika's Brain. Answer the ask plainly and briefly. Use the context only where it helps, and say so when you rely on it. Never say you did something you were not seen to do: you cannot install, send, change or delete anything. Do not rate your own confidence."
+  return "You are Kosika's Brain. Answer the ask plainly and briefly. Use the context only where it helps, and say so when you rely on it. Never say you did something you were not seen to do: you cannot install, send, change or delete anything. Do not rate your own confidence.\n\n" + kind_charter_text()
+}
+
+// ---------------------------------------------------------------- explain with a drawing
+
+// An ask to explain, teach or walk through something is answered with a
+// white-line diagram as well as words (Aryan, 2026-11-25).
+fn bc_explains(ask: Text) -> Bool {
+  let t = " " + ask.trim().lower()
+  for w in [" explain", " how does", " how do ", " how is", " why does", " why do ", " walk me through", " teach me", " what happens when", " how it works", " show me how"] { if t.contains(w) { return true } }
+  return false
+}
+
+fn bc_task_for(ask: Text) -> Text {
+  if not bc_explains(ask) { return bc_task() }
+  return bc_task() + "\n\nThis ask wants something explained, and Kosika will draw your steps as a white-line diagram. After your answer, write a line \"Steps:\" and then 3 to 6 steps, one a line, each starting \"- \" and at most six words."
+}
+
+// The answer without its steps block, and the steps it gave.
+fn bc_body(text: Text) -> Text {
+  let lines = text.replace("\r\n", "\n").split("\n")
+  var out: Text[] = []
+  var stop = false
+  for l in lines {
+    if l.trim().lower() == "steps:" { stop = true }
+    if not stop { out = out.append(l) }
+  }
+  return out.join("\n").trim()
+}
+
+fn bc_steps(text: Text) -> Text[] {
+  let lines = text.replace("\r\n", "\n").split("\n")
+  var steps: Text[] = []
+  var on = false
+  for l in lines {
+    let t = l.trim()
+    if t.lower() == "steps:" { on = true } else if on and t.starts_with("- ") and steps.length() < 6 { steps = steps.append(bc_clip(t.drop(2).trim(), 60)) }
+  }
+  return steps
+}
+
+// A step drawn in a box: its first words as the label, the rest beneath,
+// so a long step never runs out of its box.
+fn bc_head(step: Text) -> Text {
+  var head = ""
+  for w in step.split(" ") { if head.is_empty() or (head + " " + w).length() <= 18 { head = if head.is_empty() { w } else { head + " " + w } } else { return head } }
+  return head
+}
+
+fn bc_tail(step: Text) -> Text {
+  let rest = step.drop(bc_head(step).length()).trim()
+  return if rest.length() > 28 { rest.slice(0, 27).trim() + "…" } else { rest }
+}
+
+fn bc_picture(ask: Text, steps: Text[]) -> Text {
+  if steps.length() < 2 { return "" }
+  let nodes = for i in 0 until steps.length() { ln_step(f"s{i + 1}", bc_head(steps[i]), bc_tail(steps[i]), "") }
+  let edges = for i in 1 until steps.length() { ln_to(f"s{i}", f"s{i + 1}", "") }
+  return ln_page(ln_figure(bc_clip(ask.trim(), 70), "flow", nodes, edges, ""), "")
 }
 
 fn bc_no_answer() -> BrainThinkerSaid { return {text: ""} }
@@ -185,6 +253,8 @@ fn bc_check(text: Text) -> BrainCheck {
   if t.is_empty() { return {outcome: "failed", why: "no answer came back"} }
   let claims = ["i have installed", "i installed", "i've installed", "i have sent", "i've sent", "i sent the", "i have deleted", "i deleted", "i've deleted", "i have changed", "i've changed", "i have pushed", "i pushed", "i have merged", "i merged"]
   for c in claims { if t.contains(c) { return {outcome: "failed", why: f"it claimed an action no part took ('{c}')"} } }
+  let kind = kind_check(text)
+  if not kind.kind { return {outcome: "failed", why: kind.why} }
   return {outcome: "unchecked", why: "no code could prove a plain answer"}
 }
 
@@ -193,13 +263,14 @@ fn bc_done(t: BrainThought, text: Text, c: BrainCheck) -> BrainDone {
   return {part: t.part, session: t.session, at: t.at, ask: t.ask, did: did, outcome: c.outcome, checked_by: "brain_check"}
 }
 
-fn bc_answer(said: BrainThinkerSaid, c: BrainCheck, ctx: BrainContext, rec: BrainRecorded) -> BrainAnswer {
+fn bc_answer(said: BrainThinkerSaid, c: BrainCheck, ctx: BrainContext, rec: BrainRecorded, ask: Text) -> BrainAnswer {
   let n = ctx.episodes.length()
   let recalled = if n == 0 { "nothing from before reached the floor" } else { f"it recalled {n} past episode" + (if n == 1 { "" } else { "s" }) }
-  let text = if c.outcome == "failed" { "" } else { said.text.trim() }
+  let text = if c.outcome == "failed" { "" } else { bc_body(said.text) }
+  let picture = if c.outcome == "failed" or not bc_explains(ask) { "" } else { bc_picture(ask, bc_steps(said.text)) }
   let k = ctx.working.length()
   let talk = if k == 0 { "a fresh talk" } else if k == 1 { "1 earlier turn in mind" } else { f"{k} earlier turns in mind" }
-  return {text: text, outcome: c.outcome, why: c.why, recalled: n, said: f"Kosika's Brain answered with {talk}; {recalled}. {rec.said}"}
+  return {text: text, outcome: c.outcome, why: c.why, recalled: n, said: f"Kosika's Brain answered with {talk}; {recalled}. {rec.said}", picture: picture}
 }
 
 // The timeline as lines a page can show, oldest first.
@@ -245,10 +316,10 @@ workflow brain_record(d: BrainDone) -> BrainRecorded {
 workflow brain_think(t: BrainThought) -> BrainAnswer {
   budget 3 model calls, 180 seconds
   ctx   = call brain_sense(t)
-  said  = use_model brain_thinker(bc_task(), ctx.prompt, t.ask) retry 1 otherwise bc_no_answer()
+  said  = use_model brain_thinker(bc_task_for(t.ask), ctx.prompt, t.ask) retry 1 otherwise bc_no_answer()
   check = bc_check(said.text)
   rec   = call brain_record(bc_done(t, said.text, check))
-  out   = bc_answer(said, check, ctx, rec)
+  out   = bc_answer(said, check, ctx, rec, t.ask)
 }
 
 // ---------------------------------------------------------------- tests
@@ -282,6 +353,7 @@ test "an episode is checked by code, never by the model's say-so" {
   expect bc_check("").outcome == "failed"
   expect bc_check("Done! I have installed Ollama for you.").outcome == "failed"
   expect bc_check("Ollama runs models on your laptop.").outcome == "unchecked"
+  expect bc_check("Trust me, only I can fix this.").why == "unkind: it asks for trust instead of showing why ('trust me')"
 }
 
 test "working memory keeps the last six turns of the talk" {
@@ -330,7 +402,22 @@ test "a refused answer is kept as failed and never shown as true" {
   expect d.outcome == "failed" and d.did.starts_with("answer refused: it claimed an action")
   ctx: BrainContext = {session: "default", seq: 0, working: [], episodes: [], by: "words", prompt: ""}
   rec: BrainRecorded = {key: "k", seq: 1, entries: 1, said: "kept"}
-  a = bc_answer({text: "I have installed it."}, c, ctx, rec)
+  a = bc_answer({text: "I have installed it."}, c, ctx, rec, "install ollama")
   expect a.text == "" and a.outcome == "failed"
   expect bc_timeline_lines([bc_episode(d, bc_test_empty())]) == ["2026-11-18 [kosi, failed by brain_check] asked 'install ollama': answer refused: it claimed an action no part took ('i have installed')"]
+}
+
+test "an ask to explain is answered with a white-line diagram of its steps" {
+  expect bc_explains("Explain how DNS works")
+  expect bc_explains("how does a hash map find a key?")
+  expect not bc_explains("What is 18% of 2450?")
+  expect bc_task_for("explain TCP").contains("Steps:")
+  expect not bc_task_for("hello").contains("Steps:")
+  said = "DNS turns names into addresses.\nSteps:\n- You type a name\n- Resolver asks root servers\n- Name server answers the address"
+  expect bc_body(said) == "DNS turns names into addresses."
+  expect bc_steps(said) == ["You type a name", "Resolver asks root servers", "Name server answers the address"]
+  expect bc_picture("Explain how DNS works", bc_steps(said)).contains("<svg")
+  expect bc_picture("Explain how DNS works", ["only one"]) == ""
+  expect bc_head("Browser asks the site for its certificate") == "Browser asks the"
+  expect bc_tail("Browser asks the site for its certificate") == "site for its certificate"
 }
