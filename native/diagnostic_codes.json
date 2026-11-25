@@ -1,0 +1,610 @@
+{
+ "codes": {
+  "check/agent-conflict": "An agent both allows and denies the same capability.",
+  "check/approval-required": "A mutation requires approval that was not declared.",
+  "check/array-index-type": "An array index was not a Number.",
+  "check/assignment-to-immutable": "An assignment targets a binding that is not declared mutable.",
+  "check/assignment-to-unknown": "An assignment targets a name that is not in scope.",
+  "check/board": "A board is declared or signed in a way that cannot be honoured.",
+  "check/branch-type-mismatch": "Branches of a conditional or match produced different types.",
+  "check/budget": "A workflow's budget repeats a kind or is out of range.",
+  "check/capability-denied": "An agent attempted a capability it does not hold.",
+  "check/captured-variable": "A function written as a value names a local from around it, which it cannot see.",
+  "check/choice": "A choice, its alternatives, or a match on it is declared or used in a way it does not allow.",
+  "check/choice-evidence": "A model that answers with a choice has no record to quote evidence from.",
+  "check/condition-type": "A condition did not produce a Bool.",
+  "check/default": "A default value is not written out or does not fit its type.",
+  "check/duplicate-argument": "A call supplies one argument more than once.",
+  "check/duplicate-declaration": "A declaration name is declared more than once.",
+  "check/duplicate-field": "A record or declaration lists a field more than once.",
+  "check/duplicate-literal-field": "A record literal sets one field more than once.",
+  "check/duplicate-parameter": "A declaration lists a parameter more than once.",
+  "check/duplicate-pattern": "A match expression repeats a pattern.",
+  "check/empty-instructions": "An agent declares empty instructions.",
+  "check/empty-workflow": "A workflow has no steps, or duplicate step names.",
+  "check/endless-type": "A record or choice always needs another of itself, so it has no value.",
+  "check/enum": "An enum is declared or used with a value it does not have.",
+  "check/escalate": "A step's escalate does not name another declared model, or is on a step that cannot use one.",
+  "check/exhaustiveness": "A match does not cover every case.",
+  "check/field-access": "A field was accessed on a value that does not have it.",
+  "check/inference-failure": "A literal's type could not be inferred from context.",
+  "check/invalid-assignment": "An assignment's value type does not match the target's type.",
+  "check/invalid-limit": "A declared numeric bound is outside its permitted range.",
+  "check/invalid-model": "A model declaration is invalid.",
+  "check/invalid-swarm": "A swarm declaration is incomplete or invalid.",
+  "check/invalid-system-tool": "A system tool is declared incorrectly.",
+  "check/invalid-tool": "A tool declaration is invalid.",
+  "check/iteration-type": "A loop was applied to a value that is not an array.",
+  "check/learn": "A step that learns is not a model step, or is known by a value that is not Text.",
+  "check/match-type-mismatch": "A match pattern or subject type is not comparable.",
+  "check/memory": "A memory is declared in a way that cannot be honoured.",
+  "check/method": "A record's own function has a name it cannot have.",
+  "check/method-arguments": "A method call has the wrong argument names.",
+  "check/missing-argument": "A call omits required arguments.",
+  "check/missing-field": "A record literal omits required fields.",
+  "check/missing-return": "A workflow step did not return its declared binding.",
+  "check/non-array-index": "A value that is not an array was indexed.",
+  "check/not-a-function": "A value used as a function is not a function value.",
+  "check/operator-type-mismatch": "An operator's operands are of a type it does not accept.",
+  "check/otherwise-execute": "A fallback is used around a world-changing tool.",
+  "check/otherwise-type": "A step and its fallback return different types.",
+  "check/parallel": "A step in a parallel block cannot run apart from the others.",
+  "check/plain-model": "A model that answers as text does not return a record of one Text field.",
+  "check/plan-check": "An agent's plan check is not a function of the right shape.",
+  "check/plan-first": "An agent that plans first lacks a model or the turns to plan.",
+  "check/record-context": "A literal appeared where a specific record type is required.",
+  "check/record-update": "A record update does not fit the record it copies.",
+  "check/recursion-limit": "A recursive call exceeds or lacks the declared recurse limit.",
+  "check/retry": "A step's retry is not allowed or its count is out of range.",
+  "check/return-outside-function": "An early return is used outside a function.",
+  "check/return-type": "An early return has the wrong type for its function.",
+  "check/return-type-mismatch": "A function body's type differs from its declared output.",
+  "check/shadowed-binding": "A local binding shadows an enclosing binding.",
+  "check/shadowed-input": "A local binding shadows a workflow input parameter.",
+  "check/shape": "A shape is declared or used in a way it does not allow.",
+  "check/step-match": "A step that chooses between calls is not well formed.",
+  "check/store": "A store is declared in a way that cannot be honoured.",
+  "check/test": "A test written in the program is not well formed.",
+  "check/thinking-evidence": "A thinking step cannot be asked for evidence.",
+  "check/thinking-model-required": "A thinking step has no single model to ask.",
+  "check/thinking-record-clash": "A declared record clashes with a built-in one.",
+  "check/thinking-unknown-record": "A thinking step extracts an undeclared record.",
+  "check/try": "A try and its otherwise give different types, or fail was given something that is not Text.",
+  "check/type-mismatch": "A value's type does not match the required type.",
+  "check/unknown-agent": "An agent name is not declared.",
+  "check/unknown-argument": "A call supplies an argument that is not declared.",
+  "check/unknown-field": "A record or declaration uses a field that is not declared.",
+  "check/unknown-function": "A function name is not in scope.",
+  "check/unknown-method": "A method is not in the built-in set for that type.",
+  "check/unknown-model": "An agent references a model that is not declared.",
+  "check/unknown-operator": "An operator is not defined for the given operand types.",
+  "check/unknown-record": "A record name is not declared.",
+  "check/unknown-tool": "A tool name is not declared.",
+  "check/unknown-type": "A type name is not declared.",
+  "check/unknown-variable": "A local binding is not in scope.",
+  "check/unknown-workflow": "A workflow name is not in scope.",
+  "check/unnamed-argument": "A call's single argument cannot be named for it.",
+  "check/unreachable-arm": "A match arm can never be reached.",
+  "check/unsupported-expression": "An expression form is recognised but not implemented.",
+  "check/unsupported-literal": "A literal value has no representation in the type system.",
+  "check/value-step": "A step is a value whose type cannot be told.",
+  "check/verify": "A step's verify is not a Text function or is on a step it cannot check.",
+  "check/vote": "A step's vote is not allowed or its count is not permitted.",
+  "check/workflow-for": "A workflow `for` step is not written the way it must be.",
+  "engine/not-yet": "This engine does not read the feature yet; another engine does. The message names the feature.",
+  "kosika/internal-error": "A failure that does not map to a known diagnostic code.",
+  "lex/unexpected-character": "The source contains a character the lexer cannot start a token with.",
+  "module/conflict": "Two modules contribute the same declaration name.",
+  "module/cycle": "The local module graph contains an import cycle.",
+  "module/invalid-encoding": "A module is not valid UTF-8 source.",
+  "module/invalid-export": "A module exports a duplicate or non-local declaration.",
+  "module/limit-exceeded": "The module graph exceeds its file, depth, or size bound.",
+  "module/not-found": "An imported module does not exist.",
+  "module/outside-root": "An import escapes the granted local module root.",
+  "module/private-symbol": "A module references a symbol its imports do not export.",
+  "parse/empty-block": "A braced block declared neither a statement nor a result.",
+  "parse/expected-identifier": "A declaration or binding required an identifier.",
+  "parse/expected-token": "A required token was not present.",
+  "parse/invalid-declaration": "A declaration was malformed.",
+  "parse/invalid-import": "An import does not name a quoted local .kos path.",
+  "parse/invalid-limit": "A count or limit literal is not within its permitted range.",
+  "parse/invalid-match-pattern": "A match pattern is not a scalar literal or '_'.",
+  "parse/invalid-model": "A model declaration contains an invalid or unknown field.",
+  "parse/invalid-type": "A type is written with an invalid suffix.",
+  "parse/limit-exceeded": "A declaration exceeded a fixed syntactic nesting limit.",
+  "parse/step-as-value": "A workflow step such as classify was written where a value belongs.",
+  "parse/step-call": "A step's body must be one call, not an arbitrary value.",
+  "parse/step-return": "A step block must end with `return <name>`.",
+  "parse/unnamed-argument": "A call argument needs a name.",
+  "parse/unsupported-module": "The source used a module feature that cannot be resolved here.",
+  "parse/unsupported-statement": "A statement form is recognised but not supported.",
+  "parse/workflow-item": "A workflow body may hold only steps, `parallel`, `require approval` and `budget`."
+ },
+ "help": {
+  "check/assignment-to-immutable": "Declare it with `var` to change it later.",
+  "check/captured-variable": "Pass the value in as a parameter, or write a named `fn` inside this one, which may use it.",
+  "check/endless-type": "Make the field that recurs optional (`next: Node?`) or a list (`kids: Node[]`), or add a leaf alternative.",
+  "check/exhaustiveness": "Name every alternative of a choice, or end a match on a scalar with `case _ { ... }`.",
+  "check/inference-failure": "Give the binding a type, `let x: Item = {...}`, or build the record by name, `Item(name: \"pen\")`.",
+  "check/match-type-mismatch": "Match on a scalar or a choice; for an optional, test `x.exists()` and use `x` inside.",
+  "check/missing-field": "Set every field the record declares, or give the field a default in the record.",
+  "check/missing-return": "A step block ends with `return <name>`, naming the value it made.",
+  "check/record-context": "Build the record by name, `Item(name: \"pen\")`, or give the binding a type.",
+  "check/recursion-limit": "A recursive function says how deep it may go: `fn walk(n: Node) -> Number recurse 32 { ... }`.",
+  "check/return-outside-function": "Workflows have no `return`: their last step's value is the result.",
+  "check/unknown-method": "Each type has a fixed set of methods (KOSIKA.md lists them); to map a list, write `for x in xs { ... }`.",
+  "engine/not-yet": "Write it without that feature, or run the program on the engine that reads it (`kosika`).",
+  "lex/unexpected-character": "Kosika writes `and`, `or` and `not` where other languages write `&&`, `||` and `!`; the message quotes the character it stopped at.",
+  "parse/step-call": "A workflow step is one line `name = <one call>`; put other logic in a `fn` and call it.",
+  "parse/step-return": "End a step block with `return <name>`.",
+  "parse/unnamed-argument": "Name each argument: `f(text: t)`.",
+  "parse/workflow-item": "A workflow holds steps (`name = <one call>`), `parallel { }`, `require approval` and `budget`; put logic in a `fn`."
+ },
+ "rules": [
+  [
+   "lex/unexpected-character",
+   "^Unexpected character at \\d+:\\d+"
+  ],
+  [
+   "parse/expected-identifier",
+   "^Expected (identifier|string or identifier) at"
+  ],
+  [
+   "parse/step-as-value",
+   "is a workflow step, not a value"
+  ],
+  [
+   "parse/step-return",
+   "^Expected 'return' at \\d+:\\d+.*; a step block"
+  ],
+  [
+   "parse/step-call",
+   "^Expected 'execute' at \\d+:\\d+.*; a step's body"
+  ],
+  [
+   "parse/workflow-item",
+   "^Unexpected workflow item"
+  ],
+  [
+   "parse/expected-token",
+   "^Expected \\S+ at \\d+:\\d+"
+  ],
+  [
+   "parse/empty-block",
+   "^Empty block"
+  ],
+  [
+   "parse/limit-exceeded",
+   "(nesting|depth) exceeds \\d+"
+  ],
+  [
+   "parse/unsupported-module",
+   "^Unresolved imports: use load_program"
+  ],
+  [
+   "parse/unnamed-argument",
+   "^Argument at .* needs a name"
+  ],
+  [
+   "check/unnamed-argument",
+   "argument needs a name; write name"
+  ],
+  [
+   "parse/invalid-type",
+   "^A type is optional once"
+  ],
+  [
+   "module/outside-root",
+   "Import outside the granted .* module root"
+  ],
+  [
+   "module/cycle",
+   "^Import cycle at "
+  ],
+  [
+   "module/limit-exceeded",
+   "^Module graph exceeds|^Module exceeds 256 KiB"
+  ],
+  [
+   "module/invalid-export",
+   "exports must name unique local"
+  ],
+  [
+   "module/private-symbol",
+   "unavailable or private symbols"
+  ],
+  [
+   "module/conflict",
+   "^Conflicting module declaration"
+  ],
+  [
+   "check/unknown-method",
+   "unknown method: "
+  ],
+  [
+   "check/method-arguments",
+   "method '\\w+' takes \\("
+  ],
+  [
+   "check/duplicate-declaration",
+   "^Duplicate \\w+ declaration"
+  ],
+  [
+   "check/duplicate-field",
+   "^Duplicate \\w+ field|has duplicate fields"
+  ],
+  [
+   "check/duplicate-parameter",
+   "[Dd]uplicate\\b.*\\bparameter"
+  ],
+  [
+   "check/duplicate-pattern",
+   "^Duplicate match pattern"
+  ],
+  [
+   "check/endless-type",
+   "can never be built: "
+  ],
+  [
+   "check/missing-field",
+   "is missing record fields"
+  ],
+  [
+   "check/missing-argument",
+   "is missing tool arguments|^Tool .* is missing:"
+  ],
+  [
+   "check/unknown-argument",
+   "has unknown tool arguments"
+  ],
+  [
+   "check/unknown-field",
+   "has unknown record fields|^Unknown \\w+ field"
+  ],
+  [
+   "check/unknown-type",
+   "^Unknown field type"
+  ],
+  [
+   "check/unknown-record",
+   "^Unknown record type|returns unknown record|accepts unknown record|requires a known record"
+  ],
+  [
+   "check/unknown-function",
+   "uses unknown function|^Unknown function"
+  ],
+  [
+   "check/unknown-workflow",
+   "^Unknown workflow|^Recursive workflow call"
+  ],
+  [
+   "check/unknown-model",
+   "uses unknown model"
+  ],
+  [
+   "check/return-outside-function",
+   "uses return outside a function"
+  ],
+  [
+   "check/return-type",
+   "early return expects "
+  ],
+  [
+   "check/otherwise-execute",
+   "cannot use otherwise with execute"
+  ],
+  [
+   "check/otherwise-type",
+   "otherwise branch returns "
+  ],
+  [
+   "check/value-step",
+   "is a value whose type cannot be told"
+  ],
+  [
+   "check/try",
+   " try gives | fail expects a Text reason"
+  ],
+  [
+   "check/method",
+   "^Record '[^']+' method "
+  ],
+  [
+   "check/parallel",
+   "cannot run in parallel: "
+  ],
+  [
+   "check/workflow-for",
+   "a `for` step goes through a list|names its item .* already a name|ends with the `for` step|needs a bound: write|^Step '[^']+' limit must be 1 through 1000"
+  ],
+  [
+   "check/record-update",
+   " record update "
+  ],
+  [
+   "check/retry",
+   "cannot retry: "
+  ],
+  [
+   "check/verify",
+   "cannot verify: "
+  ],
+  [
+   "check/escalate",
+   "cannot escalate: "
+  ],
+  [
+   "check/vote",
+   "cannot vote: "
+  ],
+  [
+   "check/budget",
+   "^Workflow '[^']+' budget "
+  ],
+  [
+   "check/memory",
+   "^Memory "
+  ],
+  [
+   "check/board",
+   "^Board "
+  ],
+  [
+   "check/store",
+   "^Store |^Stores .* both name |^Table [\\w.]+ (declares|has) "
+  ],
+  [
+   "check/enum",
+   "^Enum '"
+  ],
+  [
+   "check/choice",
+   "^Choice '|^Choice alternatives |^Choice alternative '|^Match alternative |^Duplicate match alternative|^Match on choice |^Alternative '"
+  ],
+  [
+   "check/shape",
+   "^Shape '|shape '[^']+' has no function |of shape '[^']+'; a shape"
+  ],
+  [
+   "check/default",
+   "so its default cannot be |default value at \\d+:\\d+ must be written|cannot give a parameter a default value"
+  ],
+  [
+   "check/plain-model",
+   "answers as text, so its output"
+  ],
+  [
+   "check/choice-evidence",
+   "answers with a choice, so it cannot give evidence"
+  ],
+  [
+   "check/learn",
+   "^Step '[^']+' (cannot learn: |learns by )"
+  ],
+  [
+   "check/step-match",
+   "^Step '[^']+' match "
+  ],
+  [
+   "check/test",
+   "^Test '.*' line \\d+: "
+  ],
+  [
+   "check/invalid-system-tool",
+   "^Invalid system tool: "
+  ],
+  [
+   "check/thinking-evidence",
+   "cannot give evidence: "
+  ],
+  [
+   "check/thinking-model-required",
+   "needs a model for "
+  ],
+  [
+   "check/thinking-record-clash",
+   "is built in as "
+  ],
+  [
+   "check/thinking-unknown-record",
+   "extracts unknown record "
+  ],
+  [
+   "check/shadowed-binding",
+   "shadows an enclosing binding"
+  ],
+  [
+   "check/assignment-to-immutable",
+   "cannot assign to .*: declare it with 'var'|cannot rebind"
+  ],
+  [
+   "check/assignment-to-unknown",
+   "assigns to unknown variable"
+  ],
+  [
+   "check/condition-type",
+   "condition expects 'Bool'"
+  ],
+  [
+   "check/return-type-mismatch",
+   "body returns .*but declared output is|but (final \\w+|call) returns|^(Function|Workflow) .* returns .*, got "
+  ],
+  [
+   "check/branch-type-mismatch",
+   "^Match branches must have the same result type|conditional branches differ"
+  ],
+  [
+   "check/match-type-mismatch",
+   "^Match pattern type differs|^Match subjects must be scalar"
+  ],
+  [
+   "check/array-index-type",
+   "array index expects 'Number'"
+  ],
+  [
+   "check/non-array-index",
+   "cannot index non-array type"
+  ],
+  [
+   "check/unknown-operator",
+   "has unknown operator"
+  ],
+  [
+   "check/operator-type-mismatch",
+   "operator .* expects .* operands, got |requires matching "
+  ],
+  [
+   "check/inference-failure",
+   "cannot infer the type of"
+  ],
+  [
+   "check/unsupported-expression",
+   "unsupported expression|method call .* is not"
+  ],
+  [
+   "check/exhaustiveness",
+   "^Non-exhaustive match"
+  ],
+  [
+   "check/unreachable-arm",
+   "^Unreachable match arm"
+  ],
+  [
+   "check/capability-denied",
+   "^Capability violation:|plans first but can change nothing"
+  ],
+  [
+   "check/plan-first",
+   "plans first, so "
+  ],
+  [
+   "check/plan-check",
+   "^Agent \\S+ check \\S+ (is not a function|must be a function)"
+  ],
+  [
+   "parse/invalid-declaration",
+   "^Agent plan must be `first` or `off`"
+  ],
+  [
+   "check/approval-required",
+   "needs approval before execute tool|must require approval for"
+  ],
+  [
+   "check/unknown-agent",
+   "uses unknown agent|requires a known agent with a model"
+  ],
+  [
+   "check/unknown-tool",
+   "uses unknown tool|can use unknown tool"
+  ],
+  [
+   "check/agent-conflict",
+   "both allows and denies"
+  ],
+  [
+   "check/invalid-limit",
+   "must be between \\d|^Recursion limit must be|requires recurse limits|^Swarm max_rounds must be"
+  ],
+  [
+   "parse/invalid-limit",
+   "limit must be an integer from|retry count must be an integer|^repeat count must be an integer|must be a positive number|must be a positive integer|^Model \\d+ must be a number"
+  ],
+  [
+   "check/invalid-model",
+   "^Model .* deployment must not be empty|^Model .* stop must contain|^Model .* requires a known input record and an output record or choice"
+  ],
+  [
+   "parse/invalid-model",
+   "^Invalid or duplicate model field|^Invalid model field|^Duplicate model parameter|^Unknown model parameter|^Model .* requires (known )?input and output records|requires (known )?input and output records"
+  ],
+  [
+   "check/invalid-tool",
+   "^Tool .* has invalid access level"
+  ],
+  [
+   "check/empty-instructions",
+   "instructions must not be empty"
+  ],
+  [
+   "check/invalid-swarm",
+   "^Swarm |^Duplicate swarm"
+  ],
+  [
+   "check/empty-workflow",
+   "has no steps|has duplicate step names"
+  ],
+  [
+   "check/missing-return",
+   "must return its binding"
+  ],
+  [
+   "check/shadowed-input",
+   "cannot shadow workflow input"
+  ],
+  [
+   "check/iteration-type",
+   "for loop requires an array"
+  ],
+  [
+   "check/field-access",
+   "cannot access field|references unknown field .* on "
+  ],
+  [
+   "check/record-context",
+   "literal requires an? \\w*-typed field"
+  ],
+  [
+   "check/duplicate-literal-field",
+   "has duplicate record literal fields"
+  ],
+  [
+   "check/duplicate-argument",
+   "has duplicate tool arguments"
+  ],
+  [
+   "check/invalid-assignment",
+   "assigns .* to .* of type "
+  ],
+  [
+   "check/not-a-function",
+   "is not a function value|^Function values are not allowed|^Unlowered nested functions|^Unlowered thinking steps"
+  ],
+  [
+   "check/recursion-limit",
+   "^Recursive function call|requires recurse limits"
+  ],
+  [
+   "check/unsupported-literal",
+   "^Unsupported literal value"
+  ],
+  [
+   "parse/unsupported-statement",
+   "is not supported at \\d+:\\d+"
+  ],
+  [
+   "parse/invalid-match-pattern",
+   "^Match patterns must be scalar"
+  ],
+  [
+   "parse/invalid-import",
+   "^Import requires a quoted local|^Import paths must be relative"
+  ],
+  [
+   "parse/invalid-declaration",
+   "^Unexpected (declaration|workflow item)|^A store needs a quoted file|^Column '[^']+' has a default value at \\d+:\\d+"
+  ],
+  [
+   "check/type-mismatch",
+   "expects .*, got "
+  ],
+  [
+   "check/unknown-variable",
+   "references unknown variable"
+  ],
+  [
+   "check/captured-variable",
+   "a function written as a value sees only its parameters"
+  ]
+ ],
+ "schema": "kosika.diagnostic-codes/v1"
+}

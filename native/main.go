@@ -116,6 +116,14 @@ func main() {
 	if len(args) == 2 && args[0] == "replay" {
 		os.Exit(replayCommand(args[1]))
 	}
+	// The reference's machine-readable report, `check --format json FILE`
+	// or `check FILE --format json`: see diagnostics.go.
+	if len(args) == 4 && args[0] == "check" && args[1] == "--format" && args[2] == "json" {
+		os.Exit(checkJSONCommand(args[3]))
+	}
+	if len(args) == 4 && args[0] == "check" && args[2] == "--format" && args[3] == "json" {
+		os.Exit(checkJSONCommand(args[1]))
+	}
 	if len(args) == 2 && args[0] == "check" {
 		// Would this program run? The same verdict and the same reason as
 		// `kosika check`, without the position the reference's diagnostics

@@ -103,7 +103,7 @@ class CodeRegistryTests(unittest.TestCase):
     def test_code_prefixes_are_expected(self) -> None:
         for code in CODES:
             self.assertTrue(
-                code.startswith(("parse/", "check/", "lex/", "module/", "kosika/")),
+                code.startswith(("parse/", "check/", "lex/", "module/", "kosika/", "engine/")),
                 f"unexpected code namespace: {code}",
             )
 

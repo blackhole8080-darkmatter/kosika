@@ -34,6 +34,9 @@ type Env struct {
 	present map[string]bool // optional names a test has proved to hold a value
 	returns string          // the result type of the function, "" outside one
 	local   map[string]string
+	// outside is the scope around a function written as a value, which
+	// it cannot see; kept only to say so when its body names one of them.
+	outside *Env
 }
 
 func newEnv() *Env {
@@ -49,7 +52,7 @@ func copyMap[V any](source map[string]V) map[string]V {
 }
 
 func (e *Env) child() *Env {
-	return &Env{copyMap(e.types), copyMap(e.shown), copyMap(e.mutable), copyMap(e.present), e.returns, e.local}
+	return &Env{copyMap(e.types), copyMap(e.shown), copyMap(e.mutable), copyMap(e.present), e.returns, e.local, e.outside}
 }
 
 func (e *Env) narrowed(names []string) *Env {
@@ -476,6 +479,11 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 				}
 				checkFail("Choice alternative %s carries %d values; write %s(...)", pyRepr(e.Name), len(alternative.Fields), e.Name)
 			}
+			if env.outside != nil {
+				if _, around := env.outside.types[e.Name]; around {
+					checkFail("Step %s: a function written as a value sees only its parameters, not %s from around it. Pass it in as a parameter, or write a named fn here, which may use %s", pyRepr(step), pyRepr(e.Name), pyRepr(e.Name))
+				}
+			}
 			checkFail("Step %s references unknown variable %s.%s", pyRepr(step), pyRepr(e.Name), didYouMean(e.Name, env.names()))
 		}
 		return t
@@ -557,6 +565,7 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 		// A function written as a value sees only its own parameters.
 		scope := newEnv()
 		scope.local = env.local
+		scope.outside = env
 		for _, param := range e.Params {
 			if _, taken := scope.types[param.Name]; taken {
 				checkFail("Step %s function has duplicate parameter %s", pyRepr(step), pyRepr(param.Name))

@@ -528,6 +528,9 @@ class _Env(dict):
         # Their type here is the plain `T`; `exists`, `value`, and `or` still
         # work on them so code written before narrowing keeps checking.
         self.present: set[str] = set()
+        # The scope around a function written as a value, which it cannot
+        # see; kept only to say so when its body names one of them.
+        self.outside: _Env | None = None
 
     def child(self) -> _Env:
         # A nested scope still sees the enclosing mutable names, so a `var`
@@ -535,6 +538,7 @@ class _Env(dict):
         scope = _Env(self, mutable=set(self.mutable))
         scope.returns = self.returns
         scope.present = set(self.present)
+        scope.outside = self.outside
         return scope
 
     def narrowed(self, names: frozenset[str]) -> _Env:
@@ -818,6 +822,14 @@ def _expression_type(
                     f"{len(alternative.fields)} values; write "
                     f"{expression.name}(...)"
                 )
+            outside = getattr(bindings, "outside", None)
+            if outside is not None and expression.name in outside:
+                raise CheckError(
+                    f"Step {step_name!r}: a function written as a value sees only "
+                    f"its parameters, not {expression.name!r} from around it. Pass "
+                    f"it in as a parameter, or write a named fn here, which may "
+                    f"use {expression.name!r}"
+                )
             raise CheckError(
                 f"Step {step_name!r} references unknown variable {expression.name!r}."
                 f"{did_you_mean(expression.name, bindings)}"
@@ -934,6 +946,7 @@ def _expression_type(
         return body_type
     if isinstance(expression, FunctionExpr):
         function_bindings = _Env()
+        function_bindings.outside = bindings if isinstance(bindings, _Env) else _Env(bindings)
         for parameter in expression.parameters:
             if parameter.name in function_bindings:
                 raise CheckError(

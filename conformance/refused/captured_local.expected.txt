@@ -1,0 +1,1 @@
+Check failed: Step 'function scale local times': a function written as a value sees only its parameters, not 'k' from around it. Pass it in as a parameter, or write a named fn here, which may use 'k'

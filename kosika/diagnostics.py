@@ -130,6 +130,7 @@ CODES: Mapping[str, str] = {
     "check/assignment-to-immutable": "An assignment targets a binding that is not declared mutable.",
     "check/assignment-to-unknown": "An assignment targets a name that is not in scope.",
     "check/unknown-variable": "A local binding is not in scope.",
+    "check/captured-variable": "A function written as a value names a local from around it, which it cannot see.",
     # -- Types -----------------------------------------------------------
     "check/type-mismatch": "A value's type does not match the required type.",
     "check/condition-type": "A condition did not produce a Bool.",
@@ -189,6 +190,7 @@ CODES: Mapping[str, str] = {
     "module/conflict": "Two modules contribute the same declaration name.",
     "module/invalid-encoding": "A module is not valid UTF-8 source.",
     # -- Fallback --------------------------------------------------------
+    "engine/not-yet": "This engine does not read the feature yet; another engine does. The message names the feature.",
     "kosika/internal-error": "A failure that does not map to a known diagnostic code.",
 }
 
@@ -234,7 +236,7 @@ class Diagnostic:
     def to_dict(self) -> dict[str, Any]:
         """Serialise to the JSON shape clients and the LSP both understand."""
 
-        return {
+        payload = {
             "code": self.code,
             "severity": int(self.severity),
             "message": self.message,
@@ -244,6 +246,9 @@ class Diagnostic:
             "owner_kind": self.owner_kind,
             "data": dict(self.data),
         }
+        if self.code in HELP:
+            payload["help"] = HELP[self.code]
+        return payload
 
     def to_lsp(self) -> dict[str, Any]:
         """Serialise as an LSP ``Diagnostic``."""
@@ -597,9 +602,34 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/type-mismatch", re.compile(r"expects .*, got ")),
     # Name resolution that appears in step context.
     ("check/unknown-variable", re.compile(r"references unknown variable")),
+    ("check/captured-variable", re.compile(r"a function written as a value sees only its parameters")),
 )
 
 _UNKNOWN_VARIABLE_TAIL = re.compile(r"references unknown variable '([^']+)'")
+
+
+#: What to do about a problem, by code, where the message alone may not say.
+#: Shown as `help` beside the message, by both engines.
+HELP: Mapping[str, str] = {
+    "lex/unexpected-character": "Kosika writes `and`, `or` and `not` where other languages write `&&`, `||` and `!`; the message quotes the character it stopped at.",
+    "parse/step-call": "A workflow step is one line `name = <one call>`; put other logic in a `fn` and call it.",
+    "parse/workflow-item": "A workflow holds steps (`name = <one call>`), `parallel { }`, `require approval` and `budget`; put logic in a `fn`.",
+    "parse/step-return": "End a step block with `return <name>`.",
+    "parse/unnamed-argument": "Name each argument: `f(text: t)`.",
+    "check/endless-type": "Make the field that recurs optional (`next: Node?`) or a list (`kids: Node[]`), or add a leaf alternative.",
+    "check/captured-variable": "Pass the value in as a parameter, or write a named `fn` inside this one, which may use it.",
+    "engine/not-yet": "Write it without that feature, or run the program on the engine that reads it (`kosika`).",
+    "check/recursion-limit": "A recursive function says how deep it may go: `fn walk(n: Node) -> Number recurse 32 { ... }`.",
+    "check/inference-failure": "Give the binding a type, `let x: Item = {...}`, or build the record by name, `Item(name: \"pen\")`.",
+    "check/record-context": "Build the record by name, `Item(name: \"pen\")`, or give the binding a type.",
+    "check/missing-field": "Set every field the record declares, or give the field a default in the record.",
+    "check/missing-return": "A step block ends with `return <name>`, naming the value it made.",
+    "check/match-type-mismatch": "Match on a scalar or a choice; for an optional, test `x.exists()` and use `x` inside.",
+    "check/exhaustiveness": "Name every alternative of a choice, or end a match on a scalar with `case _ { ... }`.",
+    "check/return-outside-function": "Workflows have no `return`: their last step's value is the result.",
+    "check/assignment-to-immutable": "Declare it with `var` to change it later.",
+    "check/unknown-method": "Each type has a fixed set of methods (KOSIKA.md lists them); to map a list, write `for x in xs { ... }`.",
+}
 
 
 def classification_rules() -> tuple[tuple[str, re.Pattern[str]], ...]:
@@ -1397,6 +1427,19 @@ def _report_payload(diagnostics: Sequence[Diagnostic], path: str) -> dict[str, A
     }
 
 
+def code_table() -> dict[str, Any]:
+    """The codes, their help and the rules that name them, in matching
+    order: what another engine needs to name a problem as this one does.
+    The Go engine embeds this as native/diagnostic_codes.json."""
+
+    return {
+        "schema": "kosika.diagnostic-codes/v1",
+        "codes": dict(CODES),
+        "help": dict(HELP),
+        "rules": [[code, pattern.pattern] for code, pattern in _RULES],
+    }
+
+
 def report(source: str, *, path: str = "<memory>") -> dict[str, Any]:
     """Return a serialisable single-document diagnostic report."""
 
@@ -1428,8 +1471,17 @@ __all__ = [
     "anchors_for",
     "classification_rules",
     "code_for",
+    "code_table",
+    "HELP",
     "diagnostic_from_exception",
     "is_known_code",
     "report",
     "report_path",
 ]
+
+
+if __name__ == "__main__":
+    # `python -m kosika.diagnostics` writes the table the Go engine embeds.
+    import json as _json
+
+    print(_json.dumps(code_table(), indent=1, sort_keys=True, ensure_ascii=False))
