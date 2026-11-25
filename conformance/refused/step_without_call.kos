@@ -1,0 +1,17 @@
+// A `step` is made with `call`, as a workflow is: it is not a function.
+
+record Chapter { title: Text body: Text }
+record Notes { title: Text gist: Text }
+
+model reader {
+  input: Chapter
+  output: Notes
+}
+
+step read_chapter(chapter: Chapter) -> Notes {
+  notes = use_model reader(title: chapter.title, body: chapter.body)
+}
+
+workflow main(chapter: Chapter) -> Notes {
+  notes = read_chapter(chapter)
+}

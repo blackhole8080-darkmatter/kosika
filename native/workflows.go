@@ -95,6 +95,9 @@ type run struct {
 	// the memory folder; nil when no folder was given, and then a step
 	// that learns asks its model every time.
 	lessons *lessonStore
+	// remembered is what `step` units made this run, and the memory folder
+	// that keeps it when one was given; nil until a step is first made.
+	remembered *rememberedSteps
 	// learning is the step now running when it learns; nil otherwise.
 	learning *learningStep
 }
@@ -554,11 +557,30 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		return result, gathered
 	case "workflow":
 		child := r.checker.workflows[call.Name]
+		key := ""
+		if child.Remembered {
+			if r.remembered == nil {
+				r.remembered = newRememberedSteps("")
+			}
+			key = stepKey(r.checker.program.Identity, child.Name, recorded)
+			wanted := r.checker.schemaFor(child.Out)
+			if known, ok := r.remembered.recall(key); ok && schemaProblem(known.result, wanted, "$", wanted) == "" {
+				// A `step` already made with these inputs: its result again,
+				// with the trace of the call that made it.
+				first := r.begin(depth, event("workflow_call", "workflow", child.Name, "arguments", recorded, "expression_events", eventList(expressionEvents), "reused", true))
+				return known.result, []Value{first,
+					event("workflow_return", "workflow", child.Name, "result", known.result, "events", eventList(known.events), "reused", true),
+				}
+			}
+		}
 		first := r.begin(depth, event("workflow_call", "workflow", child.Name, "arguments", recorded, "expression_events", eventList(expressionEvents)))
 		saved := r.prefix
 		r.prefix = append([]string{}, r.stepScope...)
 		result, childEvents := r.workflowEvents(child, arguments, depth+1)
 		r.prefix = saved
+		if key != "" {
+			r.remembered.keep(key, child.Name, recorded, result, childEvents)
+		}
 		return result, []Value{first,
 			event("workflow_return", "workflow", child.Name, "result", result, "events", eventList(childEvents)),
 		}

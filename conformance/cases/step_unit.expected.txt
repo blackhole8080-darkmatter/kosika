@@ -1,0 +1,4 @@
+PASS  a step asks its model once for the same inputs
+PASS  other inputs make the step again
+PASS  what a step made is remembered for the whole run
+3 passed, 0 failed

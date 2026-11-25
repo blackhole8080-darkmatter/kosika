@@ -1709,6 +1709,16 @@ def _loop_bindings(
     return inner
 
 
+def _call_it_hint(workflow: Any) -> str:
+    """What to write when a step names a workflow or a `step` as if it were
+    a function: those are made with `call`."""
+
+    if workflow is None:
+        return ""
+    kind = "step" if workflow.remembered else "workflow"
+    return f"; {workflow.name!r} is a {kind}, so make it with `call {workflow.name}(...)`"
+
+
 def _call_signature(
     step: Step,
     call: Any,
@@ -1747,8 +1757,10 @@ def _call_signature(
         else:
             called_function = functions.get(call.function_name)
             if called_function is None:
+                hint = _call_it_hint(workflows.get(call.function_name))
                 raise CheckError(
-                    f"Step {step.name!r} uses unknown function {call.function_name!r}"
+                    f"Step {step.name!r} uses unknown function "
+                    f"{call.function_name!r}{hint}"
                 )
             call_input, call_output = None, called_function.output_type
             expected_fields = {

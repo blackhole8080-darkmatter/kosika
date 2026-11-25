@@ -991,6 +991,54 @@ parenthesis right after it, is still a call of a function named `finish`.
 - The trace of a run that finished early ends with that step's events and
   `run_complete`; it is replayed like any other, on either engine.
 
+### Steps that remember
+
+```kosika
+step read_chapter(chapter: Chapter) -> Notes {
+  notes = use_model reader(title: chapter.title, body: chapter.body)
+}
+
+workflow read_book(book: Book) -> Reading {
+  read = for c in book.chapters limit 50 { call read_chapter(c) }
+  out  = join(read)
+}
+```
+
+```ebnf
+declaration |= "step" identifier "(" [ parameters ] ")" "->" type workflow_body ;
+```
+
+- A `step` is a workflow whose result is remembered. Its body is a
+  workflow's, and it is made with `call`, as a workflow is. Writing
+  `read_chapter(c)` without `call` is refused, and the message says to add
+  it (`check/unknown-function`). A `fn` cannot make one: a `fn` stays pure.
+  Steps and workflows share one set of names.
+- Within one run, a second `call` of the same step with the same inputs
+  makes no calls of its own. It gives the first call's result. This holds
+  for every workflow the run reaches. Other inputs make the step again.
+- A run given a memory folder (`run --memory FOLDER`) keeps each result in
+  `FOLDER/steps`, one JSON file each with the step's name, its inputs, its
+  result and the trace of the call that made it. A later run of the same
+  program gives that result again without making the step. The file is
+  named by the SHA-256 of `{"inputs", "program", "step"}` in sorted,
+  compact JSON, `program` being the program's identity. Both engines name
+  it alike, so each reads what the other kept.
+- A result is kept for the program that made it. A change to any file of
+  the program means nothing kept before is used, because a step's result
+  depends on everything it reaches, not only its own lines. A kept result
+  that no longer fits the step's type is made again.
+- A step that is made again only because nothing was kept is not a
+  different program: it asks its models and uses its tools as a workflow
+  would, under the same budgets and approvals. A reused call takes no
+  model or tool call from the budget.
+- The trace of a reused call is a workflow call whose `workflow_call` and
+  `workflow_return` carry `"reused": true`. The return holds the trace of
+  the call that made the result, so the run replays on either engine like
+  any other.
+- The folder belongs to whoever runs the program, and so does the choice of
+  models: a result kept with one model is given again under another. Use a
+  folder for each, or clear `FOLDER/steps`, to have the steps made again.
+
 ### Budgets
 
 A workflow MAY declare ceilings on its own run:
@@ -1563,7 +1611,7 @@ step = "step" identifier "{"
                                    | expression ) ;       (* one-line step *)
 
 call = identifier "(" named-arguments ")"                 (* function *)
-     | "call" identifier "(" named-arguments ")"          (* workflow *)
+     | "call" identifier "(" named-arguments ")"          (* workflow or step *)
      | "use_model" identifier "(" named-arguments ")"     (* model *)
      | "ask" identifier "(" named-arguments ")"           (* agent *)
      | "execute" identifier "." identifier

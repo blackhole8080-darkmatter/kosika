@@ -70,6 +70,8 @@ class ExecutionControl:
         self.started = time.monotonic()
         # The lessons of learning steps, when the host keeps any.
         self.lessons: Any = None
+        # What `step` units have made this run; see kosika.remembered.
+        self.remembered: Any = None
         # The Mind layer's hooks, when the host brings one; see kosika.mind.
         self.mind: Any = None
         self.counts = dict.fromkeys(

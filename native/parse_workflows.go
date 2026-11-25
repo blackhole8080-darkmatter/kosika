@@ -128,8 +128,11 @@ func (p *Parser) parseAgent() *AgentDecl {
 }
 
 func (p *Parser) parseWorkflow() *WorkflowDecl {
-	p.expect("workflow")
-	workflow := &WorkflowDecl{Name: p.identifier()}
+	remembered := p.accept("step")
+	if !remembered {
+		p.expect("workflow")
+	}
+	workflow := &WorkflowDecl{Name: p.identifier(), Remembered: remembered}
 	p.expect("(")
 	for !p.accept(")") {
 		name := p.identifier()
