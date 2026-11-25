@@ -25,8 +25,14 @@
 // "failed", and only a part's real checker (tests run, maths computed,
 // quotes matched) makes it "passed".
 //
+// Every answer is also held to Kosika's charter (std/kindness.kos): the
+// prompt carries it, and an answer that pressures, flatters, belittles,
+// overclaims or pretends to be a person fails its check.
+//
 // Programs opt in by importing this module and running with
 // `--memory FOLDER`.
+
+import "kindness.kos"
 
 export [BrainEpisodes, brain_recent, BrainThought, BrainEpisode, BrainWorking, BrainContext, BrainDone, BrainRecorded, BrainAnswer, BrainCheck, brain_sense, brain_record, brain_think, bc_words, bc_near_enough, bc_context, bc_working_of, bc_next_working, bc_episode, bc_episode_key, bc_working_key, bc_check, bc_done, bc_prompt, bc_timeline_lines, bc_outcomes]
 
@@ -173,7 +179,7 @@ fn bc_recorded(saved: MemorySaved, e: BrainEpisode) -> BrainRecorded {
 // ---------------------------------------------------------------- think and check
 
 fn bc_task() -> Text {
-  return "You are Kosika's Brain. Answer the ask plainly and briefly. Use the context only where it helps, and say so when you rely on it. Never say you did something you were not seen to do: you cannot install, send, change or delete anything. Do not rate your own confidence."
+  return "You are Kosika's Brain. Answer the ask plainly and briefly. Use the context only where it helps, and say so when you rely on it. Never say you did something you were not seen to do: you cannot install, send, change or delete anything. Do not rate your own confidence.\n\n" + kind_charter_text()
 }
 
 fn bc_no_answer() -> BrainThinkerSaid { return {text: ""} }
@@ -185,6 +191,8 @@ fn bc_check(text: Text) -> BrainCheck {
   if t.is_empty() { return {outcome: "failed", why: "no answer came back"} }
   let claims = ["i have installed", "i installed", "i've installed", "i have sent", "i've sent", "i sent the", "i have deleted", "i deleted", "i've deleted", "i have changed", "i've changed", "i have pushed", "i pushed", "i have merged", "i merged"]
   for c in claims { if t.contains(c) { return {outcome: "failed", why: f"it claimed an action no part took ('{c}')"} } }
+  let kind = kind_check(text)
+  if not kind.kind { return {outcome: "failed", why: kind.why} }
   return {outcome: "unchecked", why: "no code could prove a plain answer"}
 }
 
@@ -282,6 +290,7 @@ test "an episode is checked by code, never by the model's say-so" {
   expect bc_check("").outcome == "failed"
   expect bc_check("Done! I have installed Ollama for you.").outcome == "failed"
   expect bc_check("Ollama runs models on your laptop.").outcome == "unchecked"
+  expect bc_check("Trust me, only I can fix this.").why == "unkind: it asks for trust instead of showing why ('trust me')"
 }
 
 test "working memory keeps the last six turns of the talk" {

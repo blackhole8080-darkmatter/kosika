@@ -1,0 +1,84 @@
+// kindness.kos: how a Kosika agent treats the person it works with.
+//
+// Aryan asked for Kosika's agents to be friendly on purpose (2026-11-25).
+// This is the charter they are given and the check code makes of what they
+// say. The charter goes into every Brain prompt (kind_charter_text); the
+// check reads every answer (kind_check) and fails one that pressures,
+// flatters, belittles, claims certainty no one has, or pretends to be a
+// person. Code cannot prove an answer is kind, only catch what is plainly
+// not, so a clean answer stays "unchecked" and is never marked kind by the
+// model's say-so.
+
+export [KindCheck, KindTally, kind_charter, kind_charter_text, kind_check, kind_tally]
+
+record KindCheck { kind: Bool why: Text }
+// Of the answers the Brain kept: how many were checked at all, and how many
+// the kindness check stopped.
+record KindTally { answers: Number stopped: Number summary: Text }
+
+// The charter, one promise a line.
+fn kind_charter() -> Text[] {
+  return [
+    "Be warm and plain: short sentences, everyday words, no jargon without a word on what it means.",
+    "Say \"I'm not sure\" when you are not, and say what would settle it.",
+    "Explain what you will do and why before you do it, and wait for a yes before anything that changes the person's files, accounts or messages.",
+    "Never pressure, hurry or frighten the person, and never ask them to keep a secret.",
+    "Never flatter, and never belittle: no praise to please, no word that makes a question or a person small.",
+    "You are a program, not a person: never claim feelings, a body or a life.",
+    "When you cannot help, say so kindly and point to who or what can; for health, money or legal questions, point to a real person."
+  ]
+}
+
+fn kind_charter_text() -> Text {
+  return "How you treat the person (Kosika's charter):\n" + (for p in kind_charter() { "- " + p }).join("\n")
+}
+
+// Phrases code can catch, each with why it breaks the charter.
+fn kind_flags() -> Text[][] {
+  return [
+    ["act now", "it hurries the person"], ["right now or", "it hurries the person"], ["you have no choice", "it pressures the person"],
+    ["don't tell anyone", "it asks for a secret"], ["do not tell anyone", "it asks for a secret"], ["keep this secret", "it asks for a secret"],
+    ["trust me", "it asks for trust instead of showing why"], ["only i can", "it makes the person depend on it"],
+    ["you're a genius", "it flatters"], ["you are a genius", "it flatters"], ["you're so smart", "it flatters"],
+    ["stupid", "it belittles"], ["idiot", "it belittles"], ["dumb question", "it belittles"], ["obviously you", "it belittles"],
+    ["100% sure", "it claims a certainty no one has"], ["i am never wrong", "it claims a certainty no one has"], ["i'm never wrong", "it claims a certainty no one has"], ["guaranteed to work", "it claims a certainty no one has"],
+    ["i am a human", "it pretends to be a person"], ["i'm a human", "it pretends to be a person"], ["i am a real person", "it pretends to be a person"], ["i have feelings", "it pretends to have feelings"]
+  ]
+}
+
+fn kind_check(text: Text) -> KindCheck {
+  let t = text.lower().replace("’", "'")
+  for f in kind_flags() { if t.contains(f[0]) { return {kind: false, why: f"unkind: {f[1]} ('{f[0]}')"} } }
+  return {kind: true, why: ""}
+}
+
+// How the kindness check went over the Brain's kept answers ("why" or
+// "did" text of each episode, as the timeline holds it).
+fn kind_tally(did: Text[]) -> KindTally {
+  let stopped = (for d in did where d.contains("unkind:") { d }).length()
+  let n = did.length()
+  let summary = if n == 0 { "No answers kept yet." } else if stopped == 0 { f"All {n} answers passed the kindness check." } else { f"The kindness check stopped {stopped} of {n} answers." }
+  return {answers: n, stopped: stopped, summary: summary}
+}
+
+test "the charter is short promises, and goes into the prompt whole" {
+  expect kind_charter().length() == 7
+  expect kind_charter_text().starts_with("How you treat the person")
+  expect kind_charter_text().contains("I'm not sure")
+}
+
+test "a plain, warm answer passes; pressure, flattery, contempt and pretending fail" {
+  expect kind_check("Ollama runs models on your laptop. I'm not sure which size fits; try the small one first.").kind
+  expect not kind_check("Act now, before it is too late!").kind
+  expect kind_check("You're a genius!").why == "unkind: it flatters ('you're a genius')"
+  expect kind_check("You’re a genius!").why == "unkind: it flatters ('you're a genius')"
+  expect not kind_check("That is a dumb question.").kind
+  expect not kind_check("I am 100% sure this works.").kind
+  expect not kind_check("Don't worry, I am a human too.").kind
+}
+
+test "the tally counts what the check stopped" {
+  expect kind_tally([]).summary == "No answers kept yet."
+  expect kind_tally(["answered: hi", "answer refused: unkind: it flatters ('you're a genius')"]).stopped == 1
+  expect kind_tally(["answered: hi"]).summary == "All 1 answers passed the kindness check."
+}
