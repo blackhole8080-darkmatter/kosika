@@ -529,3 +529,48 @@ class OpenAiRegressionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RouterGaveUpTests(unittest.TestCase):
+    """Kosika's router answers 502 only after it asked every model it knows.
+    Asking it again would repeat minutes of the same failures, so the step
+    fails at once, saying which models were asked."""
+
+    def _fail(self, body: dict[str, Any]) -> urllib.error.HTTPError:
+        return urllib.error.HTTPError(
+            "http://127.0.0.1:8791/v1/chat/completions",
+            502,
+            "Bad Gateway",
+            {},
+            io.BytesIO(json.dumps(body).encode()),
+        )
+
+    def _ask(self, body: dict[str, Any]) -> tuple[Exception, int, int]:
+        from kosika.model import ChatMessage, ModelProviderError, ModelRequest, OpenAICompatibleProvider
+
+        provider = OpenAICompatibleProvider("http://127.0.0.1:8791/v1", "kosika-virtual")
+        request = ModelRequest(messages=(ChatMessage(role="user", content="hi"),))
+        with (
+            mock.patch.object(urllib.request, "urlopen", side_effect=lambda *a, **k: (_ for _ in ()).throw(self._fail(body))) as opened,
+            mock.patch.object(model_module.time, "sleep") as slept,
+        ):
+            with self.assertRaises(ModelProviderError) as caught:
+                provider.complete(request)
+        return caught.exception, opened.call_count, slept.call_count
+
+    def test_the_router_giving_up_is_said_at_once(self) -> None:
+        error = (
+            {"error": {"message": "No free model gave a reply that passed the checks.",
+                       "tried": [{"model": "quick", "error": "429"}, {"model": "local", "error": "timed out"},
+                                 {"model": "quick", "error": "429"}]}}
+        )
+        said, asked, waited = self._ask(error)
+        self.assertEqual((asked, waited), (1, 0))
+        self.assertIn("No model answered", str(said))
+        self.assertIn("quick, local", str(said))
+
+    def test_another_502_is_still_asked_again(self) -> None:
+        said, asked, waited = self._ask({"error": {"message": "busy"}})
+        self.assertGreater(asked, 1)
+        self.assertGreater(waited, 0)
+        self.assertIn("HTTP 502", str(said))

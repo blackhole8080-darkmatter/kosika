@@ -2047,6 +2047,13 @@ def build_parser() -> argparse.ArgumentParser:
             ),
         )
         app_parser.add_argument(
+            "--embed-url",
+            help=(
+                "Where to ask the embedding model, when it is not at --model-url"
+                " (an Ollama address, like http://localhost:11434)."
+            ),
+        )
+        app_parser.add_argument(
             "--embed-model",
             metavar="NAME",
             help=(
@@ -3818,12 +3825,25 @@ def main() -> int:
         print("\n".join(describe()))
         return 0
     if args.command == "start":
-        from .quickstart import default_folder, installed_models, start_plan
+        from .quickstart import (
+            default_folder,
+            installed_models,
+            start_plan,
+            wake_ollama,
+            wake_router,
+        )
+
+        # Studio wakes what its agents need, so they are never left waiting
+        # on a model server that was simply not running.
+        woke = [said for said in (wake_ollama(), wake_router()) if said]
+        from .quickstart import health as model_health
 
         start_arguments, start_lines = start_plan(
-            args.folder or default_folder(), installed_models()
+            args.folder or default_folder(),
+            installed_models(),
+            router=model_health()["router"],
         )
-        print("\n".join(start_lines))
+        print("\n".join(start_lines + ["  " + said for said in woke]))
         if args.port:
             start_arguments += ["--port", str(args.port)]
         if args.no_browser:

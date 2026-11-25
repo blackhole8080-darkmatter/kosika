@@ -126,6 +126,7 @@ def status(work: Path | None = None, most: int = 12) -> dict[str, Any]:
         "passed": sum(1 for r in shown if r["result"] == "passed"),
         "todo": todo(work),
         "can_start": daily_script().exists(),
+        "waiting": len(waiting(work)),
     }
 
 
@@ -359,3 +360,122 @@ def keep(
     url = made.stdout.strip().splitlines()[-1]
     (work / name / "kept.txt").write_text(url + "\n", encoding="utf-8")
     return {"run": name, "url": url}
+
+
+def waiting(work: Path | None = None) -> list[dict[str, Any]]:
+    """Every run, on any day, that passed its checks, left a change, and was
+    not kept yet: what waits for a Keep."""
+    work = work or work_folder()
+    found = []
+    for i, folder in enumerate(_runs(work)):
+        if (folder / "kept.txt").exists() or not (folder / "change.patch").exists():
+            continue
+        report = folder / "report.md"
+        if not report.exists():
+            continue
+        result, _ = _ended(report.read_text(encoding="utf-8"))
+        if result != "passed":
+            continue
+        if not (folder / "change.patch").read_text(encoding="utf-8").strip():
+            continue
+        found.append(run_of(folder, i))
+    return found
+
+
+def keep_all(
+    names: list[str] | None = None,
+    work: Path | None = None,
+    repo: Path | None = None,
+) -> dict[str, Any]:
+    """Keep many runs that passed at once: one branch, one commit per run,
+    pushed, and ONE pull request into studio for you to review. A change
+    that no longer applies on top of the others is left waiting and said.
+    Nothing is merged."""
+    import shutil
+    import time as clock
+
+    from .agents_home import KOSIKA_HOME
+
+    work = work or work_folder()
+    ready = waiting(work)
+    if names is not None:
+        wanted = set(names)
+        ready = [run for run in ready if run["run"] in wanted]
+    if not ready:
+        raise ValueError("No run that passed is waiting to be kept")
+    origin = _git(["remote", "get-url", "origin"], repo or KOSIKA_HOME).strip()
+    batch = "batch-" + clock.strftime("%Y%m%d-%H%M%S")
+    place = work / "branches" / batch
+    shutil.rmtree(place, ignore_errors=True)
+    place.parent.mkdir(parents=True, exist_ok=True)
+    _git(
+        ["clone", "--quiet", "--depth", "1", "--branch", "studio", origin, str(place)],
+        work,
+    )
+    branch = "coder/" + batch
+    _git(["checkout", "--quiet", "-b", branch], place)
+    kept: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    for run in ready:
+        patch = work / run["run"] / "change.patch"
+        tried = subprocess.run(
+            ["git", "apply", "--whitespace=nowarn", str(patch)],
+            cwd=str(place),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if tried.returncode != 0:
+            skipped.append(
+                {"run": run["run"], "why": (tried.stderr or "did not apply").strip()[-200:]}
+            )
+            continue
+        _git(["add", "-A"], place)
+        title = (run["request"][:1].upper() + run["request"][1:])[:90] or run["run"]
+        _git(
+            [
+                "commit",
+                "--quiet",
+                "-m",
+                f"{title}\n\nWritten by the Kosika coder swarm ({run['run']}) and kept from Studio: it passed its\nexample tests, go vet, the comparison of both engines, and develop.kos.",
+            ],
+            place,
+        )
+        kept.append(run)
+    if not kept:
+        raise ValueError(
+            "None of the waiting changes applies to studio any more: "
+            + "; ".join(item["run"] + ": " + item["why"] for item in skipped[:3])
+        )
+    _git(["push", "--quiet", "-u", "origin", branch], place)
+    lines = "\n".join(f"- `{run['run']}`: {run['request']}" for run in kept)
+    left = (
+        "\n\n**Left waiting** (no longer applies on top of the others):\n"
+        + "\n".join(f"- `{item['run']}`" for item in skipped)
+        if skipped
+        else ""
+    )
+    title = f"Coder swarm: {len(kept)} kept changes"
+    body = (
+        f"Written by the Kosika coder swarm and kept together from Studio's Coders page.\n\n"
+        f"Each passed its example tests, go vet, the comparison of both engines and develop.kos.\n"
+        f"One commit per run:\n\n{lines}{left}"
+    )
+    made = subprocess.run(
+        ["gh", "pr", "create", "--base", "studio", "--head", branch, "--title", title, "--body", body],
+        cwd=str(place),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if made.returncode != 0:
+        raise RuntimeError(
+            "The branch was pushed, but the pull request was not made: "
+            + (made.stderr or made.stdout).strip()[-400:]
+        )
+    url = made.stdout.strip().splitlines()[-1]
+    for run in kept:
+        (work / run["run"] / "kept.txt").write_text(url + "\n", encoding="utf-8")
+    return {"url": url, "kept": [run["run"] for run in kept], "skipped": skipped}

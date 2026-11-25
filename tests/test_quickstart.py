@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 import unittest.mock
+from unittest import mock
 from pathlib import Path
 
 from kosika import app as studio
@@ -128,3 +129,51 @@ class QuickstartTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RouterStartTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.folder = Path(self._dir.name) / "KosikaAgents"
+
+    def test_with_the_router_running_every_model_it_knows_is_used(self) -> None:
+        from kosika.quickstart import OLLAMA, ROUTER, ROUTER_MODEL
+
+        arguments, lines = start_plan(self.folder, INSTALLED, router=True)
+        self.assertEqual(arguments[2:4], ["--model", ROUTER_MODEL])
+        self.assertIn("--model-url", arguments)
+        self.assertEqual(arguments[arguments.index("--model-url") + 1], ROUTER)
+        self.assertNotIn("--model-protocol", arguments)
+        # Search by meaning still asks Ollama, not the router.
+        self.assertEqual(arguments[arguments.index("--embed-url") + 1], OLLAMA)
+        self.assertIn("Kosika's router", "\n".join(lines))
+        parsed = build_parser().parse_args(arguments)
+        self.assertEqual(parsed.embed_url, OLLAMA)
+        self.assertEqual(parsed.model_timeout, 240)
+
+    def test_ollama_is_started_only_when_installed_and_not_running(self) -> None:
+        from kosika import quickstart
+
+        with (
+            mock.patch.object(quickstart, "installed_models", return_value=[]),
+            mock.patch.object(quickstart.subprocess, "Popen") as popen,
+        ):
+            self.assertEqual(quickstart.wake_ollama(), "")
+        popen.assert_not_called()
+        with (
+            mock.patch.object(quickstart, "installed_models", return_value=None),
+            mock.patch.object(quickstart.shutil, "which", return_value=None),
+            mock.patch.object(quickstart.subprocess, "Popen") as popen,
+        ):
+            self.assertIn("not installed", quickstart.wake_ollama())
+        popen.assert_not_called()
+        answers = iter([None, None, []])
+        with (
+            mock.patch.object(quickstart, "installed_models", side_effect=lambda **k: next(answers)),
+            mock.patch.object(quickstart.shutil, "which", return_value="/usr/bin/ollama"),
+            mock.patch.object(quickstart.subprocess, "Popen") as popen,
+            mock.patch.object(quickstart.time, "sleep"),
+        ):
+            self.assertIn("started it", quickstart.wake_ollama())
+        self.assertEqual(popen.call_args.args[0], ["/usr/bin/ollama", "serve"])

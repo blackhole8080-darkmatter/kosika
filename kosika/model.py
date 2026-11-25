@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.client
+import io
 import json
 import socket
 import os
@@ -86,6 +87,46 @@ def _think_from_env() -> bool | None:
 
 class ModelProviderError(RuntimeError):
     """Raised when a model provider cannot produce a valid response."""
+
+
+def _router_gave_up(exc: "urllib.error.HTTPError") -> str:
+    """When a 502 comes from Kosika's model router after it tried every
+    model, what to tell the person; "" for any other 502.
+
+    The router's own failure lists the models it tried under "tried". The
+    body is read here, so the error is rebuilt with it for later readers."""
+
+    try:
+        raw = exc.read()
+    except (OSError, ValueError):
+        return ""
+    exc.fp = io.BytesIO(raw)  # let a later exc.read() still see it
+    try:
+        body = json.loads(raw.decode("utf-8", errors="replace"))
+    except ValueError:
+        return ""
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict) or "tried" not in error:
+        return ""
+    names: list[str] = []
+    for item in error.get("tried") or []:
+        name = (
+            item
+            if isinstance(item, str)
+            else item[0]
+            if isinstance(item, (list, tuple)) and item
+            else item.get("model") or item.get("name")
+            if isinstance(item, dict)
+            else None
+        )
+        if isinstance(name, str) and name not in names:
+            names.append(name)
+    asked = ", ".join(names) if names else "every model it knows"
+    return (
+        f"No model answered. Kosika's router asked {asked}, and none gave a"
+        " reply that passed its checks. Check the internet connection and the"
+        " Models page in Studio, then try again."
+    )
 
 
 @dataclass(frozen=True)
@@ -633,6 +674,13 @@ class OpenAICompatibleProvider:
                 # A service that says it is too busy, or that the rate is
                 # used up for the moment, is asked again after a while; it
                 # did not take the request, so asking again costs nothing.
+                if exc.code == 502:
+                    gave_up = _router_gave_up(exc)
+                    if gave_up:
+                        # Kosika's router already asked every model it knows,
+                        # each in turn: asking it again would only repeat
+                        # minutes of the same failures. Say so at once.
+                        raise ModelProviderError(gave_up) from exc
                 if exc.code not in (429, 502, 503, 504) or not busy:
                     raise
                 pause = busy.pop(0)
