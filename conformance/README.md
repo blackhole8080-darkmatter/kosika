@@ -60,3 +60,12 @@ it must be what Kosika should do, not merely what one engine happens to do.
 - Vectors and matrices, and `std/nn.kos` beyond loading it.
 - 36 passing programs, 12 failing ones and 89 refused ones are a beginning. A method or rule
   that no case uses is not held to anything.
+
+## Every other program: `agree`
+
+`python -m kosika.conformance agree ENGINE` holds every `.kos` file elsewhere
+in the repository to one rule: what one engine checks, the other checks,
+and its tests come out the same. An engine that lacks a feature refuses it
+by name. The exceptions, with reasons, are in `known_gaps.txt`; a listed
+program the engines come to agree on fails the gate until its line is
+taken out, so the list only shrinks. See `docs/proposals/0005-check-means-run.md`.

@@ -1644,7 +1644,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SECONDS",
         help="How long --approve-in waits for an answer; no answer is a no.",
     )
-    run_parser.add_argument("--max-requests", type=int, default=64)
+    # Requests to a model provider, retries included. Left out, it follows
+    # --max-model-calls, so raising that one limit is enough for a long run.
+    run_parser.add_argument("--max-requests", type=int)
     run_parser.add_argument("--max-tokens", type=int)
     run_parser.add_argument("--max-output-tokens", type=int, default=1024)
     run_parser.add_argument("--telemetry", type=Path)
@@ -5596,7 +5598,11 @@ def main() -> int:
                 )
             approvals.append(ApprovalRecord(**record))
         limits = ModelLimits(
-            max_requests=args.max_requests,
+            max_requests=(
+                args.max_requests
+                if args.max_requests is not None
+                else max(64, args.max_model_calls)
+            ),
             max_tokens=args.max_tokens,
             max_output_tokens=args.max_output_tokens,
         )
