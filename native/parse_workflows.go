@@ -159,7 +159,7 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 			for !p.accept("}") {
 				if !p.atAssignment() && !p.atTypedStep() {
 					inner := p.current()
-					parseFail("Unexpected workflow item %s at %d:%d", quoted(inner.Value), inner.Line, inner.Column)
+					parseFail("Unexpected workflow item %s at %d:%d; a workflow step is one line `name = <one call>`, and the last step's value is the result, so put logic in a fn", quoted(inner.Value), inner.Line, inner.Column)
 				}
 				step := p.parseShortStep()
 				step.Group = groups
@@ -171,7 +171,7 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 		case p.accept("budget"):
 			workflow.Budget = append(workflow.Budget, p.parseBudget()...)
 		default:
-			parseFail("Unexpected workflow item %s at %d:%d", quoted(token.Value), token.Line, token.Column)
+			parseFail("Unexpected workflow item %s at %d:%d; a workflow step is one line `name = <one call>`, and the last step's value is the result, so put logic in a fn", quoted(token.Value), token.Line, token.Column)
 		}
 	}
 	return workflow

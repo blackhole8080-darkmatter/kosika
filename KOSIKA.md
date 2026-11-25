@@ -341,6 +341,10 @@ Supported functions:
   values. `ref name` creates a typed function value, including its captures,
   and function values may be passed, returned, stored in workflow bindings, and
   called.
+- A function written as a value, `fn(x: Number) -> Number { x * 2 }`, sees
+  only its own parameters and top-level names; it does not capture locals
+  around it. Using one is refused with `check/captured-variable`, which names
+  the fix: pass it in as a parameter, or write a named nested function.
 - May recurse only when every function participating in the cycle declares
   `recurse N`, where `N` is from 1 through 128. Call depth is bounded at 128
   and static function nesting at 32.
@@ -1592,6 +1596,28 @@ approval record. The runtime
 claims the exact action and arguments before the effect and journals completion
 for safe resume. Approval actor strings are record labels, not authenticated
 human identity; authentication is a host responsibility.
+
+## Diagnostics
+
+`kosika check FILE --format json` prints a `kosika.diagnostics/v1` report on
+both engines (`python -m kosika.cli` and `kosika-native`): `schema`, `path`,
+`ok`, `diagnostics`, `codes`, and `error_count`. Each diagnostic has a stable
+`code`, the `message`, a zero-based LSP `range` or `null`, and, for the codes
+an AI writer most often meets, a `help` line with the usual fix.
+
+- The code table lives in `kosika/diagnostics.py` (`CODES`, `HELP`, and the
+  message rules). `python -m kosika.diagnostics` prints it as
+  `kosika.diagnostic-codes/v1`; the Go engine embeds that file
+  (`native/diagnostic_codes.json`), so the two engines cannot drift apart.
+- For one program both engines report the same codes, messages and `help`.
+  A located error (`at LINE:COLUMN`) has the same range on both, as wide as
+  the token there. The reference engine also anchors check errors to the
+  declaration or step they name; the Go engine reports `range: null` for
+  those for now.
+- `engine/not-yet` means the program is valid Kosika that this engine cannot
+  run yet (for example `learn near` on Go). It is not the program's fault: run
+  it on the reference engine.
+- Exit status is 0 when the program checks and 2 when it does not.
 
 ## Execution semantics
 

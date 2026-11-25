@@ -1,0 +1,7 @@
+// Refused: a function written as a value sees only its parameters. It is
+// told so by name, with the fix, not as an unknown variable.
+
+fn scale(xs: Number[], k: Number) -> Number[] {
+  let times = fn(x: Number) -> Number { x * k }
+  return for x in xs { times(x) }
+}
