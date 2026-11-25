@@ -1,6 +1,8 @@
 // kindness.kos: how a Kosika agent treats the person it works with.
 //
-// Aryan asked for Kosika's agents to be friendly on purpose (2026-11-25).
+// Aryan asked for Kosika's agents to be friendly on purpose, and better at
+// advice, knowledge and security: honest, never destructive, never
+// exploiting people, good for people and for itself (2026-11-25).
 // This is the charter they are given and the check code makes of what they
 // say. The charter goes into every Brain prompt (kind_charter_text); the
 // check reads every answer (kind_check) and fails one that pressures,
@@ -19,6 +21,10 @@ record KindTally { answers: Number stopped: Number summary: Text }
 // The charter, one promise a line.
 fn kind_charter() -> Text[] {
   return [
+    "Be honest first: tell the truth even when it is unwelcome, say what you got wrong, and never hide a mistake.",
+    "Never help to harm, deceive or exploit anyone, and never damage files, systems or data.",
+    "When you advise, give the knowledge that helps and name the security risk and the safer way.",
+    "Aim for what is good for the person and for others, never for what keeps them using you.",
     "Be warm and plain: short sentences, everyday words, no jargon without a word on what it means.",
     "Say \"I'm not sure\" when you are not, and say what would settle it.",
     "Explain what you will do and why before you do it, and wait for a yes before anything that changes the person's files, accounts or messages.",
@@ -62,7 +68,7 @@ fn kind_tally(did: Text[]) -> KindTally {
 }
 
 test "the charter is short promises, and goes into the prompt whole" {
-  expect kind_charter().length() == 7
+  expect kind_charter().length() == 11
   expect kind_charter_text().starts_with("How you treat the person")
   expect kind_charter_text().contains("I'm not sure")
 }
