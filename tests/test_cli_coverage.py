@@ -251,6 +251,7 @@ class CliCoverageTests(unittest.TestCase):
             # A key set on this computer is passed on, so the test asks for the
             # same key the command would have found rather than for none.
             api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+            timeout=300.0,
         )
         self.assertEqual(provider.requests[0].temperature, 0.1)
 

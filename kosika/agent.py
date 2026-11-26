@@ -244,6 +244,7 @@ class AgentLoop:
         tool_descriptions: Mapping[str, str] | None = None,
         approve_plan: PlanApprover | None = None,
         review_plan: PlanReviewer | None = None,
+        answer_retries: int = 1,
     ) -> None:
         #: Looks at a plan before a person is asked about it. A plan it finds
         #: wanting goes back to the model, PLAN_RETRIES times at most.
@@ -266,6 +267,12 @@ class AgentLoop:
         #: changes the world, whose failure may mean it half happened, and a
         #: request for a tool the agent was never given still ends the run.
         self.tell_failures = tell_failures
+        #: How many times a malformed final answer is shown back to the model,
+        #: with the reason, for one more try. A small model answers in prose
+        #: often enough that without this one bad turn ends the whole run.
+        if type(answer_retries) is not int or not 0 <= answer_retries <= 5:
+            raise ValueError("Agent loop answer_retries must be an integer from 0 to 5")
+        self.answer_retries = answer_retries
         for name, value in (
             ("max_steps", max_steps),
             ("max_tool_calls", max_tool_calls),
@@ -564,17 +571,11 @@ class AgentLoop:
         trace_path: str | Path | None = None,
         session: "AgentExecutionSession | None" = None,
     ) -> AgentRunResult:
-        if session is None:
-            return self._run(
-                agent_name,
-                task,
-                input_value=input_value,
-                system_prompt=system_prompt,
-                approval=approval,
-                trace_path=trace_path,
-            )
+        #: Shared with `_run`, so a run that ends badly still leaves a trace of
+        #: how far it got: the failed run is the one most worth reading.
+        trace_events: list[dict[str, Any]] = []
         try:
-            with session.lock():
+            if session is None:
                 return self._run(
                     agent_name,
                     task,
@@ -582,10 +583,35 @@ class AgentLoop:
                     system_prompt=system_prompt,
                     approval=approval,
                     trace_path=trace_path,
-                    session=session,
+                    trace_events=trace_events,
                 )
-        except ExecutionError as exc:
-            raise AgentLoopError(str(exc), code=exc.code) from exc
+            try:
+                with session.lock():
+                    return self._run(
+                        agent_name,
+                        task,
+                        input_value=input_value,
+                        system_prompt=system_prompt,
+                        approval=approval,
+                        trace_path=trace_path,
+                        session=session,
+                        trace_events=trace_events,
+                    )
+            except ExecutionError as exc:
+                raise AgentLoopError(str(exc), code=exc.code) from exc
+        except AgentLoopError as exc:
+            if trace_path is not None and trace_events:
+                trace_events.append(
+                    {
+                        "event": "agent_run_failed",
+                        "trace_version": 1,
+                        "agent": agent_name,
+                        "error": str(exc),
+                        "code": getattr(exc, "code", None),
+                    }
+                )
+                write_agent_trace(trace_path, trace_events)
+            raise
 
     def _run(
         self,
@@ -597,6 +623,7 @@ class AgentLoop:
         approval: ApprovalRecord | None = None,
         trace_path: str | Path | None = None,
         session: "AgentExecutionSession | None" = None,
+        trace_events: list[dict[str, Any]] | None = None,
     ) -> AgentRunResult:
         selection = self._skills_for(task)
         agent = self._find_agent(agent_name)
@@ -631,7 +658,9 @@ class AgentLoop:
             if model is not None and prepared_input is not None
             else None
         )
-        trace_events: list[dict[str, Any]] = [
+        if trace_events is None:
+            trace_events = []
+        trace_events.append(
             {
                 "event": "agent_run_start",
                 "trace_version": 1,
@@ -651,7 +680,7 @@ class AgentLoop:
                     for binding in bindings
                 },
             }
-        ]
+        )
         messages: list[ChatMessage] = []
         if agent.instructions:
             messages.append(ChatMessage(role="system", content=agent.instructions))
@@ -776,6 +805,7 @@ class AgentLoop:
             else:
                 session.checkpoint("ready", checkpoint_payload(step=0))
 
+        repairs = 0
         first_step = (
             resume_step + 1
             if resume_response is None and resume_step > 0
@@ -826,8 +856,10 @@ class AgentLoop:
                     trace_events.append(
                         {
                             "event": "agent_model_request",
-                            "step": step,
                             **asdict(request),
+                            # The agent step is not the model step: the request's
+                            # `step` is for scripted workflow answers and is empty here.
+                            "step": step,
                         }
                     )
                     if session is not None:
@@ -862,11 +894,44 @@ class AgentLoop:
             if not resuming_response or resume_tool_index == 0:
                 messages.append(assistant)
             if not response.tool_calls:
-                structured_output = (
-                    self._structured_output(self.program, model, response.content)
-                    if prepared_input is not None
-                    else None
-                )
+                try:
+                    structured_output = (
+                        self._structured_output(self.program, model, response.content)
+                        if prepared_input is not None
+                        else None
+                    )
+                except AgentLoopError as exc:
+                    # A malformed answer is the one failure a model can put
+                    # right when it is told what was wrong, and only a declared
+                    # answer has a shape to get wrong.
+                    if (
+                        prepared_input is None
+                        or repairs >= self.answer_retries
+                        or step >= int(limits["max_steps"])
+                    ):
+                        raise
+                    repairs += 1
+                    trace_events.append(
+                        {
+                            "event": "agent_answer_rejected",
+                            "step": step,
+                            "reason": str(exc),
+                        }
+                    )
+                    messages.append(
+                        ChatMessage(
+                            role="user",
+                            content=(
+                                f"That answer was not accepted: {exc}\n"
+                                "Answer again with one JSON object and nothing "
+                                "else, matching this schema: "
+                                + json.dumps(output_schema, sort_keys=True)
+                            ),
+                        )
+                    )
+                    if session is not None:
+                        session.checkpoint("ready", checkpoint_payload(step=step))
+                    continue
                 complete_event = {
                     "event": "agent_run_complete",
                     "agent": agent.name,

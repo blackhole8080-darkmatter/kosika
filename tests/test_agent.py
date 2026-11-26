@@ -473,6 +473,9 @@ class AgentLoopTests(unittest.TestCase):
                 program,
                 ScriptedModelProvider([ModelResponse(content='{"wrong": true}')]),
                 lambda tool, args: {},
+                # The repair turn is tested on its own, in
+                # test_agent_answer_repair; here the answer is the subject.
+                answer_retries=0,
             ).run("bounded", input_value={"prompt": "Plan"})
 
     def test_agent_deadline_and_cancellation_are_cooperative(self) -> None:

@@ -406,7 +406,7 @@ def _run_agent_command(
                 # declare any.
                 try:
                     agent_routes = _model_route_bindings(
-                        args.models, program, "openai", 300.0
+                        args.models, program, "openai", args.model_timeout
                     )
                 except ValueError as exc:
                     print(f"Agent models failed safely: {exc}", file=sys.stderr)
@@ -426,6 +426,7 @@ def _run_agent_command(
                     args.model_url,
                     provider_model,
                     api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+                    timeout=args.model_timeout,
                 )
             if args.virtual_model is not None:
                 from .virtual_model import VirtualModelProvider
@@ -1839,6 +1840,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     agent_parser.add_argument("source", type=Path)
     agent_parser.add_argument("--agent", required=True)
+    agent_parser.add_argument(
+        "--model-timeout",
+        type=float,
+        default=300.0,
+        help=(
+            "Seconds to wait for one model answer (default 300). An "
+            "agent's prompt carries its schema and its tools, so it is "
+            "large and a small model on a CPU may need more than a minute."
+        ),
+    )
     agent_parser.add_argument(
         "--task",
         help="Natural-language task label; optional when --input is provided.",
