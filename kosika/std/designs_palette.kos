@@ -19,7 +19,7 @@
 // at least 7 to 1 against its background, softer text 4.5, and lines,
 // accents and group colours 3, the least for shapes to be told apart.
 
-export [Palette, palettes, palette_named, palette_names, contrast, palette_problems, palettes_css]
+export [Palette, palettes, palette_named, palette_names, contrast, palette_problems, palettes_css, lighter, darker]
 
 record Palette {
   name: Text
@@ -84,6 +84,33 @@ fn contrast(a: Text, b: Text) -> Number {
   let hi = la.max(lb)
   let lo = la.min(lb)
   return (hi + 0.05) / (lo + 0.05)
+}
+
+fn hex2(n: Number) -> Text {
+  let h = "0123456789abcdef"
+  let hi = (n / 16).floor()
+  let lo = n % 16
+  return h.slice(hi, hi + 1) + h.slice(lo, lo + 1)
+}
+
+fn lighter(colour: Text, part: Number) -> Text {
+  let r = channel(colour, 1)
+  let g = channel(colour, 3)
+  let b = channel(colour, 5)
+  let nr = ((r * (1 - part)) + (255 * part)).round()
+  let ng = ((g * (1 - part)) + (255 * part)).round()
+  let nb = ((b * (1 - part)) + (255 * part)).round()
+  return "#" + hex2(nr) + hex2(ng) + hex2(nb)
+}
+
+fn darker(colour: Text, part: Number) -> Text {
+  let r = channel(colour, 1)
+  let g = channel(colour, 3)
+  let b = channel(colour, 5)
+  let nr = (r * (1 - part)).round()
+  let ng = (g * (1 - part)).round()
+  let nb = (b * (1 - part)).round()
+  return "#" + hex2(nr) + hex2(ng) + hex2(nb)
 }
 
 fn too_faint(p: Palette, what: Text, colour: Text, least: Number) -> Text[] {
