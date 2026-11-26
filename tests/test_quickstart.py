@@ -177,3 +177,34 @@ class RouterStartTests(unittest.TestCase):
         ):
             self.assertIn("started it", quickstart.wake_ollama())
         self.assertEqual(popen.call_args.args[0], ["/usr/bin/ollama", "serve"])
+
+
+def test_the_installed_studio_finds_kosika_agents_through_its_settings(tmp_path, monkeypatch):
+    """The installed app runs from its own folder, with no kosika-agents
+    beside it: the agents_home its settings.json names is used."""
+    import json
+
+    from kosika import agents_home as homes
+
+    monkeypatch.delenv("KOSIKA_AGENTS_HOME", raising=False)
+    monkeypatch.setattr(homes, "KOSIKA_HOME", tmp_path / "Programs" / "app")
+    agents = tmp_path / "projects" / "kosika-agents"
+    (agents / "agents" / "assistant").mkdir(parents=True)
+    (agents / "agents" / "assistant" / "main.kos").write_text("// Kosi", encoding="utf-8")
+    settings = tmp_path / "Local" / "Kosika Studio"
+    settings.mkdir(parents=True)
+    (settings / "settings.json").write_text(json.dumps({"agents_home": str(agents)}), encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    assert homes.agents_home() == agents.resolve()
+
+
+def test_studio_opens_the_agents_with_kosi_when_they_are_here(tmp_path, monkeypatch):
+    from kosika import quickstart
+
+    agents = tmp_path / "kosika-agents"
+    (agents / "agents" / "assistant").mkdir(parents=True)
+    (agents / "agents" / "assistant" / "main.kos").write_text("// Kosi", encoding="utf-8")
+    monkeypatch.setenv("KOSIKA_AGENTS_HOME", str(agents))
+    assert quickstart.default_folder() == (agents / "agents").resolve()
+    monkeypatch.setenv("KOSIKA_AGENTS_HOME", str(tmp_path / "nowhere"))
+    assert quickstart.default_folder().name == "KosikaAgents"
