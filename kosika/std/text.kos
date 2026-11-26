@@ -12,7 +12,7 @@
 // clean_answer(text)        a model's answer without code fences around it
 // title_case(text)          each word capitalized (first letter upper, rest unchanged)
 
-export [words_of, chunks, keywords, likeness, sentences, shorten, clean_answer, title_case]
+export [words_of, chunks, keywords, likeness, sentences, shorten, clean_answer, title_case, slug]
 
 record StdWordCount { word: Text count: Number first: Number }
 
@@ -118,4 +118,16 @@ fn title_case(text: Text) -> Text {
     }
   }
   return titled.join(" ")
+}
+
+fn slug(text: Text) -> Text {
+  let ws = words_of(text)
+  if ws.is_empty() { return "" }
+  return ws.join("-")
+}
+
+test "slug gives what its request's examples say" {
+  expect slug("Hello, World!") == "hello-world"
+  expect slug("  Kosika 2 Studio ") == "kosika-2-studio"
+  expect slug("") == ""
 }

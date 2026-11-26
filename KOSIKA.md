@@ -437,6 +437,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Number` | `abs()` | `Number` without its sign |
 | `Number` | `power(exponent: Number)` | `Number`. A whole power of a whole number is exact; any other is rounded to nine places. The run fails for a whole exponent beyond 1000 either way, `0` to a negative power, a negative number to a power that is not whole, or a result too large to hold |
 | `Number` | `is_whole()` | `Bool`, true when there is nothing after the decimal point |
+| `Number` | `sign()` | `Number`: `-1` for a negative number, `0` for zero, and `1` for a positive one |
 | any array | `index_of(item: T)` | `Number?`: the position of the first element equal to `item`, counted from `0`, else `null` |
 | `Text` | `index_of(part: Text)` | `Number?`: where `part` first begins, counted from `0`, else `null`; `part` MUST be non-empty |
 | `Text` | `chars()` | `Text[]` of its characters, one each; over 100,000 fails the run |
@@ -450,6 +451,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
 | `Text` | `is_upper_letter()` | `Bool` indicating whether the text is exactly one uppercase letter A‑Z |
 | `Text` | `trim_start()`, `trim_end()` | `Text` without white space at its start, or at its end; the other end is untouched |
+| `Text` | `truncate(most: Number)` | `Text` unchanged when it has at most `most` characters, else its first `most - 1` characters followed by `…`; `most` MUST be a whole number of at least 1 |
 | `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
 | `Number[]` | `dot(other)`, `norm()`, `mean()` | `Number` |
 | `Number` | `identity()`, `zeros(columns: Number)` | `Number[][]`: the identity matrix of that size, or a matrix of zeros with that many rows |

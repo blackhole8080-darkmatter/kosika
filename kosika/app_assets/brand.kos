@@ -36,7 +36,7 @@ fn build() -> Scene {
   ])
   // The accretion particles: gold and violet, out of the centre onto the
   // ring, then the wave — each swells and brightens after the one before
-  // it, for as long as Studio is open.
+  // the other, for as long as Studio is open.
   for i in 0 until dots {
     let id = f"dot{i}"
     let angle = 360 * i / dots - 90

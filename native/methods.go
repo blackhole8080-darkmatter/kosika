@@ -237,6 +237,25 @@ func runeIndex(text, part string) int {
 }
 
 var textMethods = map[string]method{
+	"truncate": {[]string{"most"}, func(r Value, a []Value) Value {
+		text := textOf(r)
+		_ = text
+		most := toFloat(a[0])
+		_ = most
+		if most != math.Trunc(most) || most < 1 {
+		    runFail("invalid most")
+		    return nil
+		}
+		m := int(most)
+		runes := []rune(text)
+		if len(runes) <= m {
+		    return text
+		}
+		if m == 1 {
+		    return "…"
+		}
+		return string(runes[:m-1]) + "…"
+	}},
 	"is_upper_letter": {nil, func(r Value, a []Value) Value {
 		text := textOf(r)
 		_ = text
@@ -414,6 +433,15 @@ var numberMethods = map[string]method{
 	"floor":   {nil, func(r Value, a []Value) Value { return whole(r, "floor") }},
 	"ceil":    {nil, func(r Value, a []Value) Value { return whole(r, "ceil") }},
 	"round":   {nil, func(r Value, a []Value) Value { return whole(r, "round") }},
+	"sign":    {nil, func(r Value, a []Value) Value {
+		if compareNumbers(r, bigInt(0)) > 0 {
+			return bigInt(1)
+		}
+		if compareNumbers(r, bigInt(0)) < 0 {
+			return bigInt(-1)
+		}
+		return bigInt(0)
+	}},
 	"to_text": {nil, func(r Value, a []Value) Value { return formatNumber(r) }},
 	"to":      {[]string{"end"}, func(r Value, a []Value) Value { return numberRange(r, a[0], true) }},
 	"until":   {[]string{"end"}, func(r Value, a []Value) Value { return numberRange(r, a[0], false) }},

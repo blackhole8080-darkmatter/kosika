@@ -311,6 +311,7 @@ var methodTypes = []methodType{
 	m("Text", "starts_with", "Bool", "prefix", "Text"),
 	m("Text", "ends_with", "Bool", "suffix", "Text"),
 	m("Text", "split", "Text[]", "separator", "Text"),
+	m("Number", "sign", "Number"),
 	m("Number", "floor", "Number"),
 	m("Number", "ceil", "Number"),
 	m("Number", "round", "Number"),
@@ -442,6 +443,7 @@ var methodTypes = []methodType{
 	m("Text", "is_upper_letter", "Bool"),
 	m("Text", "first_word", "Text"),
 	m("Text", "is_hex_colour", "Bool"),
+	m("Text", "truncate", "Text", "most", "Number"),
 }
 
 func methodCandidates(receiverType string) []methodType {

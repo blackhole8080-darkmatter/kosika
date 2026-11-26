@@ -1,0 +1,55 @@
+// Design tokens for Kosika Studio
+
+fn spacing() -> Number[] {
+  return [4, 8, 12, 16, 24, 32, 48]
+}
+
+fn radius(name: Text) -> Number {
+  if name == "small" {
+    return 6
+  }
+  if name == "medium" {
+    return 10
+  }
+  if name == "large" {
+    return 16
+  }
+  return 10
+}
+
+fn theme(name: Text) -> Text[] {
+  if name == "dark" {
+    return ["#0b0d12", "#151821", "#f4f6fa", "#9aa3b5", "#ff7a00"]
+  }
+  if name == "light" {
+    return ["#fbfaf8", "#ffffff", "#14161c", "#5b6273", "#e8590c"]
+  }
+  return ["#0b0d12", "#151821", "#f4f6fa", "#9aa3b5", "#ff7a00"]
+}
+
+// Tests
+
+test "spacing returns correct array" {
+  r = spacing()
+  expect r == [4, 8, 12, 16, 24, 32, 48]
+}
+
+test "radius returns correct values" {
+  s = radius("small")
+  m = radius("medium")
+  l = radius("large")
+  o = radius("extra")
+  expect s == 6
+  expect m == 10
+  expect l == 16
+  expect o == 10
+}
+
+test "theme returns correct palettes" {
+  d = theme("dark")
+  l = theme("light")
+  x = theme("unknown")
+  expect d == ["#0b0d12", "#151821", "#f4f6fa", "#9aa3b5", "#ff7a00"]
+  expect l == ["#fbfaf8", "#ffffff", "#14161c", "#5b6273", "#e8590c"]
+  expect x == ["#0b0d12", "#151821", "#f4f6fa", "#9aa3b5", "#ff7a00"]
+}
