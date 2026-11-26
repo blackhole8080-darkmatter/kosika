@@ -135,9 +135,11 @@ fn palette_rule(p: Palette) -> Text {
   let scheme = if luminance(p.bg) > 0.5 { "light" } else { "dark" }
   return f"html[data-palette=\"{p.name}\"]{{--bg:{p.bg};--halo:{p.panel};--ink:{p.ink};--soft:{p.soft};--amber:{p.accent};--gold:{p.gold};--think:{p.think};--line:{p.line};--line2:color-mix(in srgb,{p.line} 55%,transparent);{hues};background:{p.bg};color-scheme:{scheme}}}"
 }
-
 fn palettes_css() -> Text {
   let base = palettes()[0]
+  // A palette that may not be readable is refused at the start.
+  var out: Text[] = []
+  if (for p in palettes() where not palette_problems(p).is_empty() { p.name }) != [] { return "" }
   let hues = (for k in 0 until base.hues.length() { f"--h{k}:{base.hues[k]}" }).join(";")
   return f":root{{{hues}}}" + (for p in palettes() { palette_rule(p) }).join("")
 }
