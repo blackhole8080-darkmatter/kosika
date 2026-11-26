@@ -339,6 +339,15 @@ def _clamp(value: Any, low: Any, high: Any) -> Any:
     return low if value < low else high if value > high else value
 
 
+def _sign(value: float) -> int:
+    """Return -1 for a negative number, 0 for zero, 1 for a positive number."""
+    if value > 0:
+        return 1
+    if value < 0:
+        return -1
+    return 0
+
+
 def _log(value: Any) -> float:
     if value <= 0:
         raise RuntimeError("log needs a number above zero")
@@ -459,6 +468,7 @@ METHODS: tuple[Method, ...] = (
         lambda text, suffix: text.endswith(suffix),
     ),
     Method("Text", "split", (("separator", "Text"),), "Text[]", _split),
+    Method("Number", "sign", (), "Number", _sign),
     Method("Number", "floor", (), "Number", lambda value: _whole(value, "floor")),
     Method("Number", "ceil", (), "Number", lambda value: _whole(value, "ceil")),
     Method("Number", "round", (), "Number", lambda value: _whole(value, "round")),

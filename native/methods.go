@@ -414,6 +414,15 @@ var numberMethods = map[string]method{
 	"floor":   {nil, func(r Value, a []Value) Value { return whole(r, "floor") }},
 	"ceil":    {nil, func(r Value, a []Value) Value { return whole(r, "ceil") }},
 	"round":   {nil, func(r Value, a []Value) Value { return whole(r, "round") }},
+	"sign":    {nil, func(r Value, a []Value) Value {
+		if compareNumbers(r, bigInt(0)) > 0 {
+			return bigInt(1)
+		}
+		if compareNumbers(r, bigInt(0)) < 0 {
+			return bigInt(-1)
+		}
+		return bigInt(0)
+	}},
 	"to_text": {nil, func(r Value, a []Value) Value { return formatNumber(r) }},
 	"to":      {[]string{"end"}, func(r Value, a []Value) Value { return numberRange(r, a[0], true) }},
 	"until":   {[]string{"end"}, func(r Value, a []Value) Value { return numberRange(r, a[0], false) }},

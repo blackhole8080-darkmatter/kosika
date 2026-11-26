@@ -437,6 +437,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Number` | `abs()` | `Number` without its sign |
 | `Number` | `power(exponent: Number)` | `Number`. A whole power of a whole number is exact; any other is rounded to nine places. The run fails for a whole exponent beyond 1000 either way, `0` to a negative power, a negative number to a power that is not whole, or a result too large to hold |
 | `Number` | `is_whole()` | `Bool`, true when there is nothing after the decimal point |
+| `Number` | `sign()` | `Number`: `-1` for a negative number, `0` for zero, and `1` for a positive one |
 | any array | `index_of(item: T)` | `Number?`: the position of the first element equal to `item`, counted from `0`, else `null` |
 | `Text` | `index_of(part: Text)` | `Number?`: where `part` first begins, counted from `0`, else `null`; `part` MUST be non-empty |
 | `Text` | `chars()` | `Text[]` of its characters, one each; over 100,000 fails the run |
