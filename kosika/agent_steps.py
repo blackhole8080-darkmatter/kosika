@@ -149,6 +149,11 @@ def call_agent(
         tool_descriptions=tool_descriptions,
         approve_plan=approve_plan,
         review_plan=review_plan,
+        # `_CompleteResponses` already asks once more for a record when the
+        # reply came in plain words, so the loop does not ask again: one
+        # second chance per step, and an answer that fails both is refused
+        # here for `call_agent` to turn into `AgentAnswerError`.
+        answer_retries=0,
     )
     try:
         completed = loop.run(
