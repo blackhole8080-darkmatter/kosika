@@ -311,6 +311,7 @@ var methodTypes = []methodType{
 	m("Text", "starts_with", "Bool", "prefix", "Text"),
 	m("Text", "ends_with", "Bool", "suffix", "Text"),
 	m("Text", "split", "Text[]", "separator", "Text"),
+	m("Text", "count_lines", "Number"),
 	m("Number", "floor", "Number"),
 	m("Number", "ceil", "Number"),
 	m("Number", "round", "Number"),

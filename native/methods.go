@@ -341,6 +341,13 @@ var textMethods = map[string]method{
 	"lines": {nil, func(r Value, a []Value) Value {
 		return bounded(stringsToValues(splitLines(textOf(r))))
 	}},
+	"count_lines": {nil, func(r Value, a []Value) Value {
+		text := textOf(r)
+		if text == "" {
+			return bigInt(0)
+		}
+		return bigInt(len(splitLines(text)))
+	}},
 	"pad_left":  {[]string{"width", "fill"}, func(r Value, a []Value) Value { return pad(textOf(r), a[0], a[1], true) }},
 	"pad_right": {[]string{"width", "fill"}, func(r Value, a []Value) Value { return pad(textOf(r), a[0], a[1], false) }},
 	"is_empty":  {nil, func(r Value, a []Value) Value { return textOf(r) == "" }},
