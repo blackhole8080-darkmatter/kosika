@@ -237,6 +237,25 @@ func runeIndex(text, part string) int {
 }
 
 var textMethods = map[string]method{
+	"truncate": {[]string{"most"}, func(r Value, a []Value) Value {
+		text := textOf(r)
+		_ = text
+		most := toFloat(a[0])
+		_ = most
+		if most != math.Trunc(most) || most < 1 {
+		    runFail("invalid most")
+		    return nil
+		}
+		m := int(most)
+		runes := []rune(text)
+		if len(runes) <= m {
+		    return text
+		}
+		if m == 1 {
+		    return "…"
+		}
+		return string(runes[:m-1]) + "…"
+	}},
 	"is_upper_letter": {nil, func(r Value, a []Value) Value {
 		text := textOf(r)
 		_ = text

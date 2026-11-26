@@ -443,6 +443,7 @@ var methodTypes = []methodType{
 	m("Text", "is_upper_letter", "Bool"),
 	m("Text", "first_word", "Text"),
 	m("Text", "is_hex_colour", "Bool"),
+	m("Text", "truncate", "Text", "most", "Number"),
 }
 
 func methodCandidates(receiverType string) []methodType {
