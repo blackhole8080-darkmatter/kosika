@@ -441,11 +441,13 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `index_of(part: Text)` | `Number?`: where `part` first begins, counted from `0`, else `null`; `part` MUST be non-empty |
 | `Text` | `chars()` | `Text[]` of its characters, one each; over 100,000 fails the run |
 | `Text` | `lines()` | `Text[]` of its lines, without their line ends, however each ends; an empty text has none. A whole file may be read this way |
+| `Text` | `count_lines()` | `Number` of lines; `0` for an empty text; a line break at the very end is not counted as a new line |
 | `Text` | `pad_left(width: Number, fill: Text)`, `pad_right(width: Number, fill: Text)` | `Text` made at least `width` long by adding `fill`, which MUST be one character, before or after; a text already that long is unchanged |
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
 | `Text` | `first_word()` | `Text`: the first word of the text, as `words()` finds the words, or `""` when it has none |
+| `Text` | `is_palindrome()` | `Bool`: true when the text reads the same forwards and backwards, ignoring case and keeping only letters a‑z and digits |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
 | `Text` | `is_upper_letter()` | `Bool` indicating whether the text is exactly one uppercase letter A‑Z |

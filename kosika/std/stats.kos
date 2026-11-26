@@ -12,7 +12,7 @@
 //
 // Every result is rounded to nine places, as the built-in methods are.
 
-export [median, variance, deviation, percentile, normalized, zscores, correlation]
+export [median, variance, deviation, percentile, normalized, zscores, correlation, range]
 
 fn std_round9(x: Number) -> Number {
   return (x * 1000000000).round() / 1000000000
@@ -81,4 +81,14 @@ fn correlation(xs: Number[], ys: Number[]) -> Number? {
   }
   if sx == 0 or sy == 0 { return null }
   return std_round9(both / (sx * sy).sqrt())
+}
+
+fn range(numbers: Number[]) -> Number {
+  return std_round9(sorted.max().value() - sorted.min().value())
+}
+
+test "range gives what its request's examples say" {
+  expect range([1,5,3]) == 4
+  expect range([10]) == 0
+  expect range([]) == 0
 }

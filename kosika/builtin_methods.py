@@ -285,6 +285,16 @@ def _text_index_of(text: str, part: str) -> int | None:
 
 
 def _lines(text: str) -> list[str]:
+    # existing implementation
+    return _bounded(text.splitlines())
+
+
+def _count_lines(text: str) -> int:
+    """Return the number of lines in a text, not counting a trailing newline."""
+    if text == "":
+        return 0
+    # splitlines() does not create an extra empty string for a trailing newline
+    return len(text.splitlines())
     """A text as its lines, without their line ends. A file is read this
     way, so the limit is that of any array, not the small one of `split`."""
 
@@ -431,7 +441,15 @@ def _is_hex_colour(text):
     return all(c in valid_chars for c in hex_part)
 
 
+def _is_palindrome(text):
+    if not isinstance(text, str):
+        raise RuntimeError("Argument must be a string")
+    filtered = ''.join(ch.lower() for ch in text if ch.isalnum())
+    return filtered == filtered[::-1]
+
+
 METHODS: tuple[Method, ...] = (
+    Method("Text", "is_palindrome", (), "Bool", _is_palindrome),
     Method("Text", "is_upper_letter", (), "Bool", _is_upper_letter),
     Method("Text", "first_word", (), "Text", _first_word),
     Method("Text", "is_hex_colour", (), "Bool", _is_hex_colour),
@@ -610,6 +628,7 @@ METHODS: tuple[Method, ...] = (
     Method("Text", "index_of", (("part", "Text"),), "Number?", _text_index_of),
     Method("Text", "chars", (), "Text[]", _chars),
     Method("Text", "lines", (), "Text[]", _lines),
+    Method("Text", "count_lines", (), "Number", _count_lines),
     Method(
         "Text",
         "pad_left",
