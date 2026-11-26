@@ -229,3 +229,27 @@ class CodersTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_a_studio_outside_a_checkout_keeps_to_kosikas_own_repository(tmp_path, monkeypatch):
+    """The installed app runs from a folder that is not a git checkout; its
+    Keep must still know where to push, not fail on `git remote`."""
+    from kosika import coders
+
+    monkeypatch.delenv("KOSIKA_REPO_URL", raising=False)
+    assert coders.origin_of(tmp_path) == coders.KOSIKA_REPO_URL
+    monkeypatch.setenv("KOSIKA_REPO_URL", "https://example.invalid/kosika")
+    assert coders.origin_of(tmp_path) == "https://example.invalid/kosika"
+
+
+def test_a_run_is_shown_under_the_coder_that_did_it(tmp_path):
+    from kosika import coders
+
+    run = tmp_path / "2026-11-26-3"
+    run.mkdir()
+    (run / "request.txt").write_text("add x", encoding="utf-8")
+    assert coders.run_of(run, 2)["agent"] == coders.SWARM_NAMES[2]
+    (run / "agent.txt").write_text(coders.SWARM_NAMES[0] + chr(10), encoding="utf-8")
+    assert coders.run_of(run, 2)["agent"] == coders.SWARM_NAMES[0]
+    (run / "agent.txt").write_text("someone else", encoding="utf-8")
+    assert coders.run_of(run, 2)["agent"] == coders.SWARM_NAMES[2]
