@@ -2293,6 +2293,13 @@ class App:
 
         return brain_page.page()
 
+    def platform_page(self) -> dict[str, Any]:
+        """Every part of Kosika on this computer and how they connect."""
+
+        from . import brain_page
+
+        return brain_page.platform()
+
     def model_health(self) -> dict[str, Any]:
         """Whether Kosika's model router and Ollama answer right now."""
 
@@ -2845,6 +2852,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.home())
                 elif method == "GET" and url.path == "/api/brain":
                     self._json(200, app.brain_page())
+                elif method == "GET" and url.path == "/api/brain/platform":
+                    self._json(200, app.platform_page())
                 elif method == "GET" and url.path == "/api/health":
                     self._json(200, app.model_health())
                 elif method == "POST" and url.path == "/api/health/wake":

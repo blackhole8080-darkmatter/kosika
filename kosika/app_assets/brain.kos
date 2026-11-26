@@ -7,6 +7,7 @@
 
 import "std/brain_core.kos"
 import "std/brain_net.kos"
+import "std/designs_network.kos"
 import "std/kindness.kos"
 
 record BrainPageAsk { episodes: BrainEpisode[] total: Number }
@@ -42,6 +43,34 @@ workflow page(a: BrainPageAsk) -> BrainPage {
   shown = bp_page(a)
 }
 
+// ---------------------------------------------------------------- the platform
+
+// The page's other view: every part of Kosika on this computer and how they
+// connect, from platform_census.py's census, drawn by net25_census.
+record PlatformAsk { parts: PlatformPart[] most: Number }
+record PlatformPage { title: Text page: Text svg: Text parts: Number links: Number hub: Text hub_links: Number density: Number kinds: Text[] alone: Text[] summary: Text }
+
+fn bp_platform(a: PlatformAsk) -> PlatformPage {
+  let c = net25_census(a.parts, a.most)
+  let f = net25_figure(c.net)
+  return {title: c.net.title, page: f.page, svg: f.svg, parts: a.parts.length(), links: c.links, hub: c.hub, hub_links: c.hub_links,
+          density: c.density, kinds: c.kinds, alone: c.alone, summary: bp_platform_summary(c, a.parts.length())}
+}
+
+// What graph theory says of the platform, in plain words.
+fn bp_platform_summary(c: Census, parts: Number) -> Text {
+  if parts == 0 { return "No parts of Kosika were found on this computer: the agents folder is empty or missing." }
+  let busy = f"{parts} parts and {c.links} links. The hub, the part with the most links, is {c.hub} ({c.hub_links})."
+  let pct = (c.density * 100).round()
+  let dense = f" {pct}% of all the links there could be are there, so most parts reach each other through a few hubs."
+  let lonely = if c.alone.is_empty() { " Every part is linked to another." } else if c.alone.length() == 1 { " Linked to nothing: " + c.alone[0] + "." } else { f" {c.alone.length()} parts are linked to nothing, such as " + c.alone.take(3).join(", ") + "." }
+  return busy + dense + lonely
+}
+
+workflow platform(a: PlatformAsk) -> PlatformPage {
+  shown = bp_platform(a)
+}
+
 fn bp_test_ep(part: Text, ask: Text, outcome: Text) -> BrainEpisode { return {part: part, session: "default", seq: 1, at: "", ask: ask, did: "did it", outcome: outcome, checked_by: "tests", words: ""} }
 
 test "the Brain page counts what passed and failed and draws the network" {
@@ -65,4 +94,20 @@ test "the Brain page says how Kosika's charter held" {
   p = bp_page({episodes: [bp_test_said("answered: hello", "unchecked"), bp_test_said("answer refused: unkind: it flatters ('you're a genius')", "failed"), bp_test_ep("ai", "What is 18% of 2450?", "passed")], total: 3})
   expect p.kind_stopped == 1
   expect p.kind == "The kindness check stopped 1 of 2 answers."
+}
+
+test "the platform view says what graph theory sees" {
+  parts: PlatformPart[] = [
+    {name: "Brain", kind: "brain", about: "thinks", uses: ["router"]},
+    {name: "Kosi", kind: "agent", about: "the voice", uses: ["Brain", "router"]},
+    {name: "router", kind: "model", about: "picks a model", uses: []},
+    {name: "steward", kind: "agent", about: "looks after services", uses: []}
+  ]
+  p = bp_platform({parts: parts, most: 5})
+  expect p.parts == 4
+  expect p.links == 3
+  expect p.hub == "Brain"
+  expect p.summary == "4 parts and 3 links. The hub, the part with the most links, is Brain (2). 50% of all the links there could be are there, so most parts reach each other through a few hubs. Linked to nothing: steward."
+  expect p.svg.contains("<svg")
+  expect bp_platform({parts: [], most: 5}).summary.starts_with("No parts of Kosika")
 }

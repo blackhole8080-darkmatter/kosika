@@ -2015,10 +2015,44 @@ async function showModels() {
 // and each link is as thick as the checks it has passed.
 let brainTimer = 0;
 let brainShown = -1;
+// The Brain page has two views: the Brain's own timeline, and the whole
+// platform (every agent, model, skill, MCP server, Designs module, memory,
+// Studio and the swarm, and how they connect).
+let brainView = "timeline";
+function brainTabs() {
+  const tab = (name, label) => h("button", {class: brainView === name ? null : "quiet", onclick: () => {
+    if (brainView === name) return;
+    brainView = name; brainShown = null; showBrain();
+  }}, label);
+  return h("div", {class: "chips", style: "margin:-6px 0 12px"}, tab("timeline", "Timeline"), tab("platform", "Platform"));
+}
+async function showPlatform() {
+  clearTimeout(brainTimer);
+  if (!main.querySelector(".brain-frame")) main.replaceChildren(titled("Brain"), brainTabs(), h("p", {class: "lead"}, "Counting every part of Kosika on this computer…"));
+  const view = await api("/api/brain/platform").catch(error => ({ok: false, error: String(error), page: "", parts: 0, links: 0, kinds: [], alone: []}));
+  if (location.hash.slice(1).split("/")[0] !== "brain" || brainView !== "platform") return;
+  if (view.title + view.links + view.parts !== brainShown || !main.querySelector(".brain-frame")) {
+    brainShown = view.title + view.links + view.parts;
+    const frame = h("iframe", {class: "brain-frame", title: "Every part of Kosika and how they connect", sandbox: "allow-scripts",
+      style: "width:100%;height:min(78vh,820px);border:0;border-radius:14px;background:#0b0d1a"});
+    frame.srcdoc = view.page || "<!doctype html><html><body style=\"margin:0;background:#0b0d1a\"></body></html>";
+    main.replaceChildren(...[
+      titled("Brain"),
+      brainTabs(),
+      h("p", {class: "lead"}, view.summary || ""),
+      view.ok ? null : h("div", {class: "banner bad"}, view.error),
+      h("div", {class: "chips", style: "margin:-6px 0 14px"}, ...(view.kinds || []).map(k => chip(k, "")),
+        chip(view.links + " links", "think"), view.hub ? chip("hub: " + view.hub, "ok") : null),
+      view.page ? frame : null
+    ].filter(Boolean));
+  }
+  brainTimer = setTimeout(() => { if (location.hash.slice(1).split("/")[0] === "brain" && brainView === "platform") showPlatform(); }, 30000);
+}
 async function showBrain() {
+  if (brainView === "platform") return showPlatform();
   clearTimeout(brainTimer);
   const view = await api("/api/brain").catch(error => ({ok: false, error: String(error), page: "", episodes: 0, total: 0}));
-  if (location.hash.slice(1).split("/")[0] !== "brain") return;
+  if (location.hash.slice(1).split("/")[0] !== "brain" || brainView !== "timeline") return;
   if (view.changed !== brainShown || !main.querySelector(".brain-frame")) {
     brainShown = view.changed;
     const frame = h("iframe", {class: "brain-frame", title: "The Kosika Brain's network", sandbox: "allow-scripts",
@@ -2026,6 +2060,7 @@ async function showBrain() {
     frame.srcdoc = view.page || "<!doctype html><html><body style=\"margin:0;background:#0b0d1a\"></body></html>";
     main.replaceChildren(...[
       titled("Brain"),
+      brainTabs(),
       h("p", {class: "lead"}, view.summary || "", " ", h("span", {class: "path"}, view.path || "")),
       view.ok ? null : h("div", {class: "banner bad"}, view.error),
       h("div", {class: "chips", style: "margin:-6px 0 14px"}, chip(view.passed + " passed", "ok"), chip(view.failed + " failed", view.failed ? "bad" : ""),
