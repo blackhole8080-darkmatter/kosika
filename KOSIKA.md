@@ -447,6 +447,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
 | `Text` | `first_word()` | `Text`: the first word of the text, as `words()` finds the words, or `""` when it has none |
+| `Text` | `is_palindrome()` | `Bool`: true when the text reads the same forwards and backwards, ignoring case and keeping only letters a‑z and digits |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
 | `Text` | `is_upper_letter()` | `Bool` indicating whether the text is exactly one uppercase letter A‑Z |

@@ -237,6 +237,27 @@ func runeIndex(text, part string) int {
 }
 
 var textMethods = map[string]method{
+	"is_palindrome": {nil, func(r Value, a []Value) Value {
+		text := textOf(r)
+		_ = text
+		filtered := strings.Builder{}
+		for _, ch := range text {
+		    if unicode.IsLetter(ch) || unicode.IsNumber(ch) {
+		        filtered.WriteRune(unicode.ToLower(ch))
+		    }
+		}
+		s := filtered.String()
+		runes := []rune(s)
+		i, j := 0, len(runes)-1
+		for i < j {
+		    if runes[i] != runes[j] {
+		        return false
+		    }
+		    i++
+		    j--
+		}
+		return true
+	}},
 	"is_upper_letter": {nil, func(r Value, a []Value) Value {
 		text := textOf(r)
 		_ = text

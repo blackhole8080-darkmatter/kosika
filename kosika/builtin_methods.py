@@ -441,7 +441,15 @@ def _is_hex_colour(text):
     return all(c in valid_chars for c in hex_part)
 
 
+def _is_palindrome(text):
+    if not isinstance(text, str):
+        raise RuntimeError("Argument must be a string")
+    filtered = ''.join(ch.lower() for ch in text if ch.isalnum())
+    return filtered == filtered[::-1]
+
+
 METHODS: tuple[Method, ...] = (
+    Method("Text", "is_palindrome", (), "Bool", _is_palindrome),
     Method("Text", "is_upper_letter", (), "Bool", _is_upper_letter),
     Method("Text", "first_word", (), "Text", _first_word),
     Method("Text", "is_hex_colour", (), "Bool", _is_hex_colour),
