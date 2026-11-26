@@ -20,7 +20,6 @@ approver, such a turn fails and nothing is changed.
 
 from __future__ import annotations
 
-import json
 import tempfile
 import time
 from pathlib import Path
@@ -79,10 +78,69 @@ def message_parameter(program: Program, workflow_name: str) -> tuple[str, list[s
     return parameter.name, others
 
 
-def answer_text(result: Any) -> str:
-    if isinstance(result, dict) and isinstance(result.get("text"), str):
+#: Fields that hold what an agent says, in the order they are looked for.
+SAYING = ("text", "answer", "reply", "message", "summary")
+#: Fields that are for the page, not for the person to read.
+UNSAID = {"suggest", "canvas", "svg", "html", "page", "story", "trace"}
+
+
+def _said(value: Any) -> str:
+    """One value in a few words: never braces and quotes."""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, (int, float, str)):
+        return str(value).strip()
+    if isinstance(value, dict):
+        parts = [
+            f"{key.replace('_', ' ')} {_said(item)}"
+            for key, item in value.items()
+            if not _empty(item) and key not in UNSAID
+        ]
+        return ", ".join(part for part in parts if part.strip())
+    if isinstance(value, list):
+        return "; ".join(_said(item) for item in value if not _empty(item))
+    return str(value)
+
+
+def _empty(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def in_words(result: Any) -> str:
+    """What an agent answered, in plain words for a person: its text when
+    it has one, else its summary followed by each field that holds
+    something, one short line each. A record is never shown as JSON."""
+    if result is None:
+        return "Done. There was nothing to say."
+    if not isinstance(result, dict):
+        if isinstance(result, list):
+            if not result:
+                return "Nothing was found."
+            return "\n".join("- " + _said(item) for item in result if not _empty(item))
+        return _said(result)
+    if isinstance(result.get("text"), str) and result["text"].strip():
         return result["text"]
-    return json.dumps(result, ensure_ascii=False)
+    lead_key = next(
+        (key for key in SAYING if isinstance(result.get(key), str) and result[key].strip()),
+        "",
+    )
+    lines = [result[lead_key].strip()] if lead_key else []
+    for key, value in result.items():
+        if key == lead_key or key in UNSAID or _empty(value):
+            continue
+        if isinstance(value, list):
+            items = [_said(item) for item in value if not _empty(item)]
+            lines.append(key.replace("_", " ").capitalize() + ":")
+            lines.extend("- " + item for item in items)
+        else:
+            lines.append(f"{key.replace('_', ' ').capitalize()}: {_said(value)}")
+    return "\n".join(lines) if lines else "Done. There was nothing to say."
+
+
+def answer_text(result: Any) -> str:
+    return in_words(result)
 
 
 def chat_loop(

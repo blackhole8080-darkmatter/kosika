@@ -2337,7 +2337,9 @@ class App:
 
         from . import coders
 
-        return coders.status()
+        view = coders.status()
+        view["told"] = coders.told(view)
+        return view
 
     def add_coder_request(self, body: dict[str, Any]) -> dict[str, Any]:
         """Put one request at the end of the coders' to-do list."""

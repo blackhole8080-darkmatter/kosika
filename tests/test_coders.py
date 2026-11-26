@@ -174,8 +174,9 @@ class CodersTests(unittest.TestCase):
         self.assertIn(["clone", "--quiet"], said)
         self.assertIn(["checkout", "--quiet"], said)
         self.assertIn(["push", "--quiet"], said)
-        self.assertEqual(gh.call_count, 1)
-        self.assertIn("--base", gh.call_args.args[0])
+        made = [c.args[0] for c in gh.call_args_list if c.args[0][0] == "gh"]
+        self.assertEqual(len(made), 1)
+        self.assertIn("--base", made[0])
         self.assertEqual(coders.run_detail("2026-11-16-1")["kept"], kept["url"])
 
     def test_keep_all_puts_every_waiting_change_in_one_pull_request(self) -> None:
@@ -221,6 +222,42 @@ class CodersTests(unittest.TestCase):
         _run(self.work, "2026-11-16-1", "add a", "did not pass")
         with self.assertRaises(ValueError):
             coders.keep_all()
+
+    def test_a_fresh_copy_without_a_git_name_signs_as_the_swarm(self) -> None:
+        import subprocess
+
+        place = self.work / "copy"
+        place.mkdir()
+        subprocess.run(["git", "init", "--quiet"], cwd=place, check=True)
+        env = {"GIT_CONFIG_GLOBAL": str(self.work / "none"), "GIT_CONFIG_NOSYSTEM": "1"}
+        with mock.patch.dict("os.environ", env):
+            coders._who(place)
+            name = subprocess.run(["git", "config", "user.name"], cwd=place, capture_output=True, text=True)
+        self.assertEqual(name.stdout.strip(), "Kosika coder swarm")
+
+    def test_kosi_tells_what_the_swarm_did_in_words(self) -> None:
+        view = {"day": "2026-11-25", "waiting": 60, "runs": [
+            {"agent": "coder-1", "request": "add Text.shout()", "result": "passed", "why": ""},
+            {"agent": "coder-2", "request": "add x", "result": "did not pass", "why": "changed no file"},
+            {"agent": "coder-3", "request": "add y", "result": "did not pass", "why": "changed no file"},
+            {"agent": "coder-4", "request": "add z", "result": "", "why": ""}]}
+        with mock.patch.object(coders, "mascot", lambda agent, state: {"title": "Shilpi the fox"}):
+            said = coders.told(view)
+        self.assertIn("took 4 requests: 1 passed, 2 did not, and 1 is still working.", said)
+        self.assertIn("Shilpi passed: add Text.shout().", said)
+        self.assertIn("changed no file (2 of 2)", said)
+        self.assertIn("60 passed changes wait for your Keep", said)
+        self.assertNotIn("{", said)
+        self.assertIn("has not run yet", coders.told({"runs": []}))
+
+    def test_git_missing_or_refused_says_what_to_do(self) -> None:
+        with mock.patch.object(coders.subprocess, "run", side_effect=FileNotFoundError):
+            with self.assertRaisesRegex(RuntimeError, "Git is not installed"):
+                coders._git(["status"], self.work)
+        refused = mock.Mock(returncode=128, stdout="", stderr="fatal: Authentication failed")
+        with mock.patch.object(coders.subprocess, "run", return_value=refused):
+            with self.assertRaisesRegex(RuntimeError, "gh auth login"):
+                coders._git(["push", "--quiet"], self.work)
 
     def test_a_coder_that_is_not_one_has_no_mascot(self) -> None:
         with self.assertRaises(ValueError):
