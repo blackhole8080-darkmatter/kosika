@@ -66,17 +66,21 @@ def episodes(path: Path | None = None) -> tuple[list[dict[str, Any]], int]:
 
 
 def draw(shown: list[dict[str, Any]], total: int) -> dict[str, Any]:
+    return _run("page", {"episodes": shown, "total": total})
+
+
+def _run(workflow: str, ask: dict[str, Any], calls: int = 200000) -> dict[str, Any]:
     import subprocess
 
     from .designs import _engine, _result
 
     with tempfile.TemporaryDirectory(prefix="kosika-brain-") as work:
         given = Path(work) / "ask.json"
-        given.write_text(json.dumps({"a": {"episodes": shown, "total": total}}), encoding="utf-8")
+        given.write_text(json.dumps({"a": ask}), encoding="utf-8")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         ran = subprocess.run(
-            _engine() + ["run", str(BRAIN_KOS), "--workflow", "page", "--input", str(given),
-                         "--max-function-calls", "200000"],
+            _engine() + ["run", str(BRAIN_KOS), "--workflow", workflow, "--input", str(given),
+                         "--max-function-calls", str(calls)],
             capture_output=True, text=True, encoding="utf-8", timeout=240, cwd=work, creationflags=flags,
         )
     if ran.returncode != 0:
@@ -108,4 +112,36 @@ def page() -> dict[str, Any]:
         if not error:
             _kept.clear()
             _kept.update(made)
+        return made
+
+
+#: How many parts of each kind get a neuron of their own on the platform view.
+MOST = int(os.environ.get("KOSIKA_PLATFORM_MOST", "6"))
+_platform: dict[str, Any] = {}
+
+
+def platform() -> dict[str, Any]:
+    """Every part of Kosika on this computer and how they connect, drawn by
+    brain.kos's platform workflow; drawn again only when the census changed."""
+
+    from .platform_census import census
+
+    try:
+        parts, error = census(), ""
+    except Exception as exc:  # a broken folder must not take Studio down
+        parts, error = [], f"census: {exc}"
+    key = json.dumps(parts, sort_keys=True)
+    with _lock:
+        if _platform and _platform.get("key") == key:
+            return {k: v for k, v in _platform.items() if k != "key"}
+        try:
+            drawn = _run("platform", {"parts": parts, "most": MOST}, 1000000) if not error else {}
+        except Exception as exc:  # a timeout or a broken engine must not take Studio down
+            drawn, error = {}, f"brain.kos: {exc}"
+        made = {"title": "Kosika as it is", "page": "", "svg": "", "parts": len(parts), "links": 0, "hub": "",
+                "hub_links": 0, "density": 0, "kinds": [], "alone": [], "summary": "", **drawn,
+                "ok": not error, "error": error}
+        if not error:
+            _platform.clear()
+            _platform.update(made, key=key)
         return made

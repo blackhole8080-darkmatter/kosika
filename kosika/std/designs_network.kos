@@ -15,6 +15,7 @@
 //   net25_figure(net25_platform(["Brain"]))    one neuron lit, the rest dim
 //   net25_figure(net25_layers([3, 5, 4, 2], "a small neural net"))
 //   net25_svg(net)                             any network, as one SVG
+//   net25_census(parts, 5).net                 the platform as it really is
 //
 // A neuron with no name draws no label (a big net stays readable); its
 // "about" still shows when it is pointed at. A link sends signals only
@@ -32,7 +33,7 @@
 
 import "designs_plot.kos"
 
-export [Net, NetNode, NetLink, net25_svg, net25_figure, net25_platform, net25_layers, net25_at]
+export [Net, NetNode, NetLink, PlatformPart, Census, net25_svg, net25_figure, net25_platform, net25_layers, net25_at, net25_census]
 
 // ring: a colour for the nucleus in place of the region's (such as an
 // outcome's green or red), or "". size: 1 for a full neuron, less for a
@@ -259,6 +260,132 @@ fn net25_layers(sizes: Number[], title: Text) -> Net {
   return {title: title, nodes: nodes, links: links, lit: []}
 }
 
+// ---------------------------------------------------------------- the platform, from a census
+//
+// net25_platform is the platform as it was planned. net25_census draws it as
+// it is: a census lists every part on this computer (each agent, model,
+// skill, MCP server, Designs module, memory, Studio, the swarm and the
+// Brain) and the names of the parts each one uses, and Kosika draws that.
+//
+// Each kind stands in its own cell of the floor around the Brain, in its
+// own colour. A part's number of links is its degree: the busier a part,
+// the bigger and higher its neuron. Only the `most` busiest of each kind
+// get a neuron of their own; the rest share one, "+N more", which keeps
+// their links. Graph theory gives the rest: the hub (the part with the
+// most links), the density (the links there are, over the links there
+// could be), and the parts linked to nothing.
+
+record PlatformPart { name: Text kind: Text about: Text uses: Text[] }
+record Census { net: Net kinds: Text[] hub: Text hub_links: Number links: Number density: Number alone: Text[] }
+
+fn nw_kinds() -> Text[] { return ["brain", "agent", "model", "skill", "mcp", "design", "memory", "studio", "swarm"] }
+
+// A kind's colour: the Brain thinks (1), agents act (2), the swarm checks
+// (3), MCP servers sense (4), Designs know (5), memory is memory (6),
+// Studio is you (7), skills are learned (8), models are curious (9).
+fn nw_kind_region(kind: Text) -> Number {
+  let regions = [1, 2, 9, 8, 4, 5, 6, 7, 3]
+  let k = nw_kinds().index_of(kind).or(1)
+  return regions[k]
+}
+
+fn nw_kind_words(kind: Text, n: Number) -> Text {
+  let one = ["Brain", "agent", "model", "skill", "MCP server", "Designs module", "memory", "Studio", "swarm"]
+  let many = ["Brains", "agents", "models", "skills", "MCP servers", "Designs modules", "memories", "Studios", "swarms"]
+  let k = nw_kinds().index_of(kind).or(1)
+  return n.to_text() + " " + (if n == 1 { one[k] } else { many[k] })
+}
+
+fn net25_census(parts: PlatformPart[], most: Number) -> Census {
+  let names = for p in parts { p.name }
+  let count = parts.length()
+  // The links, each once, whichever side named the other.
+  var ends: Number[][] = []
+  var seen: Text[] = []
+  var degree = for p in parts { 0 }
+  for i in 0 until count {
+    for u in parts[i].uses {
+      let j = names.index_of(u).or(-1)
+      if j >= 0 and j != i {
+        let key = f"{i.min(j)}-{i.max(j)}"
+        if not seen.contains(key) {
+          seen = seen.append(key)
+          ends = ends.append([i, j])
+          degree = degree.set(i, degree[i] + 1).set(j, degree[j] + 1)
+        }
+      }
+    }
+  }
+  let top = degree.max().or(0).max(1)
+  // A cell holds nine neurons: eight parts and "+N more".
+  let room = most.max(1).min(8)
+  // Who keeps a neuron of their own: the `most` busiest of each kind.
+  var place = for p in parts { -1 }
+  var nodes: NetNode[] = []
+  var kinds: Text[] = []
+  let kind_names = nw_kinds()
+  let cells = [[0, 0], [1, 1], [0, -1], [1, -1], [1, 0], [-1, -1], [0, 1], [-1, 1], [-1, 0]]
+  let spots = [[0, 0], [-1, -1], [1, 1], [-1, 1], [1, -1], [0, -1], [0, 1], [-1, 0], [1, 0]]
+  for k in 0 until kind_names.length() {
+    let kind = kind_names[k]
+    // Busiest first: each key holds the links in its high digits and the
+    // part's number in its last four, so sorting the keys sorts the parts.
+    var keys: Number[] = []
+    for i in 0 until count {
+      let own = if kind_names.contains(parts[i].kind) { parts[i].kind } else { "agent" }
+      if own == kind { keys = keys.append((1000 - degree[i]) * 10000 + i) }
+    }
+    let order = keys.sort()
+    let m = order.length()
+    if m > 0 { kinds = kinds.append(nw_kind_words(kind, m)) }
+    for j in 0 until m {
+      let i = order[j] % 10000
+      let slot = if j < room { j } else { room }
+      if j < room or j == room {
+        // The floor is a 3 by 3 grid of cells: the Brain in the middle,
+        // each other kind in a cell around it, its parts on a small grid
+        // inside the cell, the busiest in the middle of it.
+        let cell = cells[k]
+        let spot = spots[slot % 9]
+        let more = m - room
+        let folded = j == room
+        let name = if folded { f"+{more} more" } else { parts[i].name }
+        let about = if folded { nw_kind_words(kind, more) + " with fewer links" } else { parts[i].about + f" ({degree[i]} links)" }
+        let busy = if folded { 0.3 } else { degree[i] / top }
+        nodes = nodes.append({name: name, region: nw_kind_region(kind), x: 2.75 * cell[0] + 0.95 * spot[0], y: 2.75 * cell[1] + 0.95 * spot[1], z: if k == 0 { 1.7 } else { 0.45 + 0.9 * busy }, about: about, ring: "", size: if k == 0 { 1.3 } else { 0.55 + 0.7 * busy }})
+      }
+      place = place.set(i, nodes.length() - 1)
+    }
+  }
+  // The links between the neurons; a link between two folded parts of
+  // one kind, or one already drawn, is drawn once or not at all.
+  var links: NetLink[] = []
+  var drawn: Text[] = []
+  for e in ends {
+    let a = place[e[0]]
+    let b = place[e[1]]
+    let key = f"{a.min(b)}-{a.max(b)}"
+    if a >= 0 and b >= 0 and a != b and not drawn.contains(key) {
+      drawn = drawn.append(key)
+      links = links.append({from: a, to: b, weight: 0.55 + 0.45 * degree[e[0]].min(degree[e[1]]) / top})
+    }
+  }
+  var hub = ""
+  var hub_links = -1
+  var alone: Text[] = []
+  for i in 0 until count {
+    if degree[i] > hub_links {
+      hub = names[i]
+      hub_links = degree[i]
+    }
+    if degree[i] == 0 { alone = alone.append(names[i]) }
+  }
+  let pairs = count * (count - 1) / 2
+  let density = if pairs > 0 { (1000 * ends.length() / pairs).round() / 1000 } else { 0 }
+  let net: Net = {title: f"Kosika as it is: {count} parts, {ends.length()} links", nodes: nodes, links: links, lit: []}
+  return {net: net, kinds: kinds, hub: hub, hub_links: hub_links.max(0), links: ends.length(), density: density, alone: alone}
+}
+
 test "a point on the floor lands where the projection puts it" {
   expect net25_at(0, 0, 0) == [550, 330]
   expect net25_at(1, 1, 0)[0] == 550
@@ -294,4 +421,44 @@ test "a dim neuron sends no signals" {
   lit = net25_svg(net25_platform(["Brain"]))
   all = net25_svg(net25_platform([]))
   expect lit.length() < all.length()
+}
+
+test "a census is drawn as it is, busiest parts biggest" {
+  parts: PlatformPart[] = [
+    {name: "Brain", kind: "brain", about: "thinks", uses: []},
+    {name: "Kosi", kind: "agent", about: "the voice", uses: ["Brain", "router", "memory"]},
+    {name: "Kosika AI", kind: "agent", about: "does tasks", uses: ["Brain", "router", "web", "std/designs_plot"]},
+    {name: "router", kind: "model", about: "picks a model", uses: []},
+    {name: "web", kind: "skill", about: "reads a page", uses: []},
+    {name: "std/designs_plot", kind: "design", about: "draws", uses: []},
+    {name: "memory", kind: "memory", about: "recalls", uses: ["Kosi"]},
+    {name: "Lonely", kind: "agent", about: "uses nothing", uses: ["Nowhere"]}
+  ]
+  c = net25_census(parts, 5)
+  expect c.links == 7
+  expect c.hub == "Kosika AI"
+  expect c.hub_links == 4
+  expect c.alone == ["Lonely"]
+  expect c.kinds.contains("3 agents")
+  expect c.kinds.contains("1 Brain")
+  expect c.net.nodes.length() == 8
+  expect c.net.links.length() == 7
+  expect nw_problems(c.net).is_empty()
+  expect c.density == 0.25
+}
+
+test "a crowded kind keeps its busiest and folds the rest" {
+  parts: PlatformPart[] = [
+    {name: "Brain", kind: "brain", about: "", uses: []},
+    {name: "a", kind: "skill", about: "", uses: ["Brain"]},
+    {name: "b", kind: "skill", about: "", uses: []},
+    {name: "c", kind: "skill", about: "", uses: ["Brain"]},
+    {name: "d", kind: "skill", about: "", uses: ["Brain"]}
+  ]
+  c = net25_census(parts, 2)
+  expect c.net.nodes.length() == 4
+  expect c.net.nodes[3].name == "+2 more"
+  expect c.net.links.length() == 3
+  expect nw_problems(c.net).is_empty()
+  expect net25_svg(c.net).contains("+2 more")
 }
