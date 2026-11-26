@@ -256,9 +256,18 @@ class ChatTests(unittest.TestCase):
         with self.assertRaisesRegex(ChatError, "other fields"):
             message_parameter(two, "main")
 
-    def test_a_result_without_text_is_shown_whole(self) -> None:
-        self.assertEqual(answer_text({"text": "hi"}), "hi")
-        self.assertEqual(answer_text({"n": 1}), '{"n": 1}')
+    def test_a_result_without_text_is_said_in_words_never_json(self) -> None:
+        self.assertEqual(answer_text({"text": "hi", "suggest": ["a"]}), "hi")
+        self.assertEqual(answer_text({"n": 1}), "N: 1")
+        # The record Aryan saw on the Kosi page, said in words.
+        said = answer_text({"summary": "A question asking what the swarm did.", "first": None, "total": 0, "busiest": None, "loads": []})
+        self.assertEqual(said, "A question asking what the swarm did.\nTotal: 0")
+        plan = answer_text({"summary": "Two tasks.", "busiest": "Mira", "loads": [{"owner": "Mira", "count": 2}], "ok": True})
+        self.assertEqual(plan, "Two tasks.\nBusiest: Mira\nLoads:\n- owner Mira, count 2\nOk: yes")
+        self.assertEqual(answer_text(["a", "b"]), "- a\n- b")
+        self.assertEqual(answer_text(None), "Done. There was nothing to say.")
+        for shown in (said, plan):
+            self.assertNotIn("{", shown)
 
 
 if __name__ == "__main__":

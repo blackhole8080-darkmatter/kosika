@@ -141,6 +141,50 @@ def status(work: Path | None = None, most: int = 12) -> dict[str, Any]:
     }
 
 
+def _name(agent: str) -> str:
+    """A coder's own name, as the Coders page shows it ("Shilpi")."""
+    try:
+        title = mascot(agent, "idle").get("title") or agent
+    except ValueError:
+        title = agent
+    return title.split(" the ")[0]
+
+
+def told(view: dict[str, Any]) -> str:
+    """What the swarm did on its latest day, in plain sentences, counted by
+    code from the runs themselves: what Kosi says when asked about it."""
+    runs = view.get("runs") or []
+    if not runs:
+        return "The coder swarm has not run yet. Add a request on the Coders page and start it there."
+    passed = [r for r in runs if r["result"] == "passed"]
+    failed = [r for r in runs if r["result"] and r["result"] != "passed"]
+    working = [r for r in runs if not r["result"]]
+    said = [
+        f"On {view.get('day') or 'its latest day'} the swarm took {len(runs)} "
+        + ("request" if len(runs) == 1 else "requests")
+        + f": {len(passed)} passed, {len(failed)} did not"
+        + (f", and {len(working)} {'is' if len(working) == 1 else 'are'} still working." if working else ".")
+    ]
+    for run in passed[:3]:
+        said.append(f"{_name(run['agent'])} passed: {run['request'][:120]}.")
+    reasons: dict[str, int] = {}
+    for run in failed:
+        why = (run.get("why") or "no reason was written").strip().rstrip(".")
+        reasons[why[:160]] = reasons.get(why[:160], 0) + 1
+    if reasons:
+        ranked = sorted(reasons.items(), key=lambda item: -item[1])[:3]
+        said.append(
+            "Why the others did not pass: "
+            + "; ".join(f"{why} ({count} of {len(failed)})" for why, count in ranked)
+            + "."
+        )
+    if view.get("waiting"):
+        said.append(
+            f"{view['waiting']} passed {'change waits' if view['waiting'] == 1 else 'changes wait'} for your Keep on the Coders page."
+        )
+    return " ".join(said)
+
+
 def todo(work: Path | None = None) -> dict[str, Any]:
     path = todo_file(work)
     items = []
@@ -280,18 +324,28 @@ def run_detail(name: str, work: Path | None = None) -> dict[str, Any]:
 
 
 def _git(args: list[str], cwd: Path) -> str:
-    done = subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if done.returncode != 0:
-        raise RuntimeError(
-            f"git {' '.join(args[:2])} failed: {(done.stderr or done.stdout).strip()[-600:]}"
+    try:
+        done = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
+    except FileNotFoundError:
+        raise RuntimeError(
+            "Git is not installed or not on PATH, so changes cannot be kept. Install Git for Windows, then try again."
+        ) from None
+    if done.returncode != 0:
+        said = (done.stderr or done.stdout).strip()
+        hint = ""
+        low = said.lower()
+        if args[0] in ("push", "clone") and (
+            "authentication" in low or "permission" in low or "could not read username" in low or "403" in low
+        ):
+            hint = " GitHub did not let this computer in: run `gh auth login` once (and `gh auth setup-git`), then try again."
+        raise RuntimeError(f"git {' '.join(args[:2])} failed: {said[-600:]}{hint}")
     return done.stdout
 
 
@@ -310,6 +364,17 @@ def origin_of(home: Path) -> str:
         return os.environ.get("KOSIKA_REPO_URL", "").strip() or KOSIKA_REPO_URL
 
 
+def _who(place: Path) -> None:
+    """A fresh copy needs a name and email to commit. Use the person's own
+    git identity when set; otherwise sign as the coder swarm, in this copy only."""
+    for key, value in (("user.name", "Kosika coder swarm"), ("user.email", "coders@kosika.local")):
+        have = subprocess.run(
+            ["git", "config", key], cwd=str(place), capture_output=True, text=True
+        )
+        if have.returncode != 0 or not have.stdout.strip():
+            _git(["config", key, value], place)
+
+
 def keep(
     name: str, work: Path | None = None, repo: Path | None = None
 ) -> dict[str, Any]:
@@ -317,8 +382,6 @@ def keep(
     coder/NAME, made from studio in a fresh copy (the checkout you work in is
     never touched), is pushed, and a pull request into studio is opened for
     you to review. Nothing is merged."""
-    from .agents_home import KOSIKA_HOME
-
     work = work or work_folder()
     detail = run_detail(name, work)
     if detail["result"] != "passed":
@@ -327,6 +390,8 @@ def keep(
         return {"run": name, "url": detail["kept"]}
     if not detail["patch"].strip():
         raise ValueError("This run left no change to keep")
+    from .agents_home import KOSIKA_HOME
+
     origin = origin_of(repo or KOSIKA_HOME)
     place = work / "branches" / name
     if place.exists():
@@ -340,6 +405,7 @@ def keep(
     )
     branch = "coder/" + name
     _git(["checkout", "--quiet", "-b", branch], place)
+    _who(place)
     _git(["apply", "--whitespace=nowarn", str(work / name / "change.patch")], place)
     _git(["add", "-A"], place)
     request = detail["request"]
@@ -420,8 +486,6 @@ def keep_all(
     import shutil
     import time as clock
 
-    from .agents_home import KOSIKA_HOME
-
     work = work or work_folder()
     ready = waiting(work)
     if names is not None:
@@ -429,6 +493,8 @@ def keep_all(
         ready = [run for run in ready if run["run"] in wanted]
     if not ready:
         raise ValueError("No run that passed is waiting to be kept")
+    from .agents_home import KOSIKA_HOME
+
     origin = origin_of(repo or KOSIKA_HOME)
     batch = "batch-" + clock.strftime("%Y%m%d-%H%M%S")
     place = work / "branches" / batch
@@ -440,6 +506,7 @@ def keep_all(
     )
     branch = "coder/" + batch
     _git(["checkout", "--quiet", "-b", branch], place)
+    _who(place)
     kept: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
     for run in ready:

@@ -1915,10 +1915,22 @@ async function showKosi() {
     const text = (typeof given === "string" ? given : input.value).trim();
     if (!text || busy) return;
     if (!overview.can_run) { say("kosi", "Studio was started without a model, so I can\u2019t answer yet. Choose one in Settings \u203a Models."); return; }
+    if (/^open the coders page$/i.test(text)) { input.value = ""; go("coders"); return; }
     busy = true; input.value = ""; sendButton.disabled = true;
     if (!quiet) say("you", text);
     const waiting = say("kosi", h("span", {class: "kosi-dots"}, h("i"), h("i"), h("i")));
     const into = waiting.querySelector(".kosi-text");
+    // About the coder swarm, Kosi says what the runs themselves show,
+    // counted by Studio: no model guesses at it.
+    if (/\b(swarm|coders?|shilpi|drishti|yantra|setu|vayu)\b/i.test(text)) {
+      try {
+        const swarm = await api("/api/coders");
+        into.replaceChildren(swarm.told); sayAloud(swarm.told, () => {});
+        drawSuggestions(["Open the Coders page", "Plan my day"]);
+      } catch (error) { into.replaceChildren(h("span", {style: "color:var(--bad)"}, error.message)); }
+      busy = false; sendButton.disabled = false; input.focus(); log.scrollTop = log.scrollHeight;
+      return;
+    }
     try {
       const view = await follow(agent, {text}, live, (request, decide) => {
         const card = h("div", {class: "card kosi-ask"});
@@ -1927,7 +1939,8 @@ async function showKosi() {
         log.insertBefore(card, waiting); log.scrollTop = log.scrollHeight;
       }, words => { if (words) { into.replaceChildren(words); log.scrollTop = log.scrollHeight; } });
       if (view.state === "done") {
-        const words = typeof view.text === "string" ? view.text : JSON.stringify(view.text);
+        // Studio puts every answer in words; a record is never shown raw.
+        const words = typeof view.text === "string" && view.text.trim() ? view.text : "Done.";
         into.replaceChildren(words); sayAloud(words, () => {});
         const offers = view.result && Array.isArray(view.result.suggest) ? view.result.suggest.filter(item => typeof item === "string" && item).slice(0, 3) : [];
         drawSuggestions(offers);
