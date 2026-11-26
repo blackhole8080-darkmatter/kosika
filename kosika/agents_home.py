@@ -27,10 +27,36 @@ FETCH = (
 )
 
 
+def studio_settings_home() -> Path | None:
+    """The agents_home the installed Studio was set up with, in
+    %LOCALAPPDATA%\\Kosika Studio\\settings.json, when it names a folder that
+    is there; else None."""
+    base = os.environ.get("LOCALAPPDATA")
+    if not base:
+        return None
+    try:
+        import json
+
+        said = json.loads((Path(base) / "Kosika Studio" / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    home = said.get("agents_home") if isinstance(said, dict) else None
+    if isinstance(home, str) and home.strip() and Path(home).expanduser().is_dir():
+        return Path(home).expanduser().resolve()
+    return None
+
+
 def agents_home() -> Path:
-    """The kosika-agents folder: KOSIKA_AGENTS_HOME, or the one beside kosika."""
+    """The kosika-agents folder: KOSIKA_AGENTS_HOME, else the one beside
+    kosika, else the one the installed Studio's settings name (the installed
+    app runs from its own folder, which has no kosika-agents beside it)."""
     told = os.environ.get("KOSIKA_AGENTS_HOME")
-    return Path(told).expanduser().resolve() if told else KOSIKA_HOME.parent / "kosika-agents"
+    if told:
+        return Path(told).expanduser().resolve()
+    beside = KOSIKA_HOME.parent / "kosika-agents"
+    if beside.is_dir():
+        return beside
+    return studio_settings_home() or beside
 
 
 def agents_folder() -> Path:

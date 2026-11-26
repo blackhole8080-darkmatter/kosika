@@ -87,6 +87,15 @@ def _ended(report: str) -> tuple[str, str]:
     return result, why
 
 
+def _agent_of(folder: Path) -> str:
+    """The coder named in the run's agent.txt, when the swarm wrote one."""
+    try:
+        name = (folder / "agent.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return name if name in SWARM_NAMES or name in ("Kosika", "scout") else ""
+
+
 def run_of(folder: Path, slot: int) -> dict[str, Any]:
     request_file, report_file = folder / "request.txt", folder / "report.md"
     request = (
@@ -101,7 +110,9 @@ def run_of(folder: Path, slot: int) -> dict[str, Any]:
         ended = report_file.stat().st_mtime
     return {
         "run": folder.name,
-        "agent": SWARM_NAMES[slot % len(SWARM_NAMES)],
+        # The coder that did it, as the swarm wrote it down; a run from before
+        # that is named by its place in the day, as it always was.
+        "agent": _agent_of(folder) or SWARM_NAMES[slot % len(SWARM_NAMES)],
         "request": request,
         "seconds": max(0, int(ended - began)),
         "result": result,
@@ -284,6 +295,21 @@ def _git(args: list[str], cwd: Path) -> str:
     return done.stdout
 
 
+#: Where Kosika is on GitHub, for a Studio that is not run from a checkout
+#: (the installed app runs from its own folder, which is not a git repository).
+KOSIKA_REPO_URL = "https://github.com/blackhole8080-darkmatter/kosika"
+
+
+def origin_of(home: Path) -> str:
+    """Where a kept change is pushed: the checkout's own origin, or, when
+    Studio runs from a folder that is not a git checkout, KOSIKA_REPO_URL
+    (or Kosika's repository on GitHub)."""
+    try:
+        return _git(["remote", "get-url", "origin"], home).strip()
+    except (RuntimeError, OSError):
+        return os.environ.get("KOSIKA_REPO_URL", "").strip() or KOSIKA_REPO_URL
+
+
 def keep(
     name: str, work: Path | None = None, repo: Path | None = None
 ) -> dict[str, Any]:
@@ -301,7 +327,7 @@ def keep(
         return {"run": name, "url": detail["kept"]}
     if not detail["patch"].strip():
         raise ValueError("This run left no change to keep")
-    origin = _git(["remote", "get-url", "origin"], repo or KOSIKA_HOME).strip()
+    origin = origin_of(repo or KOSIKA_HOME)
     place = work / "branches" / name
     if place.exists():
         import shutil
@@ -403,7 +429,7 @@ def keep_all(
         ready = [run for run in ready if run["run"] in wanted]
     if not ready:
         raise ValueError("No run that passed is waiting to be kept")
-    origin = _git(["remote", "get-url", "origin"], repo or KOSIKA_HOME).strip()
+    origin = origin_of(repo or KOSIKA_HOME)
     batch = "batch-" + clock.strftime("%Y%m%d-%H%M%S")
     place = work / "branches" / batch
     shutil.rmtree(place, ignore_errors=True)

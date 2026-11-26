@@ -42,6 +42,14 @@ MAX_PICKED_BYTES = 9 * 1024**3
 
 
 def default_folder() -> Path:
+    """The agents Studio opens with no folder given: kosika-agents' own
+    agents when they are on this computer, so Kosi (agents/assistant) is the
+    one you talk to; else a folder of starter agents in your home."""
+    from .agents_home import agents_folder
+
+    real = agents_folder()
+    if (real / "assistant" / "main.kos").is_file():
+        return real
     return Path.home() / "KosikaAgents"
 
 
